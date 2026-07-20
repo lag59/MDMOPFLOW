@@ -1,0 +1,66 @@
+name: Backend CI
+
+on:
+  pull_request:
+
+jobs:
+  backend-migrations-and-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Wait for PostgreSQL
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+        run: |
+          python - <<'PY'
+          import os
+          import time
+          import psycopg
+
+          dsn = os.environ["DATABASE_URL"].replace("+psycopg", "")
+          for _ in range(30):
+              try:
+                  with psycopg.connect(dsn):
+                      print("PostgreSQL is ready")
+                      break
+              except Exception:
+                  time.sleep(1)
+          else:
+              raise SystemExit("PostgreSQL was not ready in time")
+          PY
+
+      - name: Run Alembic migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+        run: alembic upgrade head
+
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest -q

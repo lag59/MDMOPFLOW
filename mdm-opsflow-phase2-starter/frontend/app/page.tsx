@@ -1,1 +1,5 @@
-"use client"; import {useState} from "react"; import {t} from "@/lib/i18n"; export default function Home(){const [lang,setLang]=useState<"en"|"es">("en");const x=t[lang];return <div className="shell"><aside className="side"><div className="brand">MDM <span>OpsFlow</span></div><div className="nav"><div>Dashboard</div><div>{x.projects}</div><div>{x.intake}</div><div>{x.budget}</div><div>{x.safety}</div></div></aside><main className="main"><div className="top"><div><h1>{x.welcome}</h1><p>{x.subtitle}</p></div><button onClick={()=>setLang(lang==="en"?"es":"en")}>{lang==="en"?"Español":"English"}</button></div><section className="grid"><div className="card">Active Projects<div className="metric">12</div></div><div className="card">Documents Processed<div className="metric">1,284</div></div><div className="card">Budget Health<div className="metric">92%</div></div><div className="card">Pending Reviews<div className="metric">8</div></div></section><section className="ai"><h2>{x.copilot}</h2><p>Budgets, documents, safety, estimates, payroll, fleet, and project performance.</p><button>Open AI Copilot</button></section></main></div>}
+import { redirect } from "next/navigation";
+
+export default function Home() {
+	redirect("/dashboard");
+}

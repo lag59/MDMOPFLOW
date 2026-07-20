@@ -22,7 +22,11 @@
       "@/*": [
         "./*"
       ]
-    }
+    },
+    "allowJs": true,
+    "skipLibCheck": true,
+    "incremental": true,
+    "esModuleInterop": true
   },
   "include": [
     "next-env.d.ts",

@@ -1,0 +1,147 @@
+{
+  "common": {
+    "appName": "MDM OpsFlow",
+    "language": "Idioma",
+    "english": "Ingles",
+    "spanish": "Espanol",
+    "save": "Guardar",
+    "loading": "Cargando...",
+    "logout": "Cerrar sesion",
+    "loginFailed": "Fallo al iniciar sesion",
+    "registerFailed": "Fallo al registrarse",
+    "onboardingFailed": "Fallo en implementacion",
+    "onboardingComplete": "Implementacion completada",
+    "projectCreateFailed": "Fallo al crear proyecto",
+    "projectCreated": "Proyecto creado"
+  },
+  "nav": {
+    "dashboard": "Panel principal",
+    "projects": "Proyectos",
+    "onboarding": "Implementacion",
+    "company": "Configuracion de empresa",
+    "users": "Configuracion de usuarios",
+    "platformAdmin": "Admin de plataforma"
+  },
+  "auth": {
+    "login": "Iniciar sesion",
+    "register": "Registrarse",
+    "email": "Correo electronico",
+    "password": "Contrasena",
+    "displayName": "Nombre completo",
+    "loginCta": "Entrar",
+    "registerCta": "Crear cuenta",
+    "goToRegister": "Necesitas una cuenta? Registrate",
+    "goToLogin": "Ya tienes cuenta? Inicia sesion"
+  },
+  "onboarding": {
+    "title": "Implementacion de empresa",
+    "subtitle": "Crea empresa, idioma, modulos, equipo y primer proyecto.",
+    "wizardSubtitle": "Completa la implementacion en pasos guiados con validaciones.",
+    "stepLabel": "Paso",
+    "createAccountDone": "Ya cree mi cuenta y estoy lista para continuar.",
+    "companyName": "Nombre de empresa",
+    "companyType": "Tipo de empresa",
+    "language": "Idioma predeterminado",
+    "modules": "Modulos (separados por coma)",
+    "invites": "Correos para invitar (separados por coma)",
+    "firstProject": "Nombre del primer proyecto",
+    "submit": "Completar implementacion",
+    "back": "Atras",
+    "next": "Siguiente",
+    "openDashboard": "Abrir panel",
+    "reviewTitle": "Revisa tu configuracion",
+    "steps": {
+      "createAccount": "Crear cuenta",
+      "createCompany": "Crear empresa",
+      "companyType": "Seleccionar tipo de empresa",
+      "language": "Elegir Ingles o Espanol",
+      "modules": "Seleccionar modulos",
+      "invite": "Invitar equipo",
+      "firstProject": "Crear primer proyecto",
+      "openDashboard": "Abrir panel"
+    },
+    "validation": {
+      "accountConfirm": "Confirma la creacion de cuenta para continuar.",
+      "companyName": "El nombre de empresa debe tener al menos 2 caracteres.",
+      "companyType": "Selecciona un tipo de empresa.",
+      "language": "Selecciona un idioma.",
+      "modules": "Selecciona al menos un modulo.",
+      "invites": "Uno o mas correos de invitacion son invalidos.",
+      "firstProject": "El primer proyecto debe tener al menos 2 caracteres."
+    }
+  },
+  "dashboard": {
+    "title": "Panel principal",
+    "activeProjects": "Proyectos activos",
+    "documentsProcessed": "Documentos procesados",
+    "budgetHealth": "Salud de presupuesto",
+    "pendingReviews": "Revisiones pendientes",
+    "welcome": "Bienvenido a MDM OpsFlow",
+    "subtitle": "El sistema operativo con IA para construccion"
+  },
+  "projects": {
+    "title": "Proyectos",
+    "new": "Nuevo proyecto",
+    "projectName": "Nombre del proyecto",
+    "projectNumber": "Numero del proyecto",
+    "customer": "Cliente",
+    "address": "Direccion",
+    "projectManager": "Gerente de proyecto",
+    "startDate": "Fecha de inicio",
+    "endDate": "Fecha de fin",
+    "contractAmount": "Monto del contrato",
+    "budget": "Presupuesto",
+    "status": "Estado",
+    "description": "Descripcion",
+    "create": "Crear proyecto",
+    "validation": {
+      "projectName": "El nombre del proyecto debe tener al menos 2 caracteres.",
+      "projectNumber": "El numero del proyecto es obligatorio."
+    }
+  },
+  "settings": {
+    "company": "Configuracion de empresa",
+    "users": "Configuracion de usuarios",
+    "usersPage": {
+      "userEmail": "Correo del usuario",
+      "roles": {
+        "owner": "Propietario",
+        "executive": "Ejecutivo",
+        "project_manager": "Gerente de proyecto",
+        "estimator": "Estimador",
+        "dispatcher": "Despachador",
+        "accounting": "Contabilidad",
+        "payroll": "Nomina",
+        "safety_manager": "Gerente de seguridad",
+        "fleet_manager": "Gerente de flota",
+        "administrator": "Administrador",
+        "customer": "Cliente",
+        "vendor": "Proveedor"
+      },
+      "success": {
+        "assigned": "Usuario asignado a la empresa."
+      },
+      "errors": {
+        "emailRequired": "El correo es obligatorio.",
+        "userNotFound": "Usuario no encontrado.",
+        "roleNotFound": "El rol no esta disponible para esta empresa.",
+        "insufficientPermissions": "No tienes permiso para asignar usuarios.",
+        "assignFailed": "No se pudo asignar el usuario."
+      }
+    }
+  },
+  "platformAdmin": {
+    "title": "Admin de plataforma",
+    "denied": "Solo los usuarios super administradores pueden acceder a esta pagina.",
+    "tenants": "Empresas",
+    "users": "Usuarios",
+    "projects": "Proyectos"
+  },
+  "workspace": {
+    "title": "Espacio de rol",
+    "roleWorkspace": "Espacio de rol",
+    "rolePreview": "Vista previa de rol",
+    "moduleReady": "Modulo listo para integracion de flujo por rol.",
+    "allRoleWorkspaces": "Todos los espacios de rol"
+  }
+}
