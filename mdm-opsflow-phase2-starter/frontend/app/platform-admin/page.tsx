@@ -47,11 +47,29 @@ export default function PlatformAdminPage() {
       {!authorized ? (
         <p>{t(locale, "platformAdmin.denied")}</p>
       ) : (
-        <div className="grid">
-          <div className="card">{t(locale, "platformAdmin.tenants")}<div className="metric">{overview?.tenants ?? 0}</div></div>
-          <div className="card">{t(locale, "platformAdmin.users")}<div className="metric">{overview?.users ?? 0}</div></div>
-          <div className="card">{t(locale, "platformAdmin.projects")}<div className="metric">{overview?.projects ?? 0}</div></div>
-        </div>
+        <>
+          <div className="card">
+            <span className="auth-eyebrow">Platform Operations</span>
+            <p className="muted">System-wide visibility and controls for tenants, users, and active projects.</p>
+          </div>
+          <div className="grid">
+            <div className="card">
+              {t(locale, "platformAdmin.tenants")}
+              <div className="metric">{overview?.tenants ?? 0}</div>
+              <div className="metric-note">Managed organizations</div>
+            </div>
+            <div className="card">
+              {t(locale, "platformAdmin.users")}
+              <div className="metric">{overview?.users ?? 0}</div>
+              <div className="metric-note">Platform-wide active users</div>
+            </div>
+            <div className="card">
+              {t(locale, "platformAdmin.projects")}
+              <div className="metric">{overview?.projects ?? 0}</div>
+              <div className="metric-note">Tracked live projects</div>
+            </div>
+          </div>
+        </>
       )}
     </AppShell>
   );

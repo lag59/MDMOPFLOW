@@ -40,7 +40,9 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <span className="auth-eyebrow">MDM OpsFlow</span>
         <h1>{t(locale, "auth.login")}</h1>
+        <p className="auth-tagline">The AI Operating System for Construction.</p>
         <input placeholder={t(locale, "auth.email")} value={email} onChange={(e) => setEmail(e.target.value)} />
         <input
           placeholder={t(locale, "auth.password")}

@@ -131,38 +131,61 @@ export default function ProjectDetailPage() {
       {!project ? (
         <p>{t(locale, "common.loading")}</p>
       ) : (
-        <div className="card form-grid">
-          <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={t(locale, "projects.projectName")} />
-          <input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder={t(locale, "projects.projectNumber")} />
-          <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder={t(locale, "projects.customer")} />
-          <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t(locale, "projects.address")} />
-          <input
-            value={projectManager}
-            onChange={(e) => setProjectManager(e.target.value)}
-            placeholder={t(locale, "projects.projectManager")}
-          />
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="planning">planning</option>
-            <option value="active">active</option>
-            <option value="on_hold">on_hold</option>
-            <option value="complete">complete</option>
-            <option value="cancelled">cancelled</option>
-          </select>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder={t(locale, "projects.description")}
-          />
-          <div className="top-actions">
-            <button onClick={saveChanges} disabled={isSaving || isDeleting}>
-              {isSaving ? "Saving..." : "Save Changes"}
-            </button>
-            <button onClick={deleteProject} disabled={isSaving || isDeleting}>
-              {isDeleting ? "Deleting..." : "Delete Project"}
-            </button>
+        <>
+          <div className="card">
+            <div className="section-header">
+              <h3>{projectName}</h3>
+              <span className={`status-pill status-${status}`}>{status.replace("_", " ")}</span>
+            </div>
+            <div className="info-grid">
+              <div className="info-item">
+                <strong>{t(locale, "projects.projectNumber")}</strong>
+                <span>{projectNumber || "-"}</span>
+              </div>
+              <div className="info-item">
+                <strong>{t(locale, "projects.customer")}</strong>
+                <span>{customer || "-"}</span>
+              </div>
+            </div>
           </div>
-          {message ? <p>{message}</p> : null}
-        </div>
+
+          <div className="card form-grid">
+            <div className="two-col">
+              <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={t(locale, "projects.projectName")} />
+              <input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder={t(locale, "projects.projectNumber")} />
+            </div>
+            <div className="two-col">
+              <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder={t(locale, "projects.customer")} />
+              <input
+                value={projectManager}
+                onChange={(e) => setProjectManager(e.target.value)}
+                placeholder={t(locale, "projects.projectManager")}
+              />
+            </div>
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t(locale, "projects.address")} />
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="planning">planning</option>
+              <option value="active">active</option>
+              <option value="on_hold">on_hold</option>
+              <option value="complete">complete</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t(locale, "projects.description")}
+            />
+            <div className="top-actions">
+              <button onClick={saveChanges} disabled={isSaving || isDeleting}>
+                {isSaving ? "Saving..." : "Save Changes"}
+              </button>
+              <button onClick={deleteProject} disabled={isSaving || isDeleting}>
+                {isDeleting ? "Deleting..." : "Delete Project"}
+              </button>
+            </div>
+            {message ? <p>{message}</p> : null}
+          </div>
+        </>
       )}
     </AppShell>
   );

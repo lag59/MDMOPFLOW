@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getAccessToken } from "@/lib/auth";
-import { getApiBaseUrl } from "@/lib/i18n";
+import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 import { ROLE_WORKSPACES, RoleKey, mapBackendRole } from "@/lib/roles";
 
 type MeMembership = {
@@ -17,6 +17,7 @@ type MeResponse = {
 };
 
 export default function WorkspacePage() {
+  const locale = getLocale();
   const [activeRole, setActiveRole] = useState<RoleKey>("project_manager");
   const [canPreviewAllRoles, setCanPreviewAllRoles] = useState(false);
 
@@ -49,12 +50,13 @@ export default function WorkspacePage() {
   return (
     <AppShell titleKey="workspace.title">
       <div className="card">
+        <span className="auth-eyebrow">{t(locale, "workspace.roleWorkspace")}</span>
         <h2>{current.label}</h2>
         <p>{current.summary}</p>
 
         {canPreviewAllRoles ? (
           <label>
-            Role preview
+            {t(locale, "workspace.rolePreview")}
             <select value={activeRole} onChange={(e) => setActiveRole(e.target.value as RoleKey)}>
               {ROLE_WORKSPACES.map((role) => (
                 <option key={role.key} value={role.key}>
@@ -70,13 +72,13 @@ export default function WorkspacePage() {
         {current.modules.map((module) => (
           <div className="workspace-module" key={module}>
             <strong>{module}</strong>
-            <span>Module ready for role workflow integration.</span>
+            <span>{t(locale, "workspace.moduleReady")}</span>
           </div>
         ))}
       </div>
 
       <div className="card">
-        <h3>All role workspaces</h3>
+        <h3>{t(locale, "workspace.allRoleWorkspaces")}</h3>
         <div className="workspace-chip-row">
           {ROLE_WORKSPACES.map((role) => (
             <button key={role.key} className={`workspace-chip ${activeRole === role.key ? "is-active" : ""}`} onClick={() => setActiveRole(role.key)}>

@@ -38,15 +38,16 @@ export default function ProjectsPage() {
 
   return (
     <AppShell titleKey="projects.title">
-      <p>
-        <Link href="/projects/new">{t(locale, "projects.new")}</Link>
-      </p>
+      <div className="section-header">
+        <h3>{t(locale, "projects.title")}</h3>
+        <Link className="link-button" href="/projects/new">{t(locale, "projects.new")}</Link>
+      </div>
       <div className="list">
         {projects.map((project) => (
-          <Link href={`/projects/${project.id}`} key={project.id} className="list-item">
+          <Link href={`/projects/${project.id}`} key={project.id} className="list-item is-link">
             <strong>{project.project_name}</strong>
-            <span>{project.project_number}</span>
-            <span>{project.status}</span>
+            <span className="muted">{project.project_number}</span>
+            <span className={`status-pill status-${project.status}`}>{project.status.replace("_", " ")}</span>
           </Link>
         ))}
       </div>

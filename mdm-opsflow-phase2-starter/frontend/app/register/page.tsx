@@ -36,7 +36,9 @@ export default function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <span className="auth-eyebrow">MDM OpsFlow</span>
         <h1>{t(locale, "auth.register")}</h1>
+        <p className="auth-tagline">Build smarter. Powered by AI.</p>
         <input
           placeholder={t(locale, "auth.displayName")}
           value={displayName}

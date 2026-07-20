@@ -25,10 +25,21 @@ export default function CompanySettingsPage() {
   return (
     <AppShell titleKey="settings.company">
       <div className="card">
-        <p>{me ? me.display_name : "-"}</p>
-        <p>{me ? me.title : "-"}</p>
+        <span className="auth-eyebrow">Company Profile</span>
+        <div className="info-grid">
+          <div className="info-item">
+            <strong>Primary Contact</strong>
+            <span>{me ? me.display_name : "-"}</span>
+          </div>
+          <div className="info-item">
+            <strong>Title</strong>
+            <span>{me ? me.title : "-"}</span>
+          </div>
+        </div>
       </div>
-      <button>{t(locale, "common.save")}</button>
+      <div className="top-actions">
+        <button>{t(locale, "common.save")}</button>
+      </div>
     </AppShell>
   );
 }

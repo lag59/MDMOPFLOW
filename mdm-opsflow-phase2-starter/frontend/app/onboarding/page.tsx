@@ -168,7 +168,10 @@ export default function OnboardingPage() {
 
   return (
     <AppShell titleKey="onboarding.title">
-      <p>{t(locale, "onboarding.wizardSubtitle")}</p>
+      <div className="card">
+        <span className="auth-eyebrow">Foundation Setup</span>
+        <p>{t(locale, "onboarding.wizardSubtitle")}</p>
+      </div>
       <div className="wizard-progress-wrap">
         <div className="wizard-progress-text">
           <span>{t(locale, "onboarding.stepLabel")}</span>

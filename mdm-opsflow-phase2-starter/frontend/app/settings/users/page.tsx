@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
@@ -14,6 +15,34 @@ type UserMembership = {
   role_name: string;
   status: string;
 };
+
+const ROLE_OPTIONS = [
+  "owner",
+  "executive",
+  "project_manager",
+  "estimator",
+  "dispatcher",
+  "accounting",
+  "payroll",
+  "safety_manager",
+  "fleet_manager",
+  "administrator",
+  "customer",
+  "vendor",
+];
+
+function mapAssignmentError(locale: "en" | "es", detail: string | undefined): string {
+  switch (detail) {
+    case "User not found":
+      return t(locale, "settings.usersPage.errors.userNotFound");
+    case "Role not found for tenant":
+      return t(locale, "settings.usersPage.errors.roleNotFound");
+    case "Insufficient permissions":
+      return t(locale, "settings.usersPage.errors.insufficientPermissions");
+    default:
+      return t(locale, "settings.usersPage.errors.assignFailed");
+  }
+}
 
 export default function UserSettingsPage() {
   const locale = getLocale();
@@ -44,7 +73,7 @@ export default function UserSettingsPage() {
   async function assignUser(): Promise<void> {
     setMessage("");
     if (!email.trim()) {
-      setMessage("Email is required.");
+      setMessage(t(locale, "settings.usersPage.errors.emailRequired"));
       return;
     }
 
@@ -60,36 +89,49 @@ export default function UserSettingsPage() {
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      setMessage(payload?.detail || "Unable to assign user.");
+      setMessage(mapAssignmentError(locale, payload?.detail));
       return;
     }
 
     setEmail("");
-    setMessage("User assigned to company.");
+    setMessage(t(locale, "settings.usersPage.success.assigned"));
     await loadMembers();
   }
 
   return (
     <AppShell titleKey="settings.users">
       <div className="card form-grid">
+        <div className="section-header">
+          <h3>Assign User</h3>
+        </div>
         <input
-          placeholder="User email"
+          placeholder={t(locale, "settings.usersPage.userEmail")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <input
-          placeholder="Role name"
+        <select
           value={roleName}
           onChange={(e) => setRoleName(e.target.value)}
-        />
+        >
+          {ROLE_OPTIONS.map((role) => (
+            <option key={role} value={role}>
+              {t(locale, `settings.usersPage.roles.${role}`)}
+            </option>
+          ))}
+        </select>
         <button onClick={assignUser}>{t(locale, "common.save")}</button>
         {message ? <p>{message}</p> : null}
+      </div>
+
+      <div className="section-header">
+        <h3>Team Members</h3>
       </div>
       <div className="list">
         {memberships.map((membership) => (
           <div className="list-item" key={`${membership.user_id}-${membership.role_name}`}>
             <strong>{membership.display_name} ({membership.email})</strong>
-            <span>{membership.role_name} - {membership.status}</span>
+            <span className="muted">{membership.role_name}</span>
+            <span className={`status-pill status-${membership.status}`}>{membership.status}</span>
           </div>
         ))}
       </div>

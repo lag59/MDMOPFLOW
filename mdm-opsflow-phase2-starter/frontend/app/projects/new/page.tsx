@@ -99,30 +99,40 @@ export default function NewProjectPage() {
 
   return (
     <AppShell titleKey="projects.new">
-      <div className="form-grid">
-        <input placeholder={t(locale, "projects.projectName")} value={projectName} onChange={(e) => setProjectName(e.target.value)} />
-        <input placeholder={t(locale, "projects.projectNumber")} value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} />
-        <input placeholder={t(locale, "projects.customer")} value={customer} onChange={(e) => setCustomer(e.target.value)} />
+      <div className="card">
+        <span className="auth-eyebrow">Project Setup</span>
+        <p className="muted">Create a structured project record with operational and budget context.</p>
+      </div>
+
+      <div className="card form-grid">
+        <div className="two-col">
+          <input placeholder={t(locale, "projects.projectName")} value={projectName} onChange={(e) => setProjectName(e.target.value)} />
+          <input placeholder={t(locale, "projects.projectNumber")} value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} />
+        </div>
+
+        <div className="two-col">
+          <input placeholder={t(locale, "projects.customer")} value={customer} onChange={(e) => setCustomer(e.target.value)} />
+          <input placeholder={t(locale, "projects.projectManager")} value={projectManager} onChange={(e) => setProjectManager(e.target.value)} />
+        </div>
+
         <input placeholder={t(locale, "projects.address")} value={address} onChange={(e) => setAddress(e.target.value)} />
-        <input
-          placeholder={t(locale, "projects.projectManager")}
-          value={projectManager}
-          onChange={(e) => setProjectManager(e.target.value)}
-        />
-        <label>
-          {t(locale, "projects.startDate")}
-          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </label>
-        <label>
-          {t(locale, "projects.endDate")}
-          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        </label>
-        <input
-          placeholder={t(locale, "projects.contractAmount")}
-          value={contractAmount}
-          onChange={(e) => setContractAmount(e.target.value)}
-        />
-        <input placeholder={t(locale, "projects.budget")} value={budget} onChange={(e) => setBudget(e.target.value)} />
+
+        <div className="two-col">
+          <label>
+            {t(locale, "projects.startDate")}
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </label>
+          <label>
+            {t(locale, "projects.endDate")}
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="two-col">
+          <input placeholder={t(locale, "projects.contractAmount")} value={contractAmount} onChange={(e) => setContractAmount(e.target.value)} />
+          <input placeholder={t(locale, "projects.budget")} value={budget} onChange={(e) => setBudget(e.target.value)} />
+        </div>
+
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="planning">planning</option>
           <option value="active">active</option>
@@ -130,16 +140,20 @@ export default function NewProjectPage() {
           <option value="complete">complete</option>
           <option value="cancelled">cancelled</option>
         </select>
+
         <textarea
           placeholder={t(locale, "projects.description")}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+
+        <div className="top-actions">
+          <button onClick={submit} disabled={isSubmitting}>
+            {isSubmitting ? `${t(locale, "projects.create")}...` : t(locale, "projects.create")}
+          </button>
+        </div>
+        {message ? <p>{message}</p> : null}
       </div>
-      <button onClick={submit} disabled={isSubmitting}>
-        {isSubmitting ? `${t(locale, "projects.create")}...` : t(locale, "projects.create")}
-      </button>
-      {message ? <p>{message}</p> : null}
     </AppShell>
   );
 }

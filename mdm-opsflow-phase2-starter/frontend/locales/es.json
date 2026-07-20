@@ -101,7 +101,34 @@
   },
   "settings": {
     "company": "Configuracion de empresa",
-    "users": "Configuracion de usuarios"
+    "users": "Configuracion de usuarios",
+    "usersPage": {
+      "userEmail": "Correo del usuario",
+      "roles": {
+        "owner": "Propietario",
+        "executive": "Ejecutivo",
+        "project_manager": "Gerente de proyecto",
+        "estimator": "Estimador",
+        "dispatcher": "Despachador",
+        "accounting": "Contabilidad",
+        "payroll": "Nomina",
+        "safety_manager": "Gerente de seguridad",
+        "fleet_manager": "Gerente de flota",
+        "administrator": "Administrador",
+        "customer": "Cliente",
+        "vendor": "Proveedor"
+      },
+      "success": {
+        "assigned": "Usuario asignado a la empresa."
+      },
+      "errors": {
+        "emailRequired": "El correo es obligatorio.",
+        "userNotFound": "Usuario no encontrado.",
+        "roleNotFound": "El rol no esta disponible para esta empresa.",
+        "insufficientPermissions": "No tienes permiso para asignar usuarios.",
+        "assignFailed": "No se pudo asignar el usuario."
+      }
+    }
   },
   "platformAdmin": {
     "title": "Admin de plataforma",
@@ -109,5 +136,12 @@
     "tenants": "Empresas",
     "users": "Usuarios",
     "projects": "Proyectos"
+  },
+  "workspace": {
+    "title": "Espacio de rol",
+    "roleWorkspace": "Espacio de rol",
+    "rolePreview": "Vista previa de rol",
+    "moduleReady": "Modulo listo para integracion de flujo por rol.",
+    "allRoleWorkspaces": "Todos los espacios de rol"
   }
 }

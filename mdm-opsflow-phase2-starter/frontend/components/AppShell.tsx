@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import React from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -14,6 +15,8 @@ type AppShellProps = {
 
 export default function AppShell({ titleKey, children }: AppShellProps) {
   const [locale, setLocaleState] = useState<Locale>("en");
+  const pathname = usePathname();
+  const currentPath = pathname || "";
 
   useEffect(() => {
     setLocaleState(getLocale());
@@ -40,13 +43,14 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
     <div className="shell">
       <aside className="side">
         <div className="brand">{labels.appName}</div>
+        <p className="brand-subtitle">The AI Operating System for Construction</p>
         <nav className="nav">
-          <Link href="/dashboard">{labels.dashboard}</Link>
-          <Link href="/projects">{labels.projects}</Link>
-          <Link href="/onboarding">{labels.onboarding}</Link>
-          <Link href="/settings/company">{labels.company}</Link>
-          <Link href="/settings/users">{labels.users}</Link>
-          <Link href="/platform-admin">{labels.platformAdmin}</Link>
+          <Link className={currentPath === "/dashboard" ? "is-active" : ""} href="/dashboard">{labels.dashboard}</Link>
+          <Link className={currentPath.startsWith("/projects") ? "is-active" : ""} href="/projects">{labels.projects}</Link>
+          <Link className={currentPath === "/onboarding" ? "is-active" : ""} href="/onboarding">{labels.onboarding}</Link>
+          <Link className={currentPath === "/settings/company" ? "is-active" : ""} href="/settings/company">{labels.company}</Link>
+          <Link className={currentPath === "/settings/users" ? "is-active" : ""} href="/settings/users">{labels.users}</Link>
+          <Link className={currentPath === "/platform-admin" ? "is-active" : ""} href="/platform-admin">{labels.platformAdmin}</Link>
         </nav>
       </aside>
       <main className="main">

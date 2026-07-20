@@ -101,7 +101,34 @@
   },
   "settings": {
     "company": "Company settings",
-    "users": "User settings"
+    "users": "User settings",
+    "usersPage": {
+      "userEmail": "User email",
+      "roles": {
+        "owner": "Owner",
+        "executive": "Executive",
+        "project_manager": "Project manager",
+        "estimator": "Estimator",
+        "dispatcher": "Dispatcher",
+        "accounting": "Accounting",
+        "payroll": "Payroll",
+        "safety_manager": "Safety manager",
+        "fleet_manager": "Fleet manager",
+        "administrator": "Administrator",
+        "customer": "Customer",
+        "vendor": "Vendor"
+      },
+      "success": {
+        "assigned": "User assigned to company."
+      },
+      "errors": {
+        "emailRequired": "Email is required.",
+        "userNotFound": "User not found.",
+        "roleNotFound": "Role is not available for this company.",
+        "insufficientPermissions": "You do not have permission to assign users.",
+        "assignFailed": "Unable to assign user."
+      }
+    }
   },
   "platformAdmin": {
     "title": "Platform Admin",
@@ -109,5 +136,12 @@
     "tenants": "Tenants",
     "users": "Users",
     "projects": "Projects"
+  },
+  "workspace": {
+    "title": "Role Workspace",
+    "roleWorkspace": "Role Workspace",
+    "rolePreview": "Role preview",
+    "moduleReady": "Module ready for role workflow integration.",
+    "allRoleWorkspaces": "All role workspaces"
   }
 }
