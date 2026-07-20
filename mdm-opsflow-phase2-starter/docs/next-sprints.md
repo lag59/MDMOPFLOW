@@ -1,5 +1,7 @@
 # Next Sprints
 
+See detailed Phase 2 blueprint: docs/phase2-product-blueprint.md
+
 ## Sprint 1
 Authentication, PostgreSQL models, tenant isolation, super-admin permissions, company onboarding, projects, bilingual localization.
 

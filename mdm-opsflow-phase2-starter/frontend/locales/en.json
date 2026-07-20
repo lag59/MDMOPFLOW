@@ -1,0 +1,113 @@
+{
+  "common": {
+    "appName": "MDM OpsFlow",
+    "language": "Language",
+    "english": "English",
+    "spanish": "Spanish",
+    "save": "Save",
+    "loading": "Loading...",
+    "logout": "Logout",
+    "loginFailed": "Login failed",
+    "registerFailed": "Registration failed",
+    "onboardingFailed": "Onboarding failed",
+    "onboardingComplete": "Onboarding complete",
+    "projectCreateFailed": "Project creation failed",
+    "projectCreated": "Project created"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Projects",
+    "onboarding": "Onboarding",
+    "company": "Company Settings",
+    "users": "User Settings",
+    "platformAdmin": "Platform Admin"
+  },
+  "auth": {
+    "login": "Login",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "displayName": "Full Name",
+    "loginCta": "Sign in",
+    "registerCta": "Create account",
+    "goToRegister": "Need an account? Register",
+    "goToLogin": "Already have an account? Login"
+  },
+  "onboarding": {
+    "title": "Company onboarding",
+    "subtitle": "Create company, choose language, modules, team, and first project.",
+    "wizardSubtitle": "Complete onboarding in guided steps with validation.",
+    "stepLabel": "Step",
+    "createAccountDone": "I have created my account and I am ready to continue.",
+    "companyName": "Company name",
+    "companyType": "Company type",
+    "language": "Default language",
+    "modules": "Modules (comma separated)",
+    "invites": "Invite emails (comma separated)",
+    "firstProject": "First project name",
+    "submit": "Complete onboarding",
+    "back": "Back",
+    "next": "Next",
+    "openDashboard": "Open dashboard",
+    "reviewTitle": "Review your setup",
+    "steps": {
+      "createAccount": "Create account",
+      "createCompany": "Create company",
+      "companyType": "Select company type",
+      "language": "Choose English or Spanish",
+      "modules": "Select modules",
+      "invite": "Invite team members",
+      "firstProject": "Create first project",
+      "openDashboard": "Open dashboard"
+    },
+    "validation": {
+      "accountConfirm": "Confirm account creation to continue.",
+      "companyName": "Company name must be at least 2 characters.",
+      "companyType": "Select a company type.",
+      "language": "Select a language.",
+      "modules": "Select at least one module.",
+      "invites": "One or more invite emails are invalid.",
+      "firstProject": "First project name must be at least 2 characters."
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "activeProjects": "Active Projects",
+    "documentsProcessed": "Documents Processed",
+    "budgetHealth": "Budget Health",
+    "pendingReviews": "Pending Reviews",
+    "welcome": "Welcome to MDM OpsFlow",
+    "subtitle": "The AI Operating System for Construction"
+  },
+  "projects": {
+    "title": "Projects",
+    "new": "New Project",
+    "projectName": "Project name",
+    "projectNumber": "Project number",
+    "customer": "Customer",
+    "address": "Address",
+    "projectManager": "Project manager",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "contractAmount": "Contract amount",
+    "budget": "Budget",
+    "status": "Status",
+    "description": "Description",
+    "create": "Create project",
+    "validation": {
+      "projectName": "Project name must be at least 2 characters.",
+      "projectNumber": "Project number is required."
+    }
+  },
+  "settings": {
+    "company": "Company settings",
+    "users": "User settings"
+  },
+  "platformAdmin": {
+    "title": "Platform Admin",
+    "denied": "Only platform super-admin users can access this page.",
+    "tenants": "Tenants",
+    "users": "Users",
+    "projects": "Projects"
+  }
+}
