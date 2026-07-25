@@ -11,6 +11,7 @@ vi.mock("next/link", () => ({
 
 describe("Intake replay token observability page", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     window.localStorage.clear();
     window.localStorage.setItem("opsflow_access_token", "token");
     window.localStorage.setItem("opsflow_tenant_id", "tenant-1");
@@ -1040,5 +1041,125 @@ describe("Intake replay token observability page", () => {
     const latestTrendUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history/trends"));
     expect(latestTrendUrl).toBeTruthy();
     expect(latestTrendUrl).toContain("granularity=hour");
+  });
+
+  it("applies an audit window preset when refreshing audit history", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+              sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Replay token operations")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_24h");
+    await user.click(screen.getByRole("button", { name: "Refresh audit" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
+    const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history/list"));
+
+    expect(latestAuditUrl).toBeTruthy();
+    expect(latestAuditUrl).toMatch(/start_created_at=\d{4}-\d{2}-\d{2}T/);
+    expect(latestAuditUrl).toMatch(/end_created_at=\d{4}-\d{2}-\d{2}T/);
   });
 });
