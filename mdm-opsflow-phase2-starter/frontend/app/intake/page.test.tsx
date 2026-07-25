@@ -1076,6 +1076,141 @@ describe("Intake replay token observability page", () => {
     expect(latestTrendUrl).not.toContain("end_created_at=");
   });
 
+  it("updates the active audit scope summary and resets it to defaults", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+              sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Active scope: Action: All actions | Window: All time | Actor: Any | Token: Any | Time: All time"
+        )
+      ).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Audit action"), "revoke_replay_history_export_token");
+    await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_24h");
+    fireEvent.change(screen.getByLabelText("Actor user ID"), { target: { value: "u-99" } });
+    fireEvent.change(screen.getByLabelText("Token ID"), { target: { value: "tok-xyz" } });
+    fireEvent.change(screen.getByLabelText("Start created at (UTC ISO)"), { target: { value: "2026-07-25T00:00:00Z" } });
+    fireEvent.change(screen.getByLabelText("End created at (UTC ISO)"), { target: { value: "2026-07-26T00:00:00Z" } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Active scope: Action: Revoke | Window: Custom | Actor: u-99 | Token: tok-xyz | Time: 2026-07-25T00:00:00Z -> 2026-07-26T00:00:00Z"
+        )
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Reset audit filters" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Active scope: Action: All actions | Window: All time | Actor: Any | Token: Any | Time: All time"
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
   it("applies trend granularity when refreshing audit history", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);

@@ -104,6 +104,10 @@ This runbook covers the replay export token observability endpoints and how to t
   - `Audit window preset`: `All time`
   - `Actor user ID`, `Token ID`, `Start created at`, `End created at`: cleared
 
+  The audit panel also shows a compact `Active scope` summary line with action,
+  window preset, actor, token, and time range so operators can confirm scope
+  before refresh or export.
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:
