@@ -29,6 +29,7 @@ from app.services.intake_processing import process_intake_upload
 
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
+MAX_INTEGRATION_EVENT_RETRIES = 3
 
 
 def _tenant_id_from_context(context: RequestContext) -> str:
@@ -526,15 +527,25 @@ def retry_intake_integration_event(
         raise HTTPException(status_code=400, detail="Only failed events can be retried")
 
     event_payload = json.loads(event.payload_json or "{}")
-    retry_count = int(event_payload.get("retry_count") or 0) + 1
-    event_payload["retry_count"] = retry_count
-    event_payload["last_retry_by"] = context.user.id
-    event_payload["last_retry_notes"] = payload.retry_notes.strip()
-    event_payload.pop("failure_reason", None)
+    next_retry_count = int(event_payload.get("retry_count") or 0) + 1
+    event_payload["retry_count"] = next_retry_count
 
-    event.status = "pending"
+    if next_retry_count > MAX_INTEGRATION_EVENT_RETRIES:
+        event.status = "dead_lettered"
+        event_payload["dead_letter_reason"] = (
+            f"Exceeded max retries ({MAX_INTEGRATION_EVENT_RETRIES})"
+        )
+        event_payload["dead_lettered_by"] = context.user.id
+        event_payload["dead_lettered_at"] = datetime.utcnow().isoformat()
+        event.processed_at = datetime.utcnow()
+    else:
+        event_payload["last_retry_by"] = context.user.id
+        event_payload["last_retry_notes"] = payload.retry_notes.strip()
+        event_payload.pop("failure_reason", None)
+        event.status = "pending"
+        event.processed_at = None
+
     event.payload_json = json.dumps(event_payload)
-    event.processed_at = None
 
     db.commit()
     db.refresh(event)
