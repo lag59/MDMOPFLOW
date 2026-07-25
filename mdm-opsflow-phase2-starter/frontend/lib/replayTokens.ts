@@ -73,6 +73,13 @@ export type ReplayTokenBulkRevokeActiveResponse = {
   revoked_at: string;
 };
 
+export type ReplayTokenAuditHistoryPage = {
+  items: ReplayTokenAuditEntry[];
+  has_more: boolean;
+  next_cursor_created_at: string | null;
+  next_cursor_id: string | null;
+};
+
 export class ReplayTokenApiError extends Error {
   status: number;
   detail: string;
@@ -150,14 +157,16 @@ export async function fetchReplayTokenStateAlerts(params: {
   return (await response.json()) as ReplayTokenStateAlerts;
 }
 
-export async function fetchReplayTokenAuditHistory(params?: {
+export async function fetchReplayTokenAuditHistoryPage(params?: {
   limit?: number;
   tokenId?: string;
   actorUserId?: string;
   action?: "issue_replay_history_export_token" | "consume_replay_history_export_token" | "revoke_replay_history_export_token";
   startCreatedAt?: string;
   endCreatedAt?: string;
-}): Promise<ReplayTokenAuditEntry[]> {
+  cursorCreatedAt?: string;
+  cursorId?: string;
+}): Promise<ReplayTokenAuditHistoryPage> {
   const query = new URLSearchParams({
     limit: String(params?.limit ?? 20),
   });
@@ -176,11 +185,39 @@ export async function fetchReplayTokenAuditHistory(params?: {
   if (params?.endCreatedAt) {
     query.set("end_created_at", params.endCreatedAt);
   }
+  if (params?.cursorCreatedAt) {
+    query.set("cursor_created_at", params.cursorCreatedAt);
+  }
+  if (params?.cursorId) {
+    query.set("cursor_id", params.cursorId);
+  }
   const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history?${query.toString()}`, {
     headers: buildAuthHeaders(),
   });
   await throwIfNotOk(response, "Unable to load replay token audit history");
-  return (await response.json()) as ReplayTokenAuditEntry[];
+
+  const items = (await response.json()) as ReplayTokenAuditEntry[];
+  const nextCursorCreatedAt = response.headers.get("x-next-cursor-created-at");
+  const nextCursorId = response.headers.get("x-next-cursor-id");
+
+  return {
+    items,
+    has_more: !!nextCursorCreatedAt,
+    next_cursor_created_at: nextCursorCreatedAt,
+    next_cursor_id: nextCursorId,
+  };
+}
+
+export async function fetchReplayTokenAuditHistory(params?: {
+  limit?: number;
+  tokenId?: string;
+  actorUserId?: string;
+  action?: "issue_replay_history_export_token" | "consume_replay_history_export_token" | "revoke_replay_history_export_token";
+  startCreatedAt?: string;
+  endCreatedAt?: string;
+}): Promise<ReplayTokenAuditEntry[]> {
+  const page = await fetchReplayTokenAuditHistoryPage(params);
+  return page.items;
 }
 
 export async function bulkRevokeActiveReplayTokens(params: {

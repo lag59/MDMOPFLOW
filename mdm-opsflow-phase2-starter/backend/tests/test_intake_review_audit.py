@@ -1213,6 +1213,84 @@ def test_replay_export_token_audit_history_supports_action_actor_and_cursor_filt
     assert future_window_response.json() == []
 
 
+def test_replay_export_token_audit_history_cursor_supports_created_at_id_tiebreaker(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-cursorid@example.com", "Pass12345!", "Replay Cursor ID Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Cursor ID Civil", "Replay Cursor ID Project")
+    tenant_id = onboarding["tenant_id"]
+
+    issue_one = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert issue_one.status_code == 200
+    issue_one_token_id = decode_token(issue_one.json()["token"])["jti"]
+
+    issue_two = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert issue_two.status_code == 200
+    issue_two_token_id = decode_token(issue_two.json()["token"])["jti"]
+
+    fixed_created_at = datetime.utcnow().replace(microsecond=0)
+    with TestingSessionLocal() as db:
+        logs = db.scalars(
+            select(AuditLog)
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.action == "issue_replay_history_export_token")
+            .where(AuditLog.resource_id.in_([issue_one_token_id, issue_two_token_id]))
+        ).all()
+        assert len(logs) == 2
+        for log in logs:
+            log.created_at = fixed_created_at
+            log.updated_at = fixed_created_at
+        db.commit()
+
+    page_one = client.get(
+        "/api/intake/events/replay-history/export-token-history",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "limit": 1,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert page_one.status_code == 200
+    page_one_items = page_one.json()
+    assert len(page_one_items) == 1
+    page_one_cursor_created_at = page_one.headers.get("x-next-cursor-created-at")
+    page_one_cursor_id = page_one.headers.get("x-next-cursor-id")
+    assert page_one_cursor_created_at is not None
+    assert page_one_cursor_id is not None
+
+    page_two = client.get(
+        "/api/intake/events/replay-history/export-token-history",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "limit": 1,
+            "cursor_created_at": page_one_cursor_created_at,
+            "cursor_id": page_one_cursor_id,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert page_two.status_code == 200
+    page_two_items = page_two.json()
+    assert len(page_two_items) == 1
+    assert page_two_items[0]["id"] != page_one_items[0]["id"]
+
+    cursor_id_without_timestamp = client.get(
+        "/api/intake/events/replay-history/export-token-history",
+        params={"tenant_id": tenant_id, "cursor_id": page_one_cursor_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert cursor_id_without_timestamp.status_code == 400
+    assert cursor_id_without_timestamp.json()["detail"] == "cursor_id requires cursor_created_at"
+
+
 def test_replay_export_token_states_show_effective_lifecycle_projection(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-state@example.com", "Pass12345!", "Replay Token State Owner")
     token = user["tokens"]["access_token"]

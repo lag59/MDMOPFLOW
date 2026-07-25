@@ -12,7 +12,7 @@ import {
   ReplayTokenState,
   ReplayTokenStateAlerts,
   bulkRevokeActiveReplayTokens,
-  fetchReplayTokenAuditHistory,
+  fetchReplayTokenAuditHistoryPage,
   fetchReplayTokenStateAlerts,
   fetchReplayTokenStateEnvelope,
 } from "@/lib/replayTokens";
@@ -42,6 +42,10 @@ export default function IntakePage() {
   const [revokeResult, setRevokeResult] = useState<string>("");
   const [liveRevokeReason, setLiveRevokeReason] = useState<string>("");
   const [auditEntries, setAuditEntries] = useState<ReplayTokenAuditEntry[]>([]);
+  const [auditHasMore, setAuditHasMore] = useState(false);
+  const [auditNextCursorCreatedAt, setAuditNextCursorCreatedAt] = useState<string | null>(null);
+  const [auditNextCursorId, setAuditNextCursorId] = useState<string | null>(null);
+  const [auditLoadingMore, setAuditLoadingMore] = useState(false);
   const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
   const [auditActorUserId, setAuditActorUserId] = useState<string>("");
   const [auditTokenId, setAuditTokenId] = useState<string>("");
@@ -94,7 +98,7 @@ export default function IntakePage() {
   async function refreshAudit(): Promise<void> {
     setAuditLoading(true);
     try {
-      const entries = await fetchReplayTokenAuditHistory({
+      const page = await fetchReplayTokenAuditHistoryPage({
         limit: 10,
         action: auditAction === "all" ? undefined : auditAction,
         actorUserId: auditActorUserId.trim() || undefined,
@@ -102,11 +106,45 @@ export default function IntakePage() {
         startCreatedAt: auditStartCreatedAt || undefined,
         endCreatedAt: auditEndCreatedAt || undefined,
       });
-      setAuditEntries(entries);
+      setAuditEntries(page.items);
+      setAuditHasMore(page.has_more);
+      setAuditNextCursorCreatedAt(page.next_cursor_created_at);
+      setAuditNextCursorId(page.next_cursor_id);
     } catch {
       setAuditEntries([]);
+      setAuditHasMore(false);
+      setAuditNextCursorCreatedAt(null);
+      setAuditNextCursorId(null);
     } finally {
       setAuditLoading(false);
+    }
+  }
+
+  async function loadMoreAudit(): Promise<void> {
+    if (!auditHasMore || !auditNextCursorCreatedAt || !auditNextCursorId) {
+      return;
+    }
+
+    setAuditLoadingMore(true);
+    try {
+      const page = await fetchReplayTokenAuditHistoryPage({
+        limit: 10,
+        action: auditAction === "all" ? undefined : auditAction,
+        actorUserId: auditActorUserId.trim() || undefined,
+        tokenId: auditTokenId.trim() || undefined,
+        startCreatedAt: auditStartCreatedAt || undefined,
+        endCreatedAt: auditEndCreatedAt || undefined,
+        cursorCreatedAt: auditNextCursorCreatedAt,
+        cursorId: auditNextCursorId,
+      });
+      setAuditEntries((prev) => [...prev, ...page.items]);
+      setAuditHasMore(page.has_more);
+      setAuditNextCursorCreatedAt(page.next_cursor_created_at);
+      setAuditNextCursorId(page.next_cursor_id);
+    } catch {
+      setError("Unable to load more replay token audit entries.");
+    } finally {
+      setAuditLoadingMore(false);
     }
   }
 
@@ -460,27 +498,41 @@ export default function IntakePage() {
         ) : auditEntries.length === 0 ? (
           <p>No replay token audit entries found.</p>
         ) : (
-          <div className="token-state-table-wrap">
-            <table className="token-state-table">
-              <thead>
-                <tr>
-                  <th>Action</th>
-                  <th>Token</th>
-                  <th>Actor</th>
-                  <th>Created at</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.action}</td>
-                    <td className="mono-cell">{entry.resource_id}</td>
-                    <td className="mono-cell">{entry.actor_user_id}</td>
-                    <td>{new Date(entry.created_at).toLocaleString()}</td>
+          <div>
+            <div className="token-state-table-wrap">
+              <table className="token-state-table">
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Token</th>
+                    <th>Actor</th>
+                    <th>Created at</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {auditEntries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.action}</td>
+                      <td className="mono-cell">{entry.resource_id}</td>
+                      <td className="mono-cell">{entry.actor_user_id}</td>
+                      <td>{new Date(entry.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="replay-pagination-row">
+              <div className="metric-note">
+                Audit cursor: {auditNextCursorCreatedAt || "none"}
+                {auditNextCursorId ? ` / ${auditNextCursorId}` : ""}
+              </div>
+              <button
+                onClick={() => void loadMoreAudit()}
+                disabled={!auditHasMore || auditLoading || auditLoadingMore}
+              >
+                {auditLoadingMore ? "Loading more..." : auditHasMore ? "Load more audit" : "No more audit rows"}
+              </button>
+            </div>
           </div>
         )}
       </div>

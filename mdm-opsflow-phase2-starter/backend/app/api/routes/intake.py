@@ -794,6 +794,7 @@ def _build_replay_export_token_audit_query(
     start_created_at: datetime | None,
     end_created_at: datetime | None,
     cursor_created_at: datetime | None,
+    cursor_id: UUID | None,
     limit: int,
 ):
     _validate_replay_audit_history_date_range(
@@ -801,11 +802,17 @@ def _build_replay_export_token_audit_query(
         end_created_at=end_created_at,
     )
 
+    if cursor_id is not None and cursor_created_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="cursor_id requires cursor_created_at",
+        )
+
     query = (
         select(AuditLog)
         .where(AuditLog.resource_type == "replay_history_export_token")
         .where(AuditLog.action.in_(REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS))
-        .order_by(AuditLog.created_at.desc())
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         .limit(limit)
     )
 
@@ -832,7 +839,19 @@ def _build_replay_export_token_audit_query(
         query = query.where(AuditLog.created_at <= end_created_at)
 
     if cursor_created_at:
-        query = query.where(AuditLog.created_at < cursor_created_at)
+        if cursor_id:
+            cursor_id_text = str(cursor_id)
+            query = query.where(
+                or_(
+                    AuditLog.created_at < cursor_created_at,
+                    and_(
+                        AuditLog.created_at == cursor_created_at,
+                        AuditLog.id < cursor_id_text,
+                    ),
+                )
+            )
+        else:
+            query = query.where(AuditLog.created_at < cursor_created_at)
 
     return query
 
@@ -1090,6 +1109,7 @@ def list_replay_export_token_audit_history(
     start_created_at: datetime | None = Query(default=None),
     end_created_at: datetime | None = Query(default=None),
     cursor_created_at: datetime | None = Query(default=None),
+    cursor_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
@@ -1103,6 +1123,7 @@ def list_replay_export_token_audit_history(
         start_created_at=start_created_at,
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
+        cursor_id=cursor_id,
         limit=limit + 1,
     )
     entries = db.scalars(query).all()
@@ -1110,6 +1131,7 @@ def list_replay_export_token_audit_history(
     if has_more:
         entries = entries[:limit]
         response.headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
+        response.headers["X-Next-Cursor-Id"] = entries[-1].id
 
     return entries
 
