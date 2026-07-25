@@ -10,6 +10,7 @@ from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
 from app.models import IntakeItem, IntakeStatus
 from app.schemas import IntakeItemResponse
+from app.services.intake_processing import process_intake_upload
 
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
@@ -80,27 +81,38 @@ async def upload_intake_files(
 ):
     tenant_id = _tenant_id_from_context(context)
     payload = await file.read()
+    original_filename = file.filename or "upload.bin"
+
+    processed = process_intake_upload(
+        tenant_id=tenant_id,
+        original_filename=original_filename,
+        mime_type=file.content_type or "application/octet-stream",
+        payload=payload,
+    )
 
     item = IntakeItem(
         tenant_id=tenant_id,
         project_id=None,
-        filename=file.filename or "upload.bin",
-        original_filename=file.filename or "upload.bin",
-        file_path="",
-        mime_type=file.content_type or "application/octet-stream",
-        file_size_bytes=len(payload),
-        content_hash="",
-        document_type="general",
+        filename=processed.filename,
+        original_filename=processed.original_filename,
+        file_path=processed.file_path,
+        mime_type=processed.mime_type,
+        file_size_bytes=processed.file_size_bytes,
+        content_hash=processed.content_hash,
+        document_type=processed.document_type,
         source="manual",
-        status=IntakeStatus.UPLOADED,
-        extracted_summary="",
-        extracted_text="",
+        status=processed.status,
+        processing_stage=processed.processing_stage,
+        extracted_summary=processed.extracted_summary,
+        extracted_text=processed.extracted_text,
         ai_summary="",
-        extracted_entities="{}",
-        ocr_status="pending",
-        ai_status="pending",
-        needs_review=False,
-        review_reason="",
+        extracted_entities=processed.extracted_entities,
+        ocr_status=processed.ocr_status,
+        ai_status=processed.ai_status,
+        needs_review=processed.needs_review,
+        review_reason=processed.review_reason,
+        classification_confidence=processed.classification_confidence,
+        match_confidence=processed.match_confidence,
         conflict_notes="",
         created_by=context.user.id,
     )
