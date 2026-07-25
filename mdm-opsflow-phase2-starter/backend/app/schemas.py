@@ -553,6 +553,16 @@ class IntakeReplayExportTokenResponse(BaseModel):
     expires_at: datetime
 
 
+class IntakeReplayExportTokenRevokeRequest(BaseModel):
+    token: str
+
+
+class IntakeReplayExportTokenRevokeResponse(BaseModel):
+    token_id: str
+    revoked: bool
+    revoked_at: datetime
+
+
 class TicketBase(BaseModel):
     intake_item_id: str | None = None
     project_id: str | None = None

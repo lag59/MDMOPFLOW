@@ -27,6 +27,8 @@ from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
+    IntakeReplayExportTokenRevokeRequest,
+    IntakeReplayExportTokenRevokeResponse,
     IntakeReplayExportTokenResponse,
     IntakeReplayAuditEntryResponse,
     IntakeIntegrationEventRetryRequest,
@@ -923,6 +925,16 @@ def download_replay_dead_letter_audit_history_export(
     if not isinstance(token_id, str) or not isinstance(actor_user_id, str) or not isinstance(tenant_id, str):
         raise HTTPException(status_code=401, detail="Invalid export token")
 
+    revoked = db.scalar(
+        select(AuditLog.id)
+        .where(AuditLog.action == "revoke_replay_history_export_token")
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id == token_id)
+        .limit(1)
+    )
+    if revoked:
+        raise HTTPException(status_code=410, detail="Export token has been revoked")
+
     prior_use = db.scalar(
         select(AuditLog.id)
         .where(AuditLog.action == "consume_replay_history_export_token")
@@ -997,3 +1009,83 @@ def download_replay_dead_letter_audit_history_export(
     db.commit()
 
     return response
+
+
+@router.post(
+    "/events/replay-history/export-token/revoke",
+    response_model=IntakeReplayExportTokenRevokeResponse,
+    operation_id="intake_events_replay_history_export_token_revoke",
+    summary="Revoke signed replay-history export token",
+)
+def revoke_replay_dead_letter_export_token(
+    payload: IntakeReplayExportTokenRevokeRequest,
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    try:
+        token_payload = decode_token(payload.token)
+    except TokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid export token") from exc
+
+    if token_payload.get("type") != "replay_history_export_download":
+        raise HTTPException(status_code=401, detail="Invalid export token")
+
+    token_id = token_payload.get("jti")
+    actor_user_id = token_payload.get("sub")
+    token_tenant_id = token_payload.get("tenant_id")
+
+    if not isinstance(token_id, str) or not isinstance(actor_user_id, str) or not isinstance(token_tenant_id, str):
+        raise HTTPException(status_code=401, detail="Invalid export token")
+
+    if "*" in context.permissions:
+        if context.tenant_id and context.tenant_id != token_tenant_id:
+            raise HTTPException(status_code=403, detail="Cannot revoke export token for another tenant")
+    else:
+        assert context.membership is not None
+        if context.membership.tenant_id != token_tenant_id:
+            raise HTTPException(status_code=403, detail="Cannot revoke export token for another tenant")
+
+    if context.user.id != actor_user_id and "*" not in context.permissions:
+        raise HTTPException(status_code=403, detail="Cannot revoke another user's export token")
+
+    consumed = db.scalar(
+        select(AuditLog.id)
+        .where(AuditLog.action == "consume_replay_history_export_token")
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id == token_id)
+        .limit(1)
+    )
+    if consumed:
+        raise HTTPException(status_code=409, detail="Export token has already been consumed")
+
+    already_revoked = db.scalar(
+        select(AuditLog.id)
+        .where(AuditLog.action == "revoke_replay_history_export_token")
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id == token_id)
+        .limit(1)
+    )
+    if already_revoked:
+        raise HTTPException(status_code=409, detail="Export token has already been revoked")
+
+    revoked_at = datetime.now(timezone.utc)
+    db.add(
+        AuditLog(
+            tenant_id=token_tenant_id,
+            actor_user_id=context.user.id,
+            action="revoke_replay_history_export_token",
+            resource_type="replay_history_export_token",
+            resource_id=token_id,
+            details="Revoked signed replay-history export token before consumption.",
+            created_by=context.user.id,
+            created_at=revoked_at,
+            updated_at=revoked_at,
+        )
+    )
+    db.commit()
+
+    return IntakeReplayExportTokenRevokeResponse(
+        token_id=token_id,
+        revoked=True,
+        revoked_at=revoked_at,
+    )
