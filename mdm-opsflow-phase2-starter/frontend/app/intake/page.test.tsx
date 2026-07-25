@@ -117,6 +117,8 @@ describe("Intake replay token observability page", () => {
               issued_count: 1,
               consumed_count: 0,
               revoked_count: 0,
+              consume_rate_percent: 0,
+              revoke_rate_percent: 0,
               unique_actor_count: 1,
               latest_created_at: "2026-07-25T18:00:00Z",
             }),
@@ -174,6 +176,8 @@ describe("Intake replay token observability page", () => {
       expect(screen.getByText("issue_replay_history_export_token")).toBeInTheDocument();
       expect(screen.getByText("Audit total")).toBeInTheDocument();
       expect(screen.getByText("1/0/0")).toBeInTheDocument();
+      expect(screen.getByText("Consume / revoke rate")).toBeInTheDocument();
+      expect(screen.getByText("0.0% / 0.0%")).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "Load more" }));
@@ -269,6 +273,8 @@ describe("Intake replay token observability page", () => {
               issued_count: 1,
               consumed_count: 0,
               revoked_count: 1,
+              consume_rate_percent: 0,
+              revoke_rate_percent: 100,
               unique_actor_count: 2,
               latest_created_at: "2026-07-25T18:00:00Z",
             }),
@@ -404,6 +410,8 @@ describe("Intake replay token observability page", () => {
               issued_count: 0,
               consumed_count: 0,
               revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
               unique_actor_count: 0,
               latest_created_at: null,
             }),
@@ -519,6 +527,8 @@ describe("Intake replay token observability page", () => {
               issued_count: 0,
               consumed_count: 0,
               revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
               unique_actor_count: 0,
               latest_created_at: null,
             }),
@@ -656,6 +666,8 @@ describe("Intake replay token observability page", () => {
               issued_count: 0,
               consumed_count: 0,
               revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
               unique_actor_count: 0,
               latest_created_at: null,
             }),

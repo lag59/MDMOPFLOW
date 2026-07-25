@@ -31,6 +31,8 @@ This runbook covers the replay export token observability endpoints and how to t
     - `issued_count`
     - `consumed_count`
     - `revoked_count`
+    - `consume_rate_percent`
+    - `revoke_rate_percent`
     - `unique_actor_count`
     - `latest_created_at`
 
