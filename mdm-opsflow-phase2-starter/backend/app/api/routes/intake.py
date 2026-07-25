@@ -5,7 +5,7 @@ from datetime import datetime
 from io import StringIO
 import json
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -619,6 +619,7 @@ def _build_replay_audit_history_query(
     event_id: str | None,
     start_created_at: datetime | None,
     end_created_at: datetime | None,
+    cursor_created_at: datetime | None,
     limit: int,
 ):
     if start_created_at and end_created_at and start_created_at > end_created_at:
@@ -648,6 +649,9 @@ def _build_replay_audit_history_query(
     if end_created_at:
         query = query.where(AuditLog.created_at <= end_created_at)
 
+    if cursor_created_at:
+        query = query.where(AuditLog.created_at < cursor_created_at)
+
     return query
 
 
@@ -658,10 +662,12 @@ def _build_replay_audit_history_query(
     summary="List dead-letter replay audit history",
 )
 def list_replay_dead_letter_audit_history(
+    response: Response,
     tenant_id: str | None = Query(default=None),
     event_id: str | None = Query(default=None),
     start_created_at: datetime | None = Query(default=None),
     end_created_at: datetime | None = Query(default=None),
+    cursor_created_at: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
@@ -672,10 +678,16 @@ def list_replay_dead_letter_audit_history(
         event_id=event_id,
         start_created_at=start_created_at,
         end_created_at=end_created_at,
-        limit=limit,
+        cursor_created_at=cursor_created_at,
+        limit=limit + 1,
     )
+    entries = db.scalars(query).all()
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
+        response.headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
 
-    return db.scalars(query).all()
+    return entries
 
 
 @router.get(
@@ -688,6 +700,7 @@ def export_replay_dead_letter_audit_history(
     event_id: str | None = Query(default=None),
     start_created_at: datetime | None = Query(default=None),
     end_created_at: datetime | None = Query(default=None),
+    cursor_created_at: datetime | None = Query(default=None),
     output: str = Query(default="csv", pattern="^(csv|json)$"),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
@@ -699,17 +712,25 @@ def export_replay_dead_letter_audit_history(
         event_id=event_id,
         start_created_at=start_created_at,
         end_created_at=end_created_at,
-        limit=limit,
+        cursor_created_at=cursor_created_at,
+        limit=limit + 1,
     )
     entries = db.scalars(query).all()
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
 
     payload = [
         IntakeReplayAuditEntryResponse.model_validate(entry).model_dump(mode="json")
         for entry in entries
     ]
 
+    headers: dict[str, str] = {}
+    if has_more and entries:
+        headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
+
     if output == "json":
-        return JSONResponse(payload)
+        return JSONResponse(payload, headers=headers)
 
     fieldnames = [
         "id",
@@ -728,4 +749,4 @@ def export_replay_dead_letter_audit_history(
     writer.writeheader()
     writer.writerows(payload)
 
-    return PlainTextResponse(buffer.getvalue(), media_type="text/csv")
+    return PlainTextResponse(buffer.getvalue(), media_type="text/csv", headers=headers)
