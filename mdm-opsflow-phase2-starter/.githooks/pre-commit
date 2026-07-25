@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [ -x "./.venv311/Scripts/python.exe" ]; then
+  python="./.venv311/Scripts/python.exe"
+elif [ -x "./.venv/Scripts/python.exe" ]; then
+  python="./.venv/Scripts/python.exe"
+else
+  python="python"
+fi
+
+if [ "$python" = "python" ]; then
+  python "./backend/scripts/run_fast_guardrails.py"
+else
+  "$python" "./backend/scripts/run_fast_guardrails.py"
+fi

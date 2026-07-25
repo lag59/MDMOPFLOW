@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import streamlit as st
+import streamlit as st  # pyright: ignore[reportMissingImports]
+
+
+# Keep Streamlit ergonomic at runtime while avoiding Unknown member diagnostics.
+st = cast(Any, st)
 
 
 st.set_page_config(
