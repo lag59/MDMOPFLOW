@@ -16,6 +16,7 @@ Generated from `backend/app/main.py`.
 | POST | `/api/auth/register` | `auth_register` |
 | GET | `/api/intake/events` | `intake_events_list` |
 | POST | `/api/intake/events/{event_id}/mark-processed` | `intake_events_mark_processed` |
+| POST | `/api/intake/events/{event_id}/retry` | `intake_events_retry` |
 | GET | `/api/intake/items` | `intake_items_list` |
 | GET | `/api/intake/items/{item_id}` | `intake_items_get` |
 | POST | `/api/intake/items/{item_id}/approve` | `intake_items_approve` |

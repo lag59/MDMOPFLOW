@@ -462,6 +462,11 @@ class IntakeDuplicateResolutionRequest(BaseModel):
 class IntakeIntegrationEventProcessRequest(BaseModel):
     status: str = Field(default="processed", pattern="^(processed|failed)$")
     processing_notes: str = ""
+    failure_reason: str = ""
+
+
+class IntakeIntegrationEventRetryRequest(BaseModel):
+    retry_notes: str = ""
 
 
 class IntakeItemResponse(IntakeItemBase):

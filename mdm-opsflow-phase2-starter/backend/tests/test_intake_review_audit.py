@@ -255,3 +255,67 @@ def test_intake_integration_event_queue_can_be_processed(client: TestClient) -> 
     assert processed_list_response.status_code == 200
     processed_list = processed_list_response.json()
     assert any(event["id"] == pending_event["id"] for event in processed_list)
+
+
+def test_failed_event_requires_reason_and_can_be_retried(client: TestClient) -> None:
+    user = register_user(client, "event-retry@example.com", "Pass12345!", "Event Retry Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Retry Civil", "Retry Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-retry.txt", b"Ticket: TCK-7001\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    pending_events = pending_response.json()
+    target_event = [event for event in pending_events if event["resource_id"] == item["id"]][0]
+
+    fail_without_reason = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={"status": "failed", "processing_notes": "Bridge returned 500", "failure_reason": ""},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert fail_without_reason.status_code == 400
+    assert fail_without_reason.json()["detail"] == "failure_reason is required when status=failed"
+
+    fail_with_reason = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Bridge returned 500",
+            "failure_reason": "Remote accounting API timeout",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert fail_with_reason.status_code == 200
+    failed_event = fail_with_reason.json()
+    assert failed_event["status"] == "failed"
+    assert failed_event["processed_at"] is not None
+    failed_payload = json.loads(failed_event["payload_json"])
+    assert failed_payload["failure_reason"] == "Remote accounting API timeout"
+
+    retry_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry after API health recovered"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert retry_response.status_code == 200
+    retried_event = retry_response.json()
+
+    assert retried_event["status"] == "pending"
+    assert retried_event["processed_at"] is None
+    retried_payload = json.loads(retried_event["payload_json"])
+    assert retried_payload["retry_count"] == 1
+    assert retried_payload["last_retry_by"] == user["user_id"]
+    assert retried_payload["last_retry_notes"] == "Retry after API health recovered"
+    assert "failure_reason" not in retried_payload

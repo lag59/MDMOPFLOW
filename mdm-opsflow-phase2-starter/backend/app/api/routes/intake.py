@@ -21,6 +21,7 @@ from app.models import (
 from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
+    IntakeIntegrationEventRetryRequest,
     IntakeIntegrationEventResponse,
     IntakeItemResponse,
 )
@@ -491,10 +492,49 @@ def mark_intake_integration_event_processed(
     event_payload = json.loads(event.payload_json or "{}")
     event_payload["processed_by"] = context.user.id
     event_payload["processing_notes"] = payload.processing_notes.strip()
+    if payload.status == "failed":
+        failure_reason = payload.failure_reason.strip()
+        if not failure_reason:
+            raise HTTPException(status_code=400, detail="failure_reason is required when status=failed")
+        event_payload["failure_reason"] = failure_reason
+    else:
+        event_payload.pop("failure_reason", None)
 
     event.status = payload.status
     event.payload_json = json.dumps(event_payload)
     event.processed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post(
+    "/events/{event_id}/retry",
+    response_model=IntakeIntegrationEventResponse,
+    operation_id="intake_events_retry",
+    summary="Retry failed intake integration event",
+)
+def retry_intake_integration_event(
+    event_id: str,
+    payload: IntakeIntegrationEventRetryRequest,
+    context: RequestContext = Depends(require_permissions("intake_review")),
+    db: Session = Depends(get_db),
+):
+    event = _ensure_event_access(db.get(IntegrationEvent, event_id), context)
+    if event.status != "failed":
+        raise HTTPException(status_code=400, detail="Only failed events can be retried")
+
+    event_payload = json.loads(event.payload_json or "{}")
+    retry_count = int(event_payload.get("retry_count") or 0) + 1
+    event_payload["retry_count"] = retry_count
+    event_payload["last_retry_by"] = context.user.id
+    event_payload["last_retry_notes"] = payload.retry_notes.strip()
+    event_payload.pop("failure_reason", None)
+
+    event.status = "pending"
+    event.payload_json = json.dumps(event_payload)
+    event.processed_at = None
 
     db.commit()
     db.refresh(event)
