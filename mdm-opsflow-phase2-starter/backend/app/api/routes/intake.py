@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
@@ -8,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
-from app.models import IntakeItem, IntakeStatus
+from app.models import IngestionBatch, IngestionBatchStatus, IntakeItem, IntakeStatus, Ticket
 from app.schemas import IntakeItemResponse
+from app.services.intake_processing import process_intake_upload
 
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
@@ -80,32 +82,104 @@ async def upload_intake_files(
 ):
     tenant_id = _tenant_id_from_context(context)
     payload = await file.read()
+    original_filename = file.filename or "upload.bin"
+    created_at = datetime.utcnow()
+
+    batch = IngestionBatch(
+        tenant_id=tenant_id,
+        source_channel="upload",
+        status=IngestionBatchStatus.PROCESSING,
+        total_documents=1,
+        created_documents=0,
+        matched_documents=0,
+        needs_review_documents=0,
+        duplicate_documents=0,
+        blocked_documents=0,
+        error_documents=0,
+        summary_json="{}",
+        created_by=context.user.id,
+        started_at=created_at,
+    )
+    db.add(batch)
+    db.flush()
+
+    processed = process_intake_upload(
+        tenant_id=tenant_id,
+        original_filename=original_filename,
+        mime_type=file.content_type or "application/octet-stream",
+        payload=payload,
+    )
 
     item = IntakeItem(
         tenant_id=tenant_id,
+        batch_id=batch.id,
         project_id=None,
-        filename=file.filename or "upload.bin",
-        original_filename=file.filename or "upload.bin",
-        file_path="",
-        mime_type=file.content_type or "application/octet-stream",
-        file_size_bytes=len(payload),
-        content_hash="",
-        document_type="general",
+        filename=processed.filename,
+        original_filename=processed.original_filename,
+        file_path=processed.file_path,
+        mime_type=processed.mime_type,
+        file_size_bytes=processed.file_size_bytes,
+        content_hash=processed.content_hash,
+        document_type=processed.document_type,
         source="manual",
-        status=IntakeStatus.UPLOADED,
-        extracted_summary="",
-        extracted_text="",
+        status=processed.status,
+        processing_stage=processed.processing_stage,
+        extracted_summary=processed.extracted_summary,
+        extracted_text=processed.extracted_text,
         ai_summary="",
-        extracted_entities="{}",
-        ocr_status="pending",
-        ai_status="pending",
-        needs_review=False,
-        review_reason="",
+        extracted_entities=processed.extracted_entities,
+        ocr_status=processed.ocr_status,
+        ai_status=processed.ai_status,
+        needs_review=processed.needs_review,
+        review_reason=processed.review_reason,
+        classification_confidence=processed.classification_confidence,
+        match_confidence=processed.match_confidence,
         conflict_notes="",
         created_by=context.user.id,
     )
 
     db.add(item)
+    db.flush()
+
+    created_ticket_ids: list[str] = []
+    extracted_entities = json.loads(processed.extracted_entities or "{}")
+    ticket_number = (extracted_entities.get("ticket_number") or "").strip()
+    if ticket_number:
+        ticket = Ticket(
+            tenant_id=tenant_id,
+            intake_item_id=item.id,
+            project_id=None,
+            ticket_number=ticket_number,
+            truck=(extracted_entities.get("truck") or "").strip(),
+            driver=(extracted_entities.get("driver") or "").strip(),
+            material=(extracted_entities.get("material") or "").strip(),
+            origin="",
+            destination="",
+            status="draft",
+            notes="Auto-created from intake extraction baseline.",
+            created_by=context.user.id,
+        )
+        db.add(ticket)
+        db.flush()
+        created_ticket_ids.append(ticket.id)
+
+    batch.created_documents = 1
+    batch.matched_documents = len(created_ticket_ids)
+    batch.needs_review_documents = 1 if processed.needs_review else 0
+    batch.status = (
+        IngestionBatchStatus.COMPLETED_WITH_REVIEW
+        if processed.needs_review
+        else IngestionBatchStatus.COMPLETED
+    )
+    batch.completed_at = datetime.utcnow()
+    batch.summary_json = json.dumps(
+        {
+            "created_item_ids": [item.id],
+            "created_ticket_ids": created_ticket_ids,
+            "needs_review": processed.needs_review,
+        }
+    )
+
     db.commit()
     db.refresh(item)
     return item
