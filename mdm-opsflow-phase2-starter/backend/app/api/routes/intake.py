@@ -956,6 +956,7 @@ def list_replay_export_token_states(
         start_created_at=start_issued_at,
         end_created_at=end_issued_at,
     )
+    response.headers["X-Window-Effective-Timezone"] = "UTC"
 
     issue_query = (
         select(AuditLog)

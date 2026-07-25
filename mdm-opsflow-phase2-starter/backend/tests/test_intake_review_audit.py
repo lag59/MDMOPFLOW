@@ -1310,6 +1310,7 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert states_response.status_code == 200
+    assert states_response.headers["x-window-effective-timezone"] == "UTC"
     states_payload = states_response.json()
 
     by_token_id = {entry["token_id"]: entry for entry in states_payload}
@@ -1334,6 +1335,7 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert token_filter_response.status_code == 200
+    assert token_filter_response.headers["x-window-effective-timezone"] == "UTC"
     token_filter_payload = token_filter_response.json()
     assert len(token_filter_payload) == 1
     assert token_filter_payload[0]["token_id"] == consumed_token_id
@@ -1344,6 +1346,7 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert paged_response.status_code == 200
+    assert paged_response.headers["x-window-effective-timezone"] == "UTC"
     paged_payload = paged_response.json()
     assert len(paged_payload) == 2
     next_cursor = paged_response.headers.get("x-next-cursor-issued-at")
@@ -1355,6 +1358,7 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert paged_next_response.status_code == 200
+    assert paged_next_response.headers["x-window-effective-timezone"] == "UTC"
     paged_next_payload = paged_next_response.json()
     assert len(paged_next_payload) >= 1
     assert paged_next_payload[0]["token_id"] != paged_payload[0]["token_id"]
@@ -1620,6 +1624,7 @@ def test_replay_export_token_state_summary_matches_list_for_actor_and_date_filte
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert broad_list_response.status_code == 200
+    assert broad_list_response.headers["x-window-effective-timezone"] == "UTC"
     broad_states = broad_list_response.json()
     assert len(broad_states) >= 3
 
@@ -1662,6 +1667,7 @@ def test_replay_export_token_state_summary_matches_list_for_actor_and_date_filte
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert narrow_list_response.status_code == 200
+    assert narrow_list_response.headers["x-window-effective-timezone"] == "UTC"
     narrow_states = narrow_list_response.json()
     assert len(narrow_states) >= 1
 
