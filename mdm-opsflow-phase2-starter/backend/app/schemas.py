@@ -454,6 +454,11 @@ class IntakeItemUpdate(BaseModel):
     conflict_notes: str | None = None
 
 
+class IntakeDuplicateResolutionRequest(BaseModel):
+    duplicate_of_item_id: str | None = None
+    conflict_notes: str = ""
+
+
 class IntakeItemResponse(IntakeItemBase):
     model_config = ConfigDict(from_attributes=True)
 
