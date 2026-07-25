@@ -345,11 +345,98 @@ describe("Intake replay token observability page", () => {
       expect(screen.getByText("tok-a, tok-b")).toBeInTheDocument();
     });
 
+    fireEvent.change(screen.getByLabelText("Live revoke reason"), {
+      target: { value: "Security incident token sweep" },
+    });
+
     await user.click(screen.getByRole("button", { name: "Confirm live revoke" }));
     await waitFor(() => {
       expect(screen.getByText("Permission denied: Live bulk token revocation requires intake_review permission")).toBeInTheDocument();
     });
 
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("applies audit filters when refreshing audit history", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Replay token operations")).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Audit action"), "revoke_replay_history_export_token");
+    fireEvent.change(screen.getByLabelText("Actor user ID"), { target: { value: "u-99" } });
+    fireEvent.change(screen.getByLabelText("Token ID"), { target: { value: "tok-xyz" } });
+    fireEvent.change(screen.getByLabelText("Start created at (UTC ISO)"), { target: { value: "2026-07-25T00:00:00Z" } });
+    fireEvent.change(screen.getByLabelText("End created at (UTC ISO)"), { target: { value: "2026-07-26T00:00:00Z" } });
+
+    await user.click(screen.getByRole("button", { name: "Refresh audit" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
+    const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history"));
+
+    expect(latestAuditUrl).toBeTruthy();
+    expect(latestAuditUrl).toContain("action=revoke_replay_history_export_token");
+    expect(latestAuditUrl).toContain("actor_user_id=u-99");
+    expect(latestAuditUrl).toContain("token_id=tok-xyz");
+    expect(latestAuditUrl).toContain("start_created_at=2026-07-25T00%3A00%3A00Z");
+    expect(latestAuditUrl).toContain("end_created_at=2026-07-26T00%3A00%3A00Z");
   });
 });

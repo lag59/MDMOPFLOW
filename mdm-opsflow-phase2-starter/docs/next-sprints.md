@@ -11,5 +11,8 @@ AI Intake Hub, file storage, ticket extraction, review queue, duplicate detectio
 Replay token observability and governance references:
 - docs/replay-token-observability-runbook.md
 
+Latest delivered increment:
+- Intake operator UI now enforces a required reason for live stale-token bulk revoke and supports audit-trail filtering by action, actor, token, and UTC time window.
+
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.

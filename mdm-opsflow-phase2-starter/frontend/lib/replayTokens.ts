@@ -150,10 +150,32 @@ export async function fetchReplayTokenStateAlerts(params: {
   return (await response.json()) as ReplayTokenStateAlerts;
 }
 
-export async function fetchReplayTokenAuditHistory(limit = 20): Promise<ReplayTokenAuditEntry[]> {
+export async function fetchReplayTokenAuditHistory(params?: {
+  limit?: number;
+  tokenId?: string;
+  actorUserId?: string;
+  action?: "issue_replay_history_export_token" | "consume_replay_history_export_token" | "revoke_replay_history_export_token";
+  startCreatedAt?: string;
+  endCreatedAt?: string;
+}): Promise<ReplayTokenAuditEntry[]> {
   const query = new URLSearchParams({
-    limit: String(limit),
+    limit: String(params?.limit ?? 20),
   });
+  if (params?.tokenId) {
+    query.set("token_id", params.tokenId);
+  }
+  if (params?.actorUserId) {
+    query.set("actor_user_id", params.actorUserId);
+  }
+  if (params?.action) {
+    query.set("action", params.action);
+  }
+  if (params?.startCreatedAt) {
+    query.set("start_created_at", params.startCreatedAt);
+  }
+  if (params?.endCreatedAt) {
+    query.set("end_created_at", params.endCreatedAt);
+  }
   const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history?${query.toString()}`, {
     headers: buildAuthHeaders(),
   });

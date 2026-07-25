@@ -18,6 +18,11 @@ import {
 } from "@/lib/replayTokens";
 
 type SortValue = "-issued_at" | "+issued_at";
+type ReplayTokenAuditAction =
+  | "all"
+  | "issue_replay_history_export_token"
+  | "consume_replay_history_export_token"
+  | "revoke_replay_history_export_token";
 
 export default function IntakePage() {
   const [items, setItems] = useState<ReplayTokenState[]>([]);
@@ -35,7 +40,13 @@ export default function IntakePage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [revokePreview, setRevokePreview] = useState<ReplayTokenBulkRevokeActiveResponse | null>(null);
   const [revokeResult, setRevokeResult] = useState<string>("");
+  const [liveRevokeReason, setLiveRevokeReason] = useState<string>("");
   const [auditEntries, setAuditEntries] = useState<ReplayTokenAuditEntry[]>([]);
+  const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
+  const [auditActorUserId, setAuditActorUserId] = useState<string>("");
+  const [auditTokenId, setAuditTokenId] = useState<string>("");
+  const [auditStartCreatedAt, setAuditStartCreatedAt] = useState<string>("");
+  const [auditEndCreatedAt, setAuditEndCreatedAt] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -83,7 +94,14 @@ export default function IntakePage() {
   async function refreshAudit(): Promise<void> {
     setAuditLoading(true);
     try {
-      const entries = await fetchReplayTokenAuditHistory(10);
+      const entries = await fetchReplayTokenAuditHistory({
+        limit: 10,
+        action: auditAction === "all" ? undefined : auditAction,
+        actorUserId: auditActorUserId.trim() || undefined,
+        tokenId: auditTokenId.trim() || undefined,
+        startCreatedAt: auditStartCreatedAt || undefined,
+        endCreatedAt: auditEndCreatedAt || undefined,
+      });
       setAuditEntries(entries);
     } catch {
       setAuditEntries([]);
@@ -157,7 +175,7 @@ export default function IntakePage() {
       const response = await bulkRevokeActiveReplayTokens({
         limit: 500,
         issuedBefore: getIssuedBeforeCutoffIso(),
-        reason: "UI stale token cleanup",
+        reason: liveRevokeReason.trim(),
         dryRun: false,
       });
       setRevokePreview(response);
@@ -281,11 +299,23 @@ export default function IntakePage() {
               revokeBusy ||
               loading ||
               !revokePreview ||
-              revokePreview.candidate_count < 1
+              revokePreview.candidate_count < 1 ||
+              !liveRevokeReason.trim()
             }
           >
             Confirm live revoke
           </button>
+        </div>
+        <div className="form-grid">
+          <label>
+            Live revoke reason
+            <input
+              type="text"
+              value={liveRevokeReason}
+              onChange={(e) => setLiveRevokeReason(e.target.value)}
+              placeholder="Required for live revoke (for example: security incident token sweep)"
+            />
+          </label>
         </div>
         {revokePreview ? (
           <div className="list">
@@ -377,6 +407,53 @@ export default function IntakePage() {
           <button onClick={() => void refreshAudit()} disabled={auditLoading}>
             {auditLoading ? "Refreshing..." : "Refresh audit"}
           </button>
+        </div>
+        <div className="form-grid replay-controls-grid">
+          <label>
+            Audit action
+            <select value={auditAction} onChange={(e) => setAuditAction(e.target.value as ReplayTokenAuditAction)}>
+              <option value="all">All actions</option>
+              <option value="issue_replay_history_export_token">Issue</option>
+              <option value="consume_replay_history_export_token">Consume</option>
+              <option value="revoke_replay_history_export_token">Revoke</option>
+            </select>
+          </label>
+          <label>
+            Actor user ID
+            <input
+              type="text"
+              value={auditActorUserId}
+              onChange={(e) => setAuditActorUserId(e.target.value)}
+              placeholder="Filter by actor"
+            />
+          </label>
+          <label>
+            Token ID
+            <input
+              type="text"
+              value={auditTokenId}
+              onChange={(e) => setAuditTokenId(e.target.value)}
+              placeholder="Filter by token"
+            />
+          </label>
+          <label>
+            Start created at (UTC ISO)
+            <input
+              type="text"
+              value={auditStartCreatedAt}
+              onChange={(e) => setAuditStartCreatedAt(e.target.value)}
+              placeholder="2026-07-25T00:00:00Z"
+            />
+          </label>
+          <label>
+            End created at (UTC ISO)
+            <input
+              type="text"
+              value={auditEndCreatedAt}
+              onChange={(e) => setAuditEndCreatedAt(e.target.value)}
+              placeholder="2026-07-26T00:00:00Z"
+            />
+          </label>
         </div>
         {auditLoading ? (
           <p>Loading audit entries...</p>
