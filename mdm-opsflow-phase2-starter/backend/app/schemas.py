@@ -569,15 +569,19 @@ class IntakeReplayExportTokenBulkRevokeActiveRequest(BaseModel):
     issued_before: datetime | None = None
     limit: int = Field(default=100, ge=1, le=500)
     reason: str | None = None
+    dry_run: bool = False
 
 
 class IntakeReplayExportTokenBulkRevokeActiveResponse(BaseModel):
     tenant_id: str
+    dry_run: bool = False
     inspected_tokens: int
+    candidate_count: int
     revoked_count: int
     skipped_consumed_count: int
     skipped_revoked_count: int
     skipped_expired_count: int
+    candidate_token_ids: list[str] = Field(default_factory=list)
     revoked_token_ids: list[str] = Field(default_factory=list)
     revoked_at: datetime
 
