@@ -66,6 +66,23 @@ For deterministic paging in state lists:
 - `POST /api/intake/events/replay-history/export-token/revoke-active`
   - `dry_run=true`: available with `intake_read`.
   - `dry_run=false`: requires `intake_review` permission or platform wildcard.
+  - `dry_run=false`: also requires a non-empty `reason` for audit governance.
+
+## Audit History Filters
+
+Use these query parameters on `GET /api/intake/events/replay-history/export-token-history`:
+
+- `action`
+  - Filter to one lifecycle action:
+    - `issue_replay_history_export_token`
+    - `consume_replay_history_export_token`
+    - `revoke_replay_history_export_token`
+- `actor_user_id`
+  - Filter by operator user ID.
+- `token_id`
+  - Filter to one token lifecycle.
+- `start_created_at` and `end_created_at`
+  - Filter by UTC timestamp window.
 
 ## Suggested Polling Strategy
 

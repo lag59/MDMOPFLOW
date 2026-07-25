@@ -1200,6 +1200,18 @@ def test_replay_export_token_audit_history_supports_action_actor_and_cursor_filt
     assert len(paged_next_entries) >= 1
     assert paged_next_entries[0]["id"] != paged_entries[0]["id"]
 
+    future_window_response = client.get(
+        "/api/intake/events/replay-history/export-token-history",
+        params={
+            "tenant_id": tenant_id,
+            "start_created_at": (datetime.utcnow() + timedelta(days=2)).isoformat(),
+            "end_created_at": (datetime.utcnow() + timedelta(days=3)).isoformat(),
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert future_window_response.status_code == 200
+    assert future_window_response.json() == []
+
 
 def test_replay_export_token_states_show_effective_lifecycle_projection(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-state@example.com", "Pass12345!", "Replay Token State Owner")
@@ -2065,11 +2077,38 @@ def test_replay_export_token_bulk_revoke_live_requires_intake_review_permission(
 
     live_response = client.post(
         "/api/intake/events/replay-history/export-token/revoke-active",
-        json={"tenant_id": tenant_id, "dry_run": False, "limit": 5},
+        json={
+            "tenant_id": tenant_id,
+            "dry_run": False,
+            "limit": 5,
+            "reason": "security incident sweep",
+        },
         headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
     )
     assert live_response.status_code == 403
     assert live_response.json()["detail"] == "Live bulk token revocation requires intake_review permission"
+
+
+def test_replay_export_token_bulk_revoke_live_requires_reason(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-live-reason@example.com", "Pass12345!", "Replay Reason Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Reason Civil", "Replay Reason Project")
+    tenant_id = onboarding["tenant_id"]
+
+    dry_run_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={"tenant_id": tenant_id, "dry_run": True, "limit": 5},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dry_run_response.status_code == 200
+
+    missing_reason_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={"tenant_id": tenant_id, "dry_run": False, "limit": 5, "reason": "   "},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert missing_reason_response.status_code == 400
+    assert missing_reason_response.json()["detail"] == "reason is required when dry_run=false"
 
 
 def test_replay_export_token_state_cursor_and_datetime_edge_cases(client: TestClient) -> None:

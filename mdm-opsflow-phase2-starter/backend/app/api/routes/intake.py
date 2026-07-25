@@ -1628,6 +1628,13 @@ def revoke_active_replay_dead_letter_export_tokens(
             detail="Live bulk token revocation requires intake_review permission",
         )
 
+    normalized_reason = (payload.reason or "").strip()
+    if not payload.dry_run and not normalized_reason:
+        raise HTTPException(
+            status_code=400,
+            detail="reason is required when dry_run=false",
+        )
+
     issue_query = (
         select(AuditLog)
         .where(AuditLog.resource_type == "replay_history_export_token")
@@ -1683,7 +1690,7 @@ def revoke_active_replay_dead_letter_export_tokens(
 
     now_utc = datetime.now(timezone.utc)
     revoked_at = now_utc
-    revoke_reason = (payload.reason or "").strip() or "Bulk incident-response revocation of active token"
+    revoke_reason = normalized_reason or "Bulk incident-response revocation of active token"
     candidate_token_ids: list[str] = []
     newly_revoked_token_ids: list[str] = []
     skipped_consumed_count = 0
