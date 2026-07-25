@@ -193,3 +193,65 @@ def test_duplicate_resolution_clears_review_and_logs_audit(client: TestClient) -
     assert resolve_payload["status"] == "approved"
     assert resolve_payload["needs_review"] is False
     assert resolve_payload["duplicate_of_item_id"] == first_item["id"]
+
+
+def test_intake_integration_event_queue_can_be_processed(client: TestClient) -> None:
+    user = register_user(client, "event-queue@example.com", "Pass12345!", "Event Queue Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Queue Civil", "Queue Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-queue.txt", b"Ticket: TCK-5090\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    pending_events = pending_response.json()
+    assert len(pending_events) >= 1
+
+    matching_pending = [event for event in pending_events if event["resource_id"] == item["id"]]
+    assert len(matching_pending) == 1
+    pending_event = matching_pending[0]
+    assert pending_event["event_type"] == "intake_item_uploaded"
+    assert pending_event["status"] == "pending"
+
+    process_response = client.post(
+        f"/api/intake/events/{pending_event['id']}/mark-processed",
+        json={"status": "processed", "processing_notes": "Exported to accounting bridge"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert process_response.status_code == 200
+    processed_event = process_response.json()
+
+    assert processed_event["status"] == "processed"
+    assert processed_event["processed_at"] is not None
+    processed_payload = json.loads(processed_event["payload_json"])
+    assert processed_payload["processed_by"] == user["user_id"]
+    assert processed_payload["processing_notes"] == "Exported to accounting bridge"
+
+    pending_after_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_after_response.status_code == 200
+    pending_after = pending_after_response.json()
+    assert all(event["id"] != pending_event["id"] for event in pending_after)
+
+    processed_list_response = client.get(
+        "/api/intake/events",
+        params={"status": "processed"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert processed_list_response.status_code == 200
+    processed_list = processed_list_response.json()
+    assert any(event["id"] == pending_event["id"] for event in processed_list)
