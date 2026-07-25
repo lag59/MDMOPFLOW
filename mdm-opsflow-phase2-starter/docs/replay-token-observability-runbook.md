@@ -24,6 +24,16 @@ This runbook covers the replay export token observability endpoints and how to t
     - `active_tokens_older_than_threshold_exceeded`
     - `consumed_to_revoked_ratio`
 
+- `GET /api/intake/events/replay-history/export-token-history/summary`
+  - Aggregate counts for token-audit lifecycle actions.
+  - Returns:
+    - `total_entries`
+    - `issued_count`
+    - `consumed_count`
+    - `revoked_count`
+    - `unique_actor_count`
+    - `latest_created_at`
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:
@@ -83,6 +93,8 @@ Use these query parameters on `GET /api/intake/events/replay-history/export-toke
   - Filter to one token lifecycle.
 - `start_created_at` and `end_created_at`
   - Filter by UTC timestamp window.
+
+These same filters also apply to `GET /api/intake/events/replay-history/export-token-history/summary`.
 
 ## Audit Pagination Contract
 

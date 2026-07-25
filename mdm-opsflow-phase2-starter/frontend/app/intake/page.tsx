@@ -8,11 +8,13 @@ import { getAccessToken } from "@/lib/auth";
 import {
   ReplayTokenApiError,
   ReplayTokenAuditEntry,
+  ReplayTokenAuditSummary,
   ReplayTokenBulkRevokeActiveResponse,
   ReplayTokenState,
   ReplayTokenStateAlerts,
   bulkRevokeActiveReplayTokens,
   fetchReplayTokenAuditHistoryPage,
+  fetchReplayTokenAuditSummary,
   fetchReplayTokenStateAlerts,
   fetchReplayTokenStateEnvelope,
 } from "@/lib/replayTokens";
@@ -43,6 +45,7 @@ export default function IntakePage() {
   const [revokeResult, setRevokeResult] = useState<string>("");
   const [liveRevokeReason, setLiveRevokeReason] = useState<string>("");
   const [auditEntries, setAuditEntries] = useState<ReplayTokenAuditEntry[]>([]);
+  const [auditSummary, setAuditSummary] = useState<ReplayTokenAuditSummary | null>(null);
   const [auditHasMore, setAuditHasMore] = useState(false);
   const [auditNextCursorCreatedAt, setAuditNextCursorCreatedAt] = useState<string | null>(null);
   const [auditNextCursorId, setAuditNextCursorId] = useState<string | null>(null);
@@ -100,21 +103,32 @@ export default function IntakePage() {
   async function refreshAudit(): Promise<void> {
     setAuditLoading(true);
     try {
-      const page = await fetchReplayTokenAuditHistoryPage({
-        limit: 10,
-        sort: auditSort,
-        action: auditAction === "all" ? undefined : auditAction,
-        actorUserId: auditActorUserId.trim() || undefined,
-        tokenId: auditTokenId.trim() || undefined,
-        startCreatedAt: auditStartCreatedAt || undefined,
-        endCreatedAt: auditEndCreatedAt || undefined,
-      });
+      const [page, summary] = await Promise.all([
+        fetchReplayTokenAuditHistoryPage({
+          limit: 10,
+          sort: auditSort,
+          action: auditAction === "all" ? undefined : auditAction,
+          actorUserId: auditActorUserId.trim() || undefined,
+          tokenId: auditTokenId.trim() || undefined,
+          startCreatedAt: auditStartCreatedAt || undefined,
+          endCreatedAt: auditEndCreatedAt || undefined,
+        }),
+        fetchReplayTokenAuditSummary({
+          action: auditAction === "all" ? undefined : auditAction,
+          actorUserId: auditActorUserId.trim() || undefined,
+          tokenId: auditTokenId.trim() || undefined,
+          startCreatedAt: auditStartCreatedAt || undefined,
+          endCreatedAt: auditEndCreatedAt || undefined,
+        }),
+      ]);
       setAuditEntries(page.items);
+      setAuditSummary(summary);
       setAuditHasMore(page.has_more);
       setAuditNextCursorCreatedAt(page.next_cursor_created_at);
       setAuditNextCursorId(page.next_cursor_id);
     } catch {
       setAuditEntries([]);
+      setAuditSummary(null);
       setAuditHasMore(false);
       setAuditNextCursorCreatedAt(null);
       setAuditNextCursorId(null);
@@ -449,6 +463,34 @@ export default function IntakePage() {
           <button onClick={() => void refreshAudit()} disabled={auditLoading}>
             {auditLoading ? "Refreshing..." : "Refresh audit"}
           </button>
+        </div>
+        <div className="grid">
+          <div className="card">
+            Audit total
+            <div className="metric">{auditSummary?.total_entries ?? "-"}</div>
+            <div className="metric-note">Rows matching current filters</div>
+          </div>
+          <div className="card">
+            Issue / consume / revoke
+            <div className="metric">
+              {auditSummary
+                ? `${auditSummary.issued_count}/${auditSummary.consumed_count}/${auditSummary.revoked_count}`
+                : "-"}
+            </div>
+            <div className="metric-note">Action counts for current scope</div>
+          </div>
+          <div className="card">
+            Unique actors
+            <div className="metric">{auditSummary?.unique_actor_count ?? "-"}</div>
+            <div className="metric-note">Distinct operator IDs</div>
+          </div>
+          <div className="card">
+            Latest audit event
+            <div className="metric">
+              {auditSummary?.latest_created_at ? new Date(auditSummary.latest_created_at).toLocaleString() : "n/a"}
+            </div>
+            <div className="metric-note">Most recent created_at in filter window</div>
+          </div>
         </div>
         <div className="form-grid replay-controls-grid">
           <label>

@@ -109,6 +109,22 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 1,
+              issued_count: 1,
+              consumed_count: 0,
+              revoked_count: 0,
+              unique_actor_count: 1,
+              latest_created_at: "2026-07-25T18:00:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       if (url.includes("/export-token-states/list") && url.includes("cursor_issued_at")) {
         return Promise.resolve(
           new Response(
@@ -156,6 +172,8 @@ describe("Intake replay token observability page", () => {
       expect(screen.getByText("Threshold exceeded")).toBeInTheDocument();
       expect(screen.getAllByText("tok-1").length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText("issue_replay_history_export_token")).toBeInTheDocument();
+      expect(screen.getByText("Audit total")).toBeInTheDocument();
+      expect(screen.getByText("1/0/0")).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "Load more" }));
@@ -237,6 +255,22 @@ describe("Intake replay token observability page", () => {
               next_cursor_created_at: "2026-07-25T18:00:00Z",
               next_cursor_id: "log-1",
               sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 2,
+              issued_count: 1,
+              consumed_count: 0,
+              revoked_count: 1,
+              unique_actor_count: 2,
+              latest_created_at: "2026-07-25T18:00:00Z",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -362,6 +396,22 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       return Promise.resolve(new Response("not found", { status: 404 }));
     });
 
@@ -455,6 +505,22 @@ describe("Intake replay token observability page", () => {
               next_cursor_created_at: null,
               next_cursor_id: null,
               sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              unique_actor_count: 0,
+              latest_created_at: null,
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -576,6 +642,22 @@ describe("Intake replay token observability page", () => {
               next_cursor_created_at: null,
               next_cursor_id: null,
               sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              unique_actor_count: 0,
+              latest_created_at: null,
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )

@@ -610,6 +610,15 @@ class IntakeReplayExportTokenAuditHistoryListResponse(BaseModel):
     sort: str
 
 
+class IntakeReplayExportTokenAuditSummaryResponse(BaseModel):
+    total_entries: int
+    issued_count: int
+    consumed_count: int
+    revoked_count: int
+    unique_actor_count: int
+    latest_created_at: datetime | None = None
+
+
 class IntakeReplayExportTokenStateResponse(BaseModel):
     token_id: str
     tenant_id: str

@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse, PlainTextResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -30,6 +30,7 @@ from app.schemas import (
     IntakeIntegrationEventReplayRequest,
     IntakeReplayExportTokenAuditEntryResponse,
     IntakeReplayExportTokenAuditHistoryListResponse,
+    IntakeReplayExportTokenAuditSummaryResponse,
     IntakeReplayExportTokenBulkRevokeActiveRequest,
     IntakeReplayExportTokenBulkRevokeActiveResponse,
     IntakeReplayExportTokenStateAlertsResponse,
@@ -877,6 +878,58 @@ def _build_replay_export_token_audit_query(
     return query
 
 
+def _build_replay_export_token_audit_summary_query(
+    *,
+    context: RequestContext,
+    tenant_id: str | None,
+    token_id: str | None,
+    actor_user_id: str | None,
+    action: str | None,
+    start_created_at: datetime | None,
+    end_created_at: datetime | None,
+):
+    _validate_replay_audit_history_date_range(
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+    )
+
+    query = select(
+        func.count(AuditLog.id).label("total_entries"),
+        func.sum(case((AuditLog.action == "issue_replay_history_export_token", 1), else_=0)).label("issued_count"),
+        func.sum(case((AuditLog.action == "consume_replay_history_export_token", 1), else_=0)).label("consumed_count"),
+        func.sum(case((AuditLog.action == "revoke_replay_history_export_token", 1), else_=0)).label("revoked_count"),
+        func.count(func.distinct(AuditLog.actor_user_id)).label("unique_actor_count"),
+        func.max(AuditLog.created_at).label("latest_created_at"),
+    ).where(
+        AuditLog.resource_type == "replay_history_export_token",
+        AuditLog.action.in_(REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS),
+    )
+
+    if "*" in context.permissions:
+        if tenant_id:
+            query = query.where(AuditLog.tenant_id == tenant_id)
+    else:
+        assert context.membership is not None
+        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+
+    if token_id:
+        query = query.where(AuditLog.resource_id == token_id)
+
+    if actor_user_id:
+        query = query.where(AuditLog.actor_user_id == actor_user_id)
+
+    if action:
+        query = query.where(AuditLog.action == action)
+
+    if start_created_at:
+        query = query.where(AuditLog.created_at >= start_created_at)
+
+    if end_created_at:
+        query = query.where(AuditLog.created_at <= end_created_at)
+
+    return query
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -1216,6 +1269,47 @@ def list_replay_export_token_audit_history_with_envelope(
         next_cursor_created_at=next_cursor_created_at,
         next_cursor_id=next_cursor_id,
         sort=sort,
+    )
+
+
+@router.get(
+    "/events/replay-history/export-token-history/summary",
+    response_model=IntakeReplayExportTokenAuditSummaryResponse,
+    operation_id="intake_events_replay_history_export_token_history_summary",
+    summary="Summarize replay export token audit history",
+)
+def summarize_replay_export_token_audit_history(
+    tenant_id: str | None = Query(default=None),
+    token_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    action: str | None = Query(
+        default=None,
+        pattern="^(issue_replay_history_export_token|consume_replay_history_export_token|revoke_replay_history_export_token)$",
+    ),
+    start_created_at: datetime | None = Query(default=None),
+    end_created_at: datetime | None = Query(default=None),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    row = db.execute(
+        _build_replay_export_token_audit_summary_query(
+            context=context,
+            tenant_id=tenant_id,
+            token_id=token_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            start_created_at=start_created_at,
+            end_created_at=end_created_at,
+        )
+    ).one()
+
+    return IntakeReplayExportTokenAuditSummaryResponse(
+        total_entries=int(row.total_entries or 0),
+        issued_count=int(row.issued_count or 0),
+        consumed_count=int(row.consumed_count or 0),
+        revoked_count=int(row.revoked_count or 0),
+        unique_actor_count=int(row.unique_actor_count or 0),
+        latest_created_at=_as_utc(row.latest_created_at) if row.latest_created_at else None,
     )
 
 

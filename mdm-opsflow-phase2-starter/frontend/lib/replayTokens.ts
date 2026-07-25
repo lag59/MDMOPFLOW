@@ -81,6 +81,15 @@ export type ReplayTokenAuditHistoryPage = {
   sort: "-created_at" | "+created_at";
 };
 
+export type ReplayTokenAuditSummary = {
+  total_entries: number;
+  issued_count: number;
+  consumed_count: number;
+  revoked_count: number;
+  unique_actor_count: number;
+  latest_created_at: string | null;
+};
+
 export class ReplayTokenApiError extends Error {
   status: number;
   detail: string;
@@ -215,6 +224,38 @@ export async function fetchReplayTokenAuditHistory(params?: {
 }): Promise<ReplayTokenAuditEntry[]> {
   const page = await fetchReplayTokenAuditHistoryPage(params);
   return page.items;
+}
+
+export async function fetchReplayTokenAuditSummary(params?: {
+  tokenId?: string;
+  actorUserId?: string;
+  action?: "issue_replay_history_export_token" | "consume_replay_history_export_token" | "revoke_replay_history_export_token";
+  startCreatedAt?: string;
+  endCreatedAt?: string;
+}): Promise<ReplayTokenAuditSummary> {
+  const query = new URLSearchParams();
+  if (params?.tokenId) {
+    query.set("token_id", params.tokenId);
+  }
+  if (params?.actorUserId) {
+    query.set("actor_user_id", params.actorUserId);
+  }
+  if (params?.action) {
+    query.set("action", params.action);
+  }
+  if (params?.startCreatedAt) {
+    query.set("start_created_at", params.startCreatedAt);
+  }
+  if (params?.endCreatedAt) {
+    query.set("end_created_at", params.endCreatedAt);
+  }
+
+  const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history/summary?${query.toString()}`, {
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to load replay token audit summary");
+
+  return (await response.json()) as ReplayTokenAuditSummary;
 }
 
 export async function bulkRevokeActiveReplayTokens(params: {
