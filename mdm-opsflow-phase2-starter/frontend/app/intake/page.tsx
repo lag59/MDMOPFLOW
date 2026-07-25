@@ -48,6 +48,7 @@ type ReplayTokenAuditWindowPreset =
   | "last_28d"
   | "last_60d"
   | "last_90d"
+  | "last_180d"
   | "last_30d"
   | "custom";
 
@@ -109,6 +110,8 @@ function resolveAuditWindowPresetRange(
     start.setUTCDate(start.getUTCDate() - 60);
   } else if (preset === "last_90d") {
     start.setUTCDate(start.getUTCDate() - 90);
+  } else if (preset === "last_180d") {
+    start.setUTCDate(start.getUTCDate() - 180);
   } else {
     start.setUTCDate(start.getUTCDate() - 30);
   }
@@ -744,6 +747,7 @@ export default function IntakePage() {
               <option value="last_28d">Last 28 days</option>
               <option value="last_60d">Last 60 days</option>
               <option value="last_90d">Last 90 days</option>
+              <option value="last_180d">Last 180 days</option>
               <option value="last_30d">Last 30 days</option>
               <option value="custom">Custom</option>
             </select>
