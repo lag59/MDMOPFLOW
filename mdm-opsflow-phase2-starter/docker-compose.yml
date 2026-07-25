@@ -13,6 +13,7 @@ services:
       SECRET_KEY: change-me
       DATABASE_URL: postgresql+psycopg://mdm:mdm_dev_password@db:5432/mdm_opsflow
       ALLOWED_ORIGINS: http://localhost:3000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: 8080
     ports: ["8080:8080"]
     depends_on: [db]

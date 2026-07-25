@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PlatformRole, Role, TenantMembership, User
+from app.models import PlatformRole, Role, Tenant, TenantMembership, User
 from app.rbac import resolve_permissions
 from app.security import TokenError, decode_token
 
@@ -12,10 +12,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 class RequestContext:
-    def __init__(self, user: User, membership: TenantMembership | None, permissions: set[str]):
+    def __init__(self, user: User, membership: TenantMembership | None, permissions: set[str], tenant_id: str | None):
         self.user = user
         self.membership = membership
         self.permissions = permissions
+        self.tenant_id = tenant_id
 
 
 
@@ -45,7 +46,7 @@ def get_request_context(
     membership = None
 
     if current_user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN and not x_tenant_id:
-        return RequestContext(current_user, None, {"*"})
+        return RequestContext(current_user, None, {"*"}, None)
 
     if x_tenant_id:
         membership = next((m for m in memberships if m.tenant_id == x_tenant_id), None)
@@ -56,11 +57,16 @@ def get_request_context(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant membership required")
 
     if current_user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN:
-        return RequestContext(current_user, membership, {"*"})
+        if x_tenant_id:
+            tenant = db.get(Tenant, x_tenant_id)
+            if tenant is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        return RequestContext(current_user, membership, {"*"}, x_tenant_id)
 
+    assert membership is not None
     role = db.get(Role, membership.role_id)
     permissions = resolve_permissions(role.name, role.permissions) if role else set()
-    return RequestContext(current_user, membership, permissions)
+    return RequestContext(current_user, membership, permissions, membership.tenant_id)
 
 
 def require_permissions(*needed: str):

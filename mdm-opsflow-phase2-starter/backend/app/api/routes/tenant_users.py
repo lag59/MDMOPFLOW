@@ -10,7 +10,17 @@ from app.schemas import AssignTenantUserRequest, TenantUserSummary
 router = APIRouter(prefix="/api/tenant-users", tags=["Tenant Users"])
 
 
-@router.get("", response_model=list[TenantUserSummary])
+@router.get(
+    "",
+    response_model=list[TenantUserSummary],
+    operation_id="tenant_users_list",
+    summary="List tenant users",
+    description="Lists active users in the current tenant context.",
+    responses={
+        200: {"description": "Tenant users returned successfully."},
+        400: {"description": "X-Tenant-ID is required."},
+    },
+)
 def list_tenant_users(
     context: RequestContext = Depends(require_permissions("admin_read")),
     db: Session = Depends(get_db),
@@ -45,7 +55,20 @@ def list_tenant_users(
     return items
 
 
-@router.post("", response_model=TenantUserSummary, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=TenantUserSummary,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="tenant_users_assign",
+    summary="Assign tenant user",
+    description="Creates or updates a tenant membership for a user email and role.",
+    responses={
+        201: {"description": "Tenant user assigned successfully."},
+        400: {"description": "X-Tenant-ID is required."},
+        403: {"description": "Insufficient permissions."},
+        404: {"description": "User or role not found."},
+    },
+)
 def assign_tenant_user(
     payload: AssignTenantUserRequest,
     context: RequestContext = Depends(get_request_context),

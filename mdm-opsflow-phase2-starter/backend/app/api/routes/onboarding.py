@@ -21,12 +21,35 @@ COMPANY_TYPES = {
 }
 
 
-@router.get("/company-types")
+@router.get(
+    "/company-types",
+    operation_id="onboarding_company_types",
+    summary="List company types",
+    description="Returns the supported company types for onboarding selection.",
+    responses={
+        200: {"description": "Company types returned successfully."},
+    },
+)
 def company_types():
     return sorted(COMPANY_TYPES)
 
 
-@router.post("/complete", response_model=OnboardingResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/complete",
+    response_model=OnboardingResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="onboarding_complete",
+    summary="Complete onboarding",
+    description=(
+        "Creates tenant, owner role, owner membership, and first project for the authenticated user. "
+        "Can only be completed once per user."
+    ),
+    responses={
+        201: {"description": "Onboarding completed successfully."},
+        400: {"description": "Invalid company type or onboarding already completed."},
+        401: {"description": "Authentication required."},
+    },
+)
 def complete_onboarding(
     payload: OnboardingRequest,
     current_user: User = Depends(get_current_user),
