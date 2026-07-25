@@ -1044,6 +1044,7 @@ describe("Intake replay token observability page", () => {
   });
 
   it("applies an audit window preset when refreshing audit history", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-26T00:00:00.000Z"));
     const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -1141,25 +1142,29 @@ describe("Intake replay token observability page", () => {
       return Promise.resolve(new Response("not found", { status: 404 }));
     });
 
-    const user = userEvent.setup();
-    render(<IntakePage />);
+    try {
+      const user = userEvent.setup();
+      render(<IntakePage />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Replay token operations")).toBeInTheDocument();
-    });
+      await waitFor(() => {
+        expect(screen.getByText("Replay token operations")).toBeInTheDocument();
+      });
 
-    await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_24h");
-    await user.click(screen.getByRole("button", { name: "Refresh audit" }));
+      await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_1h");
+      await user.click(screen.getByRole("button", { name: "Refresh audit" }));
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
-    });
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalled();
+      });
 
-    const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
-    const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history/list"));
+      const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
+      const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history/list"));
 
-    expect(latestAuditUrl).toBeTruthy();
-    expect(latestAuditUrl).toMatch(/start_created_at=\d{4}-\d{2}-\d{2}T/);
-    expect(latestAuditUrl).toMatch(/end_created_at=\d{4}-\d{2}-\d{2}T/);
+      expect(latestAuditUrl).toBeTruthy();
+      expect(latestAuditUrl).toContain("start_created_at=2026-07-25T23%3A00%3A00.000Z");
+      expect(latestAuditUrl).toContain("end_created_at=2026-07-26T00%3A00%3A00.000Z");
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

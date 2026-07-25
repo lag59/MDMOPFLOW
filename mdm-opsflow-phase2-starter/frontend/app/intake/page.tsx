@@ -30,7 +30,7 @@ type ReplayTokenAuditAction =
   | "revoke_replay_history_export_token";
 type ReplayTokenAuditSort = "-created_at" | "+created_at";
 type ReplayTokenAuditTrendGranularity = "day" | "hour";
-type ReplayTokenAuditWindowPreset = "all" | "last_24h" | "last_7d" | "last_30d" | "custom";
+type ReplayTokenAuditWindowPreset = "all" | "last_1h" | "last_24h" | "last_7d" | "last_30d" | "custom";
 
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -49,15 +49,18 @@ function formatTrendWindow(value: string | null): string {
 
 function resolveAuditWindowPresetRange(
   preset: ReplayTokenAuditWindowPreset,
-  now: Date = new Date()
+  nowMs: number = Date.now()
 ): { start: string; end: string } | null {
   if (preset === "all" || preset === "custom") {
     return null;
   }
 
-  const end = now.toISOString();
-  const start = new Date(now.getTime());
-  if (preset === "last_24h") {
+  const endDate = new Date(nowMs);
+  const end = endDate.toISOString();
+  const start = new Date(endDate.getTime());
+  if (preset === "last_1h") {
+    start.setUTCHours(start.getUTCHours() - 1);
+  } else if (preset === "last_24h") {
     start.setUTCHours(start.getUTCHours() - 24);
   } else if (preset === "last_7d") {
     start.setUTCDate(start.getUTCDate() - 7);
@@ -680,6 +683,7 @@ export default function IntakePage() {
               onChange={(e) => applyAuditWindowPreset(e.target.value as ReplayTokenAuditWindowPreset)}
             >
               <option value="all">All time</option>
+              <option value="last_1h">Last 1 hour</option>
               <option value="last_24h">Last 24 hours</option>
               <option value="last_7d">Last 7 days</option>
               <option value="last_30d">Last 30 days</option>
