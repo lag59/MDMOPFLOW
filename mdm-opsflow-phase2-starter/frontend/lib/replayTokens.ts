@@ -78,6 +78,7 @@ export type ReplayTokenAuditHistoryPage = {
   has_more: boolean;
   next_cursor_created_at: string | null;
   next_cursor_id: string | null;
+  sort: "-created_at" | "+created_at";
 };
 
 export class ReplayTokenApiError extends Error {
@@ -166,10 +167,14 @@ export async function fetchReplayTokenAuditHistoryPage(params?: {
   endCreatedAt?: string;
   cursorCreatedAt?: string;
   cursorId?: string;
+  sort?: "-created_at" | "+created_at";
 }): Promise<ReplayTokenAuditHistoryPage> {
   const query = new URLSearchParams({
     limit: String(params?.limit ?? 20),
   });
+  if (params?.sort) {
+    query.set("sort", params.sort);
+  }
   if (params?.tokenId) {
     query.set("token_id", params.tokenId);
   }

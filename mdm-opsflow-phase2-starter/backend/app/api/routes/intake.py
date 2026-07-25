@@ -797,6 +797,7 @@ def _build_replay_export_token_audit_query(
     end_created_at: datetime | None,
     cursor_created_at: datetime | None,
     cursor_id: UUID | None,
+    sort_desc: bool,
     limit: int,
 ):
     _validate_replay_audit_history_date_range(
@@ -814,9 +815,13 @@ def _build_replay_export_token_audit_query(
         select(AuditLog)
         .where(AuditLog.resource_type == "replay_history_export_token")
         .where(AuditLog.action.in_(REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS))
-        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         .limit(limit)
     )
+
+    if sort_desc:
+        query = query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+    else:
+        query = query.order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
 
     if "*" in context.permissions:
         if tenant_id:
@@ -843,17 +848,31 @@ def _build_replay_export_token_audit_query(
     if cursor_created_at:
         if cursor_id:
             cursor_id_text = str(cursor_id)
-            query = query.where(
-                or_(
-                    AuditLog.created_at < cursor_created_at,
-                    and_(
-                        AuditLog.created_at == cursor_created_at,
-                        AuditLog.id < cursor_id_text,
-                    ),
+            if sort_desc:
+                query = query.where(
+                    or_(
+                        AuditLog.created_at < cursor_created_at,
+                        and_(
+                            AuditLog.created_at == cursor_created_at,
+                            AuditLog.id < cursor_id_text,
+                        ),
+                    )
                 )
-            )
+            else:
+                query = query.where(
+                    or_(
+                        AuditLog.created_at > cursor_created_at,
+                        and_(
+                            AuditLog.created_at == cursor_created_at,
+                            AuditLog.id > cursor_id_text,
+                        ),
+                    )
+                )
         else:
-            query = query.where(AuditLog.created_at < cursor_created_at)
+            if sort_desc:
+                query = query.where(AuditLog.created_at < cursor_created_at)
+            else:
+                query = query.where(AuditLog.created_at > cursor_created_at)
 
     return query
 
@@ -1112,11 +1131,13 @@ def list_replay_export_token_audit_history(
     end_created_at: datetime | None = Query(default=None),
     cursor_created_at: datetime | None = Query(default=None),
     cursor_id: UUID | None = Query(default=None),
+    sort: str = Query(default="-created_at", pattern=r"^(-created_at|\+created_at)$"),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
     effective_limit = min(limit, REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP)
+    sort_desc = sort == "-created_at"
     query = _build_replay_export_token_audit_query(
         context=context,
         tenant_id=tenant_id,
@@ -1127,6 +1148,7 @@ def list_replay_export_token_audit_history(
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
         cursor_id=cursor_id,
+        sort_desc=sort_desc,
         limit=effective_limit + 1,
     )
     entries = db.scalars(query).all()
@@ -1157,11 +1179,13 @@ def list_replay_export_token_audit_history_with_envelope(
     end_created_at: datetime | None = Query(default=None),
     cursor_created_at: datetime | None = Query(default=None),
     cursor_id: UUID | None = Query(default=None),
+    sort: str = Query(default="-created_at", pattern=r"^(-created_at|\+created_at)$"),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
     effective_limit = min(limit, REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP)
+    sort_desc = sort == "-created_at"
     query = _build_replay_export_token_audit_query(
         context=context,
         tenant_id=tenant_id,
@@ -1172,6 +1196,7 @@ def list_replay_export_token_audit_history_with_envelope(
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
         cursor_id=cursor_id,
+        sort_desc=sort_desc,
         limit=effective_limit + 1,
     )
     entries = db.scalars(query).all()
@@ -1190,6 +1215,7 @@ def list_replay_export_token_audit_history_with_envelope(
         has_more=has_more,
         next_cursor_created_at=next_cursor_created_at,
         next_cursor_id=next_cursor_id,
+        sort=sort,
     )
 
 

@@ -1345,6 +1345,57 @@ def test_replay_export_token_audit_history_list_envelope_returns_has_more_and_en
     assert missing_cursor_anchor_response.json()["detail"] == "cursor_id requires cursor_created_at"
 
 
+def test_replay_export_token_audit_history_list_supports_ascending_sort_and_cursor(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-sort-direction@example.com", "Pass12345!", "Replay Sort Direction")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Sort Civil", "Replay Sort Project")
+    tenant_id = onboarding["tenant_id"]
+
+    for _ in range(2):
+        issue_response = client.post(
+            "/api/intake/events/replay-history/export-token",
+            params={"tenant_id": tenant_id, "output": "json"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert issue_response.status_code == 200
+
+    page_one = client.get(
+        "/api/intake/events/replay-history/export-token-history/list",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "sort": "+created_at",
+            "limit": 1,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert page_one.status_code == 200
+    payload_one = page_one.json()
+    assert payload_one["sort"] == "+created_at"
+    assert payload_one["has_more"] is True
+    assert payload_one["next_cursor_created_at"] is not None
+    assert payload_one["next_cursor_id"] is not None
+    assert len(payload_one["items"]) == 1
+
+    page_two = client.get(
+        "/api/intake/events/replay-history/export-token-history/list",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "sort": "+created_at",
+            "limit": 1,
+            "cursor_created_at": payload_one["next_cursor_created_at"],
+            "cursor_id": payload_one["next_cursor_id"],
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert page_two.status_code == 200
+    payload_two = page_two.json()
+    assert payload_two["sort"] == "+created_at"
+    assert len(payload_two["items"]) == 1
+    assert payload_two["items"][0]["id"] != payload_one["items"][0]["id"]
+
+
 def test_replay_export_token_states_show_effective_lifecycle_projection(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-state@example.com", "Pass12345!", "Replay Token State Owner")
     token = user["tokens"]["access_token"]

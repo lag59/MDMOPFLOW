@@ -607,6 +607,7 @@ class IntakeReplayExportTokenAuditHistoryListResponse(BaseModel):
     has_more: bool
     next_cursor_created_at: datetime | None = None
     next_cursor_id: str | None = None
+    sort: str
 
 
 class IntakeReplayExportTokenStateResponse(BaseModel):
