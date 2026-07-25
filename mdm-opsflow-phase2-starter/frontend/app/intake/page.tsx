@@ -27,6 +27,13 @@ type ReplayTokenAuditAction =
   | "revoke_replay_history_export_token";
 type ReplayTokenAuditSort = "-created_at" | "+created_at";
 
+function formatPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "n/a";
+  }
+  return `${value.toFixed(1)}%`;
+}
+
 export default function IntakePage() {
   const [items, setItems] = useState<ReplayTokenState[]>([]);
   const [sort, setSort] = useState<SortValue>("-issued_at");
@@ -478,6 +485,15 @@ export default function IntakePage() {
                 : "-"}
             </div>
             <div className="metric-note">Action counts for current scope</div>
+          </div>
+          <div className="card">
+            Consume / revoke rate
+            <div className="metric">
+              {auditSummary
+                ? `${formatPercent(auditSummary.consume_rate_percent)} / ${formatPercent(auditSummary.revoke_rate_percent)}`
+                : "-"}
+            </div>
+            <div className="metric-note">Percent of issued actions in current scope</div>
           </div>
           <div className="card">
             Unique actors

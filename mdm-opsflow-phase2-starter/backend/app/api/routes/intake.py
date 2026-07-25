@@ -1303,11 +1303,22 @@ def summarize_replay_export_token_audit_history(
         )
     ).one()
 
+    issued_count = int(row.issued_count or 0)
+    consumed_count = int(row.consumed_count or 0)
+    revoked_count = int(row.revoked_count or 0)
+    consume_rate_percent: float | None = None
+    revoke_rate_percent: float | None = None
+    if issued_count > 0:
+        consume_rate_percent = round((consumed_count / issued_count) * 100, 2)
+        revoke_rate_percent = round((revoked_count / issued_count) * 100, 2)
+
     return IntakeReplayExportTokenAuditSummaryResponse(
         total_entries=int(row.total_entries or 0),
-        issued_count=int(row.issued_count or 0),
-        consumed_count=int(row.consumed_count or 0),
-        revoked_count=int(row.revoked_count or 0),
+        issued_count=issued_count,
+        consumed_count=consumed_count,
+        revoked_count=revoked_count,
+        consume_rate_percent=consume_rate_percent,
+        revoke_rate_percent=revoke_rate_percent,
         unique_actor_count=int(row.unique_actor_count or 0),
         latest_created_at=_as_utc(row.latest_created_at) if row.latest_created_at else None,
     )

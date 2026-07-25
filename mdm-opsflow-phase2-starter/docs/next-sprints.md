@@ -17,6 +17,7 @@ Latest delivered increment:
 - Replay-token audit history now also has a body-envelope list endpoint with `has_more` and cursor fields, plus server-side `limit` cap enforcement.
 - Replay-token audit history list now supports sort direction (`-created_at` and `+created_at`) with cursor-correct paging and intake UI sort controls.
 - Replay-token audit history now has a summary endpoint with action totals, unique actors, and latest-event timestamp; intake audit panel now shows these metrics for the active filter scope.
+- Replay-token audit summary now includes consume/revoke percentage KPIs (relative to issue count), and intake audit cards display these rates for the active filter scope.
 
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.

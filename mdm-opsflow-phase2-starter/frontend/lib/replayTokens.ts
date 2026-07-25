@@ -86,6 +86,8 @@ export type ReplayTokenAuditSummary = {
   issued_count: number;
   consumed_count: number;
   revoked_count: number;
+  consume_rate_percent: number | null;
+  revoke_rate_percent: number | null;
   unique_actor_count: number;
   latest_created_at: string | null;
 };

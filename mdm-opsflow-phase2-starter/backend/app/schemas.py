@@ -615,6 +615,8 @@ class IntakeReplayExportTokenAuditSummaryResponse(BaseModel):
     issued_count: int
     consumed_count: int
     revoked_count: int
+    consume_rate_percent: float | None = None
+    revoke_rate_percent: float | None = None
     unique_actor_count: int
     latest_created_at: datetime | None = None
 

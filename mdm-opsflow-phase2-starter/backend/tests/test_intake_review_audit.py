@@ -1256,6 +1256,8 @@ def test_replay_export_token_audit_history_summary_supports_filters_and_tenant_i
     assert summary_payload["issued_count"] == 2
     assert summary_payload["consumed_count"] == 1
     assert summary_payload["revoked_count"] == 1
+    assert summary_payload["consume_rate_percent"] == 50.0
+    assert summary_payload["revoke_rate_percent"] == 50.0
     assert summary_payload["unique_actor_count"] == 1
     assert summary_payload["latest_created_at"] is not None
 
@@ -1273,6 +1275,8 @@ def test_replay_export_token_audit_history_summary_supports_filters_and_tenant_i
     assert revoke_only_summary_payload["issued_count"] == 0
     assert revoke_only_summary_payload["consumed_count"] == 0
     assert revoke_only_summary_payload["revoked_count"] == 1
+    assert revoke_only_summary_payload["consume_rate_percent"] is None
+    assert revoke_only_summary_payload["revoke_rate_percent"] is None
     assert revoke_only_summary_payload["unique_actor_count"] == 1
 
     other_user = register_user(client, "event-replay-token-audit-summary-other@example.com", "Pass12345!", "Replay Other")
