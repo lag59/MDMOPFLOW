@@ -563,6 +563,21 @@ class IntakeReplayExportTokenRevokeResponse(BaseModel):
     revoked_at: datetime
 
 
+class IntakeReplayExportTokenAuditEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    action: str
+    resource_type: str
+    resource_id: str
+    details: str
+    actor_user_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class TicketBase(BaseModel):
     intake_item_id: str | None = None
     project_id: str | None = None
