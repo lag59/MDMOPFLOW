@@ -18,6 +18,7 @@ Generated from `backend/app/main.py`.
 | GET | `/api/intake/events/replay-history` | `intake_events_replay_history` |
 | GET | `/api/intake/events/replay-history/export` | `intake_events_replay_history_export` |
 | POST | `/api/intake/events/replay-history/export-token` | `intake_events_replay_history_export_token` |
+| POST | `/api/intake/events/replay-history/export-token/revoke` | `intake_events_replay_history_export_token_revoke` |
 | GET | `/api/intake/events/replay-history/export/download` | `intake_events_replay_history_export_download` |
 | POST | `/api/intake/events/{event_id}/mark-processed` | `intake_events_mark_processed` |
 | POST | `/api/intake/events/{event_id}/replay-dead-letter` | `intake_events_replay_dead_letter` |

@@ -945,3 +945,102 @@ def test_replay_history_export_token_supports_signed_one_time_download(client: T
     )
     assert invalid_download.status_code == 401
     assert invalid_download.json()["detail"] == "Invalid export token"
+
+
+def test_replay_history_export_token_can_be_revoked_before_download(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-revoke@example.com", "Pass12345!", "Replay Token Revoker")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Revoke Civil", "Replay Token Revoke Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-token-revoke.txt", b"Ticket: TCK-9300\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for signed export token revoke test"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+
+    revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": token_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_response.status_code == 200
+    revoke_payload = revoke_response.json()
+    assert revoke_payload["token_id"]
+    assert revoke_payload["revoked"] is True
+    assert revoke_payload["revoked_at"]
+
+    revoked_download = client.get(token_payload["download_url"])
+    assert revoked_download.status_code == 410
+    assert revoked_download.json()["detail"] == "Export token has been revoked"
+
+    repeat_revoke = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": token_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert repeat_revoke.status_code == 409
+    assert repeat_revoke.json()["detail"] == "Export token has already been revoked"
