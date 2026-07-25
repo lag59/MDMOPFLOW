@@ -191,21 +191,13 @@ export async function fetchReplayTokenAuditHistoryPage(params?: {
   if (params?.cursorId) {
     query.set("cursor_id", params.cursorId);
   }
-  const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history?${query.toString()}`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history/list?${query.toString()}`, {
     headers: buildAuthHeaders(),
   });
   await throwIfNotOk(response, "Unable to load replay token audit history");
 
-  const items = (await response.json()) as ReplayTokenAuditEntry[];
-  const nextCursorCreatedAt = response.headers.get("x-next-cursor-created-at");
-  const nextCursorId = response.headers.get("x-next-cursor-id");
-
-  return {
-    items,
-    has_more: !!nextCursorCreatedAt,
-    next_cursor_created_at: nextCursorCreatedAt,
-    next_cursor_id: nextCursorId,
-  };
+  const payload = (await response.json()) as ReplayTokenAuditHistoryPage;
+  return payload;
 }
 
 export async function fetchReplayTokenAuditHistory(params?: {

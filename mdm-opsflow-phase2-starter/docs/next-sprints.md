@@ -14,6 +14,7 @@ Replay token observability and governance references:
 Latest delivered increment:
 - Intake operator UI now enforces a required reason for live stale-token bulk revoke and supports audit-trail filtering by action, actor, token, and UTC time window.
 - Replay-token audit history pagination now uses deterministic created_at + audit-log-id cursors, and intake UI supports load-more for audit rows.
+- Replay-token audit history now also has a body-envelope list endpoint with `has_more` and cursor fields, plus server-side `limit` cap enforcement.
 
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.
