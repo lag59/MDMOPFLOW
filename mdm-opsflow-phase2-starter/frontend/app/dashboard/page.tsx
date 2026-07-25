@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
+import { ReplayTokenStateAlerts, fetchReplayTokenStateAlerts } from "@/lib/replayTokens";
 
 type Project = {
   id: string;
@@ -15,6 +16,7 @@ type Project = {
 export default function DashboardPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [alerts, setAlerts] = useState<ReplayTokenStateAlerts | null>(null);
 
   useEffect(() => {
     setLocale(getLocale());
@@ -32,7 +34,21 @@ export default function DashboardPage() {
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setProjects(data));
+
+    fetchReplayTokenStateAlerts({
+      staleThresholdMinutes: 60,
+      staleActiveThresholdCount: 10,
+    })
+      .then((data) => setAlerts(data))
+      .catch(() => {
+        setAlerts(null);
+      });
   }, []);
+
+  const consumedRevokedRatio =
+    alerts?.consumed_to_revoked_ratio === null || alerts?.consumed_to_revoked_ratio === undefined
+      ? "n/a"
+      : alerts.consumed_to_revoked_ratio.toFixed(2);
 
   return (
     <AppShell titleKey="dashboard.title">
@@ -48,20 +64,31 @@ export default function DashboardPage() {
         </div>
         <div className="card">
           {t(locale, "dashboard.documentsProcessed")}
-          <div className="metric">1284</div>
-          <div className="metric-note">Last 30 days of intake and review</div>
+          <div className="metric">{alerts?.total_tokens ?? "-"}</div>
+          <div className="metric-note">Replay export tokens in current alert window</div>
         </div>
         <div className="card">
           {t(locale, "dashboard.budgetHealth")}
-          <div className="metric">92%</div>
-          <div className="metric-note">On-track and protected by approvals</div>
+          <div className="metric">{consumedRevokedRatio}</div>
+          <div className="metric-note">Consumed to revoked token ratio</div>
         </div>
         <div className="card">
           {t(locale, "dashboard.pendingReviews")}
-          <div className="metric">8</div>
-          <div className="metric-note">AI suggested priority review queue</div>
+          <div className="metric">{alerts?.active_tokens_older_than_threshold ?? "-"}</div>
+          <div className="metric-note">Active tokens older than 60 minutes</div>
         </div>
       </div>
+
+      {alerts?.active_tokens_older_than_threshold_exceeded ? (
+        <div className="card warning-card">
+          <strong>Replay token alert</strong>
+          <p>
+            Threshold exceeded: {alerts.active_tokens_older_than_threshold} active tokens older than
+            {" "}
+            {alerts.stale_threshold_minutes} minutes (limit {alerts.stale_active_threshold_count}).
+          </p>
+        </div>
+      ) : null}
 
       <div className="stats-strip">
         <div className="mini-stat">
