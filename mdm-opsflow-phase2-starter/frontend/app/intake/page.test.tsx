@@ -784,6 +784,12 @@ describe("Intake replay token observability page", () => {
     render(<IntakePage />);
 
     await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download audit export" })).toBeDisabled();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_24h");
+
+    await waitFor(() => {
       expect(screen.getByRole("button", { name: "Download audit export" })).toBeEnabled();
     });
 
@@ -1074,6 +1080,131 @@ describe("Intake replay token observability page", () => {
     expect(latestTrendUrl).not.toContain("token_id=");
     expect(latestTrendUrl).not.toContain("start_created_at=");
     expect(latestTrendUrl).not.toContain("end_created_at=");
+  });
+
+  it("keeps export disabled for all time, enables after preset, and disables after reset", async () => {
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+              sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download audit export" })).toBeDisabled();
+      expect(
+        screen.getByText("Export scope: uses the current audit time window. Pick a window preset or enter start/end timestamps before exporting.")
+      ).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Audit window preset"), "last_24h");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download audit export" })).toBeEnabled();
+      expect(screen.getByText("Export scope: uses the current audit time window. Window set and ready for export.")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Reset audit filters" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download audit export" })).toBeDisabled();
+      expect(
+        screen.getByText("Export scope: uses the current audit time window. Pick a window preset or enter start/end timestamps before exporting.")
+      ).toBeInTheDocument();
+    });
   });
 
   it("updates the active audit scope summary and resets it to defaults", async () => {

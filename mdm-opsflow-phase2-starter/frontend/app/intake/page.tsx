@@ -262,6 +262,7 @@ export default function IntakePage() {
       `Time: ${formatAuditTimeRange(auditStartCreatedAt, auditEndCreatedAt)}`,
     ].join(" | ");
   }, [auditAction, auditWindowPreset, auditActorUserId, auditTokenId, auditStartCreatedAt, auditEndCreatedAt]);
+  const hasAuditExportWindow = Boolean(auditStartCreatedAt.trim() || auditEndCreatedAt.trim());
 
   async function refreshAll(): Promise<void> {
     setLoading(true);
@@ -736,11 +737,21 @@ export default function IntakePage() {
             <button onClick={() => void refreshAudit()} disabled={auditLoading}>
               {auditLoading ? "Refreshing..." : "Refresh audit"}
             </button>
-            <button onClick={() => void downloadAuditExport()} disabled={auditLoading || auditExportBusy}>
+            <button
+              onClick={() => void downloadAuditExport()}
+              disabled={auditLoading || auditExportBusy || !hasAuditExportWindow}
+            >
               {auditExportBusy ? "Preparing download..." : "Download audit export"}
             </button>
           </div>
         </div>
+        <p className="metric-note">
+          Export scope: uses the current audit time window.
+          {" "}
+          {!hasAuditExportWindow
+            ? "Pick a window preset or enter start/end timestamps before exporting."
+            : "Window set and ready for export."}
+        </p>
         <p className="metric-note">Active scope: {auditScopeSummary}</p>
         <div className="grid">
           <div className="card">

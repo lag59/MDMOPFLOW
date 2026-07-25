@@ -12,6 +12,7 @@ Replay token observability and governance references:
 - docs/replay-token-observability-runbook.md
 
 Latest delivered increment:
+- Intake audit export now requires a selected time window, with an inline `Export scope` hint that explains export uses the current audit time window and prompts operators to set a preset or timestamps first.
 - Intake audit panel now shows a compact `Active scope` summary line (action, window preset, actor, token, and time range) that updates live and returns to defaults after `Reset audit filters`.
 - Intake audit panel now includes `Reset audit filters` to restore default audit scope/controls in one click and immediately refresh unscoped history, summary, and trend queries.
 - Intake audit window preset selector is now grouped by horizon (`Hours`, `Days and months`, `Years and long-range`) and long-range labels now include year equivalents for faster operator scanning.
