@@ -1,6 +1,6 @@
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import IntakePage from "./page";
@@ -80,6 +80,28 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "log-1",
+                tenant_id: "tenant-1",
+                action: "issue_replay_history_export_token",
+                resource_type: "replay_history_export_token",
+                resource_id: "tok-1",
+                details: "issued",
+                actor_user_id: "u-1",
+                created_by: "u-1",
+                created_at: "2026-07-25T18:00:00Z",
+                updated_at: "2026-07-25T18:00:00Z",
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       if (url.includes("/export-token-states/list") && url.includes("cursor_issued_at")) {
         return Promise.resolve(
           new Response(
@@ -125,7 +147,8 @@ describe("Intake replay token observability page", () => {
     await waitFor(() => {
       expect(screen.getByText("Replay token operations")).toBeInTheDocument();
       expect(screen.getByText("Threshold exceeded")).toBeInTheDocument();
-      expect(screen.getByText("tok-1")).toBeInTheDocument();
+      expect(screen.getAllByText("tok-1").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText("issue_replay_history_export_token")).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "Load more" }));
@@ -133,6 +156,198 @@ describe("Intake replay token observability page", () => {
     await waitFor(() => {
       expect(screen.getByText("tok-2")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "No more rows" })).toBeDisabled();
+    });
+
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("applies stale-threshold and sort controls when refreshing", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: url.includes("sort=%2Bissued_at") ? "+issued_at" : "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: url.includes("stale_threshold_minutes=15") ? 15 : 60,
+              stale_active_threshold_count: url.includes("stale_active_threshold_count=3") ? 3 : 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Replay token operations")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+    });
+
+    await user.selectOptions(screen.getByLabelText("Sort"), "+issued_at");
+    const thresholdInput = screen.getByLabelText("Stale threshold (minutes)");
+    const countInput = screen.getByLabelText("Stale count threshold");
+    fireEvent.change(thresholdInput, { target: { value: "15" } });
+    fireEvent.change(countInput, { target: { value: "3" } });
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
+    const latestListUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-states/list"));
+    const latestAlertsUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-states/alerts"));
+
+    expect(latestListUrl).toBeTruthy();
+    expect(latestAlertsUrl).toBeTruthy();
+    expect(latestListUrl).toMatch(/sort=(%2Bissued_at|\+issued_at)/);
+    expect(latestAlertsUrl).toContain("stale_threshold_minutes=15");
+    expect(latestAlertsUrl).toContain("stale_active_threshold_count=3");
+  });
+
+  it("supports stale-token dry run and shows permission message on denied live revoke", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.includes("/revoke-active") && method === "POST") {
+        const payload = JSON.parse(String(init?.body || "{}")) as { dry_run?: boolean };
+        if (payload.dry_run) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                tenant_id: "tenant-1",
+                dry_run: true,
+                inspected_tokens: 20,
+                candidate_count: 2,
+                revoked_count: 0,
+                skipped_consumed_count: 0,
+                skipped_revoked_count: 0,
+                skipped_expired_count: 0,
+                candidate_token_ids: ["tok-a", "tok-b"],
+                revoked_token_ids: [],
+                revoked_at: "2026-07-25T18:10:00Z",
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } }
+            )
+          );
+        }
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ detail: "Live bulk token revocation requires intake_review permission" }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Replay token operations")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Preview revoke stale tokens" }));
+    await waitFor(() => {
+      expect(screen.getByText("Dry run found 2 candidate tokens.")).toBeInTheDocument();
+      expect(screen.getByText("tok-a, tok-b")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Confirm live revoke" }));
+    await waitFor(() => {
+      expect(screen.getByText("Permission denied: Live bulk token revocation requires intake_review permission")).toBeInTheDocument();
     });
 
     expect(fetchMock).toHaveBeenCalled();

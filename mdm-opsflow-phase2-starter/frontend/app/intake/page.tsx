@@ -5,7 +5,17 @@ import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getAccessToken } from "@/lib/auth";
-import { ReplayTokenState, ReplayTokenStateAlerts, fetchReplayTokenStateAlerts, fetchReplayTokenStateEnvelope } from "@/lib/replayTokens";
+import {
+  ReplayTokenApiError,
+  ReplayTokenAuditEntry,
+  ReplayTokenBulkRevokeActiveResponse,
+  ReplayTokenState,
+  ReplayTokenStateAlerts,
+  bulkRevokeActiveReplayTokens,
+  fetchReplayTokenAuditHistory,
+  fetchReplayTokenStateAlerts,
+  fetchReplayTokenStateEnvelope,
+} from "@/lib/replayTokens";
 
 type SortValue = "-issued_at" | "+issued_at";
 
@@ -21,6 +31,11 @@ export default function IntakePage() {
   const [staleCountThreshold, setStaleCountThreshold] = useState<number>(10);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [revokePreview, setRevokePreview] = useState<ReplayTokenBulkRevokeActiveResponse | null>(null);
+  const [revokeResult, setRevokeResult] = useState<string>("");
+  const [auditEntries, setAuditEntries] = useState<ReplayTokenAuditEntry[]>([]);
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -31,6 +46,7 @@ export default function IntakePage() {
     }
 
     void refreshAll();
+    void refreshAudit();
   }, []);
 
   const byState = useMemo(() => {
@@ -64,6 +80,18 @@ export default function IntakePage() {
     }
   }
 
+  async function refreshAudit(): Promise<void> {
+    setAuditLoading(true);
+    try {
+      const entries = await fetchReplayTokenAuditHistory(10);
+      setAuditEntries(entries);
+    } catch {
+      setAuditEntries([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
   async function loadMore(): Promise<void> {
     if (!hasMore || !nextCursorIssuedAt || !nextCursorTokenId) {
       return;
@@ -90,7 +118,61 @@ export default function IntakePage() {
   }
 
   async function applyControls(): Promise<void> {
+    setRevokePreview(null);
+    setRevokeResult("");
     await refreshAll();
+    await refreshAudit();
+  }
+
+  function getIssuedBeforeCutoffIso(): string {
+    const cutoff = new Date(Date.now() - staleThresholdMinutes * 60 * 1000);
+    return cutoff.toISOString();
+  }
+
+  async function previewRevokeStaleTokens(): Promise<void> {
+    setRevokeBusy(true);
+    setError("");
+    setRevokeResult("");
+    try {
+      const response = await bulkRevokeActiveReplayTokens({
+        limit: 500,
+        issuedBefore: getIssuedBeforeCutoffIso(),
+        reason: "UI stale token cleanup preview",
+        dryRun: true,
+      });
+      setRevokePreview(response);
+      setRevokeResult(`Dry run found ${response.candidate_count} candidate tokens.`);
+    } catch {
+      setError("Unable to preview stale token revocation.");
+    } finally {
+      setRevokeBusy(false);
+    }
+  }
+
+  async function runLiveRevoke(): Promise<void> {
+    setRevokeBusy(true);
+    setError("");
+    setRevokeResult("");
+    try {
+      const response = await bulkRevokeActiveReplayTokens({
+        limit: 500,
+        issuedBefore: getIssuedBeforeCutoffIso(),
+        reason: "UI stale token cleanup",
+        dryRun: false,
+      });
+      setRevokePreview(response);
+      setRevokeResult(`Live revoke completed: ${response.revoked_count} token(s) revoked.`);
+      await refreshAll();
+      await refreshAudit();
+    } catch (err) {
+      if (err instanceof ReplayTokenApiError && err.status === 403) {
+        setError(`Permission denied: ${err.detail}`);
+      } else {
+        setError("Unable to run live stale token revocation.");
+      }
+    } finally {
+      setRevokeBusy(false);
+    }
   }
 
   return (
@@ -182,6 +264,48 @@ export default function IntakePage() {
         </div>
       </div>
 
+      <div className="card">
+        <div className="section-header">
+          <h3>Stale token actions</h3>
+        </div>
+        <p className="metric-note">
+          Cutoff uses current stale threshold. Dry run first, then confirm live revoke when candidates exist.
+        </p>
+        <div className="replay-action-row">
+          <button onClick={() => void previewRevokeStaleTokens()} disabled={revokeBusy || loading}>
+            {revokeBusy ? "Working..." : "Preview revoke stale tokens"}
+          </button>
+          <button
+            onClick={() => void runLiveRevoke()}
+            disabled={
+              revokeBusy ||
+              loading ||
+              !revokePreview ||
+              revokePreview.candidate_count < 1
+            }
+          >
+            Confirm live revoke
+          </button>
+        </div>
+        {revokePreview ? (
+          <div className="list">
+            <div className="list-item">
+              <strong>Preview summary</strong>
+              <span>Inspected: {revokePreview.inspected_tokens}</span>
+              <span>Candidates: {revokePreview.candidate_count}</span>
+              <span>Would revoke: {revokePreview.revoked_count}</span>
+            </div>
+            {revokePreview.candidate_token_ids.length > 0 ? (
+              <div className="list-item">
+                <strong>Candidate token IDs</strong>
+                <span className="mono-cell">{revokePreview.candidate_token_ids.join(", ")}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {revokeResult ? <p>{revokeResult}</p> : null}
+      </div>
+
       {alerts?.active_tokens_older_than_threshold_exceeded ? (
         <div className="card warning-card">
           <strong>Threshold exceeded</strong>
@@ -245,6 +369,43 @@ export default function IntakePage() {
             {loadingMore ? "Loading more..." : hasMore ? "Load more" : "No more rows"}
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Audit trail</h3>
+          <button onClick={() => void refreshAudit()} disabled={auditLoading}>
+            {auditLoading ? "Refreshing..." : "Refresh audit"}
+          </button>
+        </div>
+        {auditLoading ? (
+          <p>Loading audit entries...</p>
+        ) : auditEntries.length === 0 ? (
+          <p>No replay token audit entries found.</p>
+        ) : (
+          <div className="token-state-table-wrap">
+            <table className="token-state-table">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Token</th>
+                  <th>Actor</th>
+                  <th>Created at</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.action}</td>
+                    <td className="mono-cell">{entry.resource_id}</td>
+                    <td className="mono-cell">{entry.actor_user_id}</td>
+                    <td>{new Date(entry.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   );
