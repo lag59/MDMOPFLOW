@@ -69,6 +69,37 @@ def test_tenant_isolation_and_super_admin_visibility(client: TestClient):
     )
     super_token = super_login.json()["tokens"]["access_token"]
 
+    super_create_without_tenant = client.post(
+        "/api/projects",
+        headers={"Authorization": f"Bearer {super_token}"},
+        json={
+            "project_name": "Needs Tenant",
+            "project_number": "SUP-001",
+            "customer": "Platform",
+            "address": "HQ",
+            "project_manager": "Founder",
+            "status": "planning",
+            "description": "Should fail without X-Tenant-ID",
+        },
+    )
+    assert super_create_without_tenant.status_code == 400
+
+    super_create_for_tenant = client.post(
+        "/api/projects",
+        headers={"Authorization": f"Bearer {super_token}", "X-Tenant-ID": a_tenant_id},
+        json={
+            "project_name": "Super Created",
+            "project_number": "SUP-OK-001",
+            "customer": "Platform",
+            "address": "HQ",
+            "project_manager": "Founder",
+            "status": "planning",
+            "description": "Should succeed for targeted tenant",
+        },
+    )
+    assert super_create_for_tenant.status_code == 201
+    assert super_create_for_tenant.json()["tenant_id"] == a_tenant_id
+
     all_projects = client.get("/api/projects", headers={"Authorization": f"Bearer {super_token}"})
     assert all_projects.status_code == 200
     assert any(item["id"] == a_project["id"] for item in all_projects.json())

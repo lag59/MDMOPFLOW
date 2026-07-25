@@ -41,7 +41,18 @@ def _make_auth_response(user: User, tenant_id: str | None) -> AuthResponse:
     )
 
 
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=AuthResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="auth_register",
+    summary="Register user",
+    description="Creates a new platform user account and returns access and refresh tokens.",
+    responses={
+        201: {"description": "User registered successfully."},
+        400: {"description": "Email is already registered."},
+    },
+)
 def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     existing = db.scalar(select(User).where(User.email == payload.email.lower()))
     if existing:
@@ -62,7 +73,20 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post(
+    "/login",
+    response_model=AuthResponse,
+    operation_id="auth_login",
+    summary="Login user",
+    description=(
+        "Authenticates a user and returns tokens. If tenant_id is omitted, "
+        "the first available membership tenant is used when present."
+    ),
+    responses={
+        200: {"description": "Login successful."},
+        401: {"description": "Invalid email or password."},
+    },
+)
 def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
     if not user or not verify_password(payload.password, user.password_hash):
@@ -79,7 +103,17 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     return response
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    operation_id="auth_me",
+    summary="Get current user",
+    description="Returns current authenticated user profile and tenant memberships.",
+    responses={
+        200: {"description": "Current user returned successfully."},
+        401: {"description": "Authentication required."},
+    },
+)
 def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == current_user.id)).all()
 
@@ -108,7 +142,17 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
     )
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    operation_id="auth_refresh",
+    summary="Refresh token pair",
+    description="Rotates refresh token and issues a new access token pair.",
+    responses={
+        200: {"description": "Token pair refreshed successfully."},
+        401: {"description": "Invalid or expired refresh token."},
+    },
+)
 def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     from app.security import TokenError, decode_token
 
@@ -139,7 +183,17 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     return TokenPair(access_token=access_token, refresh_token=new_refresh)
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="auth_logout",
+    summary="Logout user",
+    description="Invalidates the current stored refresh token for the authenticated user.",
+    responses={
+        204: {"description": "Logged out successfully."},
+        401: {"description": "Authentication required."},
+    },
+)
 def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     current_user.refresh_token_hash = None
     current_user.refresh_token_expires_at = None

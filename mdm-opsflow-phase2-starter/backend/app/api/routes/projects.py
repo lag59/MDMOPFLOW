@@ -10,7 +10,19 @@ from app.schemas import ProjectCreate, ProjectResponse, ProjectUpdate
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
 
-@router.get("", response_model=list[ProjectResponse])
+@router.get(
+    "",
+    response_model=list[ProjectResponse],
+    operation_id="projects_list",
+    summary="List projects",
+    description=(
+        "Returns projects visible to the caller. Tenant users are scoped to their tenant. "
+        "Platform admins may pass tenant_id to scope the list."
+    ),
+    responses={
+        200: {"description": "Projects returned successfully."},
+    },
+)
 def list_projects(
     tenant_id: str | None = None,
     context: RequestContext = Depends(require_permissions("project_read")),
@@ -25,7 +37,19 @@ def list_projects(
     return db.scalars(select(Project).where(Project.tenant_id == context.membership.tenant_id)).all()
 
 
-@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="projects_create",
+    summary="Create project",
+    description="Creates a project in the current tenant context.",
+    responses={
+        201: {"description": "Project created successfully."},
+        400: {"description": "X-Tenant-ID missing for platform admin write."},
+        403: {"description": "Tenant membership required."},
+    },
+)
 def create_project(
     payload: ProjectCreate,
     context: RequestContext = Depends(require_permissions("project_write")),
@@ -34,7 +58,7 @@ def create_project(
     if not context.membership and "*" not in context.permissions:
         raise HTTPException(status_code=403, detail="Tenant membership required")
 
-    tenant_id = context.membership.tenant_id if context.membership else None
+    tenant_id = context.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
 
@@ -71,7 +95,17 @@ def create_project(
     return item
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
+@router.get(
+    "/{project_id}",
+    response_model=ProjectResponse,
+    operation_id="projects_get",
+    summary="Get project",
+    description="Returns a single project if it exists and is visible in caller scope.",
+    responses={
+        200: {"description": "Project returned successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
 def get_project(
     project_id: str,
     context: RequestContext = Depends(require_permissions("project_read")),
@@ -85,7 +119,17 @@ def get_project(
     return item
 
 
-@router.patch("/{project_id}", response_model=ProjectResponse)
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectResponse,
+    operation_id="projects_update",
+    summary="Update project",
+    description="Applies partial updates to a project in caller scope.",
+    responses={
+        200: {"description": "Project updated successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
 def update_project(
     project_id: str,
     payload: ProjectUpdate,
@@ -117,7 +161,17 @@ def update_project(
     return item
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="projects_delete",
+    summary="Delete project",
+    description="Deletes a project in caller scope.",
+    responses={
+        204: {"description": "Project deleted successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
 def delete_project(
     project_id: str,
     context: RequestContext = Depends(require_permissions("project_write")),

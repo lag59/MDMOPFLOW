@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     DATABASE_URL:str="sqlite:///./mdm_opsflow.db"
     ALLOWED_ORIGINS:str="http://localhost:3000"
     OPENAI_API_KEY:str|None=None
+    OPENAI_MODEL:str="gpt-5"
+    TICKET_MINIMUM_AUTO_ACCEPT_CONFIDENCE:float=0.85
+    TICKET_MINIMUM_REQUIRED_CONFIDENCE:float=0.70
+    TICKET_PDF_RENDER_DPI:int=300
     PORT:int=8080
     ACCESS_TOKEN_MINUTES:int=30
     REFRESH_TOKEN_MINUTES:int=20160

@@ -6,8 +6,14 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AuditLog, PlatformRole, Project, Role, Tenant, TenantMembership, User
 from app.rbac import resolve_permissions
+from app.schemas import (
+    AdminAuditLogEntry,
+    AdminOverviewResponse,
+    AdminPermissionsPreviewResponse,
+    AdminTenantUser,
+)
 
-router=APIRouter(prefix="/api/admin",tags=["Platform Administration"])
+router = APIRouter(prefix="/api/admin", tags=["Platform Administration"])
 
 
 def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
@@ -16,7 +22,14 @@ def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.get("/overview")
+@router.get(
+    "/overview",
+    response_model=AdminOverviewResponse,
+    operation_id="admin_overview",
+    summary="Get platform overview",
+    description="Returns platform-level summary metrics for super-admin users.",
+    responses={200: {"description": "Overview returned successfully."}, 403: {"description": "Super-admin required."}},
+)
 def overview(current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
     return {
         "platform":"MDM OpsFlow",
@@ -28,7 +41,14 @@ def overview(current_user: User = Depends(require_super_admin), db: Session = De
     }
 
 
-@router.get("/tenants/{tenant_id}/users")
+@router.get(
+    "/tenants/{tenant_id}/users",
+    response_model=list[AdminTenantUser],
+    operation_id="admin_tenant_users_list",
+    summary="List users in tenant",
+    description="Returns users who have memberships in the specified tenant.",
+    responses={200: {"description": "Tenant users returned successfully."}, 403: {"description": "Super-admin required."}},
+)
 def tenant_users(tenant_id: str, current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
     _ = current_user
     memberships = db.scalars(select(TenantMembership).where(TenantMembership.tenant_id == tenant_id)).all()
@@ -47,7 +67,14 @@ def tenant_users(tenant_id: str, current_user: User = Depends(require_super_admi
     return users
 
 
-@router.get("/audit-logs")
+@router.get(
+    "/audit-logs",
+    response_model=list[AdminAuditLogEntry],
+    operation_id="admin_audit_logs_list",
+    summary="List audit logs",
+    description="Returns recent audit logs across tenants for super-admin users.",
+    responses={200: {"description": "Audit logs returned successfully."}, 403: {"description": "Super-admin required."}},
+)
 def audit_logs(limit: int = 100, current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
     _ = current_user
     rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)).all()
@@ -65,7 +92,14 @@ def audit_logs(limit: int = 100, current_user: User = Depends(require_super_admi
     ]
 
 
-@router.get("/permissions-preview")
+@router.get(
+    "/permissions-preview",
+    response_model=AdminPermissionsPreviewResponse,
+    operation_id="admin_permissions_preview",
+    summary="Preview resolved permissions",
+    description="Returns effective permissions for selected users and tenant contexts.",
+    responses={200: {"description": "Permissions preview returned successfully."}, 403: {"description": "Super-admin required."}},
+)
 def permissions_preview(
     user_id: str | None = None,
     tenant_id: str | None = None,
