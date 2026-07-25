@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -20,16 +21,20 @@ from app.models import (
     IntakeStatus,
     IntegrationEvent,
     Ticket,
+    User,
 )
 from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
+    IntakeReplayExportTokenResponse,
     IntakeReplayAuditEntryResponse,
     IntakeIntegrationEventRetryRequest,
     IntakeIntegrationEventResponse,
     IntakeItemResponse,
 )
+from app.security import TokenError, create_token, decode_token
+from app.core.config import settings
 from app.services.intake_processing import process_intake_upload
 
 
@@ -622,8 +627,10 @@ def _build_replay_audit_history_query(
     cursor_created_at: datetime | None,
     limit: int,
 ):
-    if start_created_at and end_created_at and start_created_at > end_created_at:
-        raise HTTPException(status_code=400, detail="start_created_at must be <= end_created_at")
+    _validate_replay_audit_history_date_range(
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+    )
 
     query = (
         select(AuditLog)
@@ -653,6 +660,110 @@ def _build_replay_audit_history_query(
         query = query.where(AuditLog.created_at < cursor_created_at)
 
     return query
+
+
+def _validate_replay_audit_history_date_range(
+    *,
+    start_created_at: datetime | None,
+    end_created_at: datetime | None,
+) -> None:
+    if start_created_at and end_created_at and start_created_at > end_created_at:
+        raise HTTPException(status_code=400, detail="start_created_at must be <= end_created_at")
+
+
+def _resolve_replay_export_tenant_scope(
+    *,
+    context: RequestContext,
+    requested_tenant_id: str | None,
+) -> str:
+    if "*" in context.permissions:
+        if requested_tenant_id:
+            return requested_tenant_id
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id is required for replay export token generation",
+        )
+
+    assert context.membership is not None
+    if requested_tenant_id and requested_tenant_id != context.membership.tenant_id:
+        raise HTTPException(status_code=403, detail="Cannot export replay history for another tenant")
+    return context.membership.tenant_id
+
+
+def _parse_export_token_datetime(
+    *,
+    value: str | None,
+    field_name: str,
+) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name} in export token") from exc
+
+
+def _render_replay_audit_history_export_response(
+    *,
+    context: RequestContext,
+    db: Session,
+    tenant_id: str | None,
+    event_id: str | None,
+    start_created_at: datetime | None,
+    end_created_at: datetime | None,
+    cursor_created_at: datetime | None,
+    output: str,
+    limit: int,
+):
+    query = _build_replay_audit_history_query(
+        context=context,
+        tenant_id=tenant_id,
+        event_id=event_id,
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+        cursor_created_at=cursor_created_at,
+        limit=limit + 1,
+    )
+    entries = db.scalars(query).all()
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
+
+    payload = [
+        IntakeReplayAuditEntryResponse.model_validate(entry).model_dump(mode="json")
+        for entry in entries
+    ]
+
+    generated_at_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    filename_extension = "json" if output == "json" else "csv"
+    export_filename = f"intake-replay-history-{generated_at_stamp}.{filename_extension}"
+
+    headers: dict[str, str] = {}
+    if has_more and entries:
+        headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
+    headers["Content-Disposition"] = f'attachment; filename="{export_filename}"'
+
+    if output == "json":
+        return JSONResponse(payload, headers=headers)
+
+    fieldnames = [
+        "id",
+        "tenant_id",
+        "action",
+        "resource_type",
+        "resource_id",
+        "details",
+        "actor_user_id",
+        "created_by",
+        "created_at",
+        "updated_at",
+    ]
+    buffer = StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(payload)
+
+    return PlainTextResponse(buffer.getvalue(), media_type="text/csv", headers=headers)
 
 
 @router.get(
@@ -706,52 +817,183 @@ def export_replay_dead_letter_audit_history(
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
-    query = _build_replay_audit_history_query(
+    return _render_replay_audit_history_export_response(
         context=context,
+        db=db,
         tenant_id=tenant_id,
         event_id=event_id,
         start_created_at=start_created_at,
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
-        limit=limit + 1,
+        output=output,
+        limit=limit,
     )
-    entries = db.scalars(query).all()
-    has_more = len(entries) > limit
-    if has_more:
-        entries = entries[:limit]
 
-    payload = [
-        IntakeReplayAuditEntryResponse.model_validate(entry).model_dump(mode="json")
-        for entry in entries
-    ]
 
-    generated_at_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    filename_extension = "json" if output == "json" else "csv"
-    export_filename = f"intake-replay-history-{generated_at_stamp}.{filename_extension}"
+@router.post(
+    "/events/replay-history/export-token",
+    response_model=IntakeReplayExportTokenResponse,
+    operation_id="intake_events_replay_history_export_token",
+    summary="Generate signed replay-history export token",
+)
+def create_replay_dead_letter_export_token(
+    tenant_id: str | None = Query(default=None),
+    event_id: str | None = Query(default=None),
+    start_created_at: datetime | None = Query(default=None),
+    end_created_at: datetime | None = Query(default=None),
+    cursor_created_at: datetime | None = Query(default=None),
+    output: str = Query(default="csv", pattern="^(csv|json)$"),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    _validate_replay_audit_history_date_range(
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+    )
+    tenant_scope = _resolve_replay_export_tenant_scope(
+        context=context,
+        requested_tenant_id=tenant_id,
+    )
+    token_id = str(uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES
+    )
+    token_payload = {
+        "type": "replay_history_export_download",
+        "sub": context.user.id,
+        "tenant_id": tenant_scope,
+        "event_id": event_id,
+        "start_created_at": start_created_at.isoformat() if start_created_at else None,
+        "end_created_at": end_created_at.isoformat() if end_created_at else None,
+        "cursor_created_at": cursor_created_at.isoformat() if cursor_created_at else None,
+        "output": output,
+        "limit": limit,
+        "jti": token_id,
+    }
+    export_token = create_token(
+        token_payload,
+        expires_minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES,
+    )
 
-    headers: dict[str, str] = {}
-    if has_more and entries:
-        headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
-    headers["Content-Disposition"] = f'attachment; filename="{export_filename}"'
+    db.add(
+        AuditLog(
+            tenant_id=tenant_scope,
+            actor_user_id=context.user.id,
+            action="issue_replay_history_export_token",
+            resource_type="replay_history_export_token",
+            resource_id=token_id,
+            details=(
+                "Issued signed replay-history export token. "
+                f"event_id={event_id or 'all'}; output={output}; limit={limit}"
+            ),
+            created_by=context.user.id,
+        )
+    )
+    db.commit()
 
-    if output == "json":
-        return JSONResponse(payload, headers=headers)
+    return IntakeReplayExportTokenResponse(
+        token=export_token,
+        download_url=f"/api/intake/events/replay-history/export/download?token={export_token}",
+        expires_at=expires_at,
+    )
 
-    fieldnames = [
-        "id",
-        "tenant_id",
-        "action",
-        "resource_type",
-        "resource_id",
-        "details",
-        "actor_user_id",
-        "created_by",
-        "created_at",
-        "updated_at",
-    ]
-    buffer = StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(payload)
 
-    return PlainTextResponse(buffer.getvalue(), media_type="text/csv", headers=headers)
+@router.get(
+    "/events/replay-history/export/download",
+    operation_id="intake_events_replay_history_export_download",
+    summary="Download replay-history export with signed token",
+)
+def download_replay_dead_letter_audit_history_export(
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        token_payload = decode_token(token)
+    except TokenError as exc:
+        raise HTTPException(status_code=401, detail="Invalid export token") from exc
+
+    if token_payload.get("type") != "replay_history_export_download":
+        raise HTTPException(status_code=401, detail="Invalid export token")
+
+    token_id = token_payload.get("jti")
+    actor_user_id = token_payload.get("sub")
+    tenant_id = token_payload.get("tenant_id")
+
+    if not isinstance(token_id, str) or not isinstance(actor_user_id, str) or not isinstance(tenant_id, str):
+        raise HTTPException(status_code=401, detail="Invalid export token")
+
+    prior_use = db.scalar(
+        select(AuditLog.id)
+        .where(AuditLog.action == "consume_replay_history_export_token")
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id == token_id)
+        .limit(1)
+    )
+    if prior_use:
+        raise HTTPException(status_code=410, detail="Export token has already been used")
+
+    user = db.get(User, actor_user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid export token")
+
+    output = token_payload.get("output")
+    if output not in {"csv", "json"}:
+        raise HTTPException(status_code=400, detail="Invalid output in export token")
+
+    limit = token_payload.get("limit")
+    if not isinstance(limit, int) or limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="Invalid limit in export token")
+
+    event_id = token_payload.get("event_id")
+    if event_id is not None and not isinstance(event_id, str):
+        raise HTTPException(status_code=400, detail="Invalid event_id in export token")
+
+    start_created_at = _parse_export_token_datetime(
+        value=token_payload.get("start_created_at"),
+        field_name="start_created_at",
+    )
+    end_created_at = _parse_export_token_datetime(
+        value=token_payload.get("end_created_at"),
+        field_name="end_created_at",
+    )
+    cursor_created_at = _parse_export_token_datetime(
+        value=token_payload.get("cursor_created_at"),
+        field_name="cursor_created_at",
+    )
+
+    token_context = RequestContext(
+        user=user,
+        membership=None,
+        permissions={"*"},
+        tenant_id=tenant_id,
+    )
+    response = _render_replay_audit_history_export_response(
+        context=token_context,
+        db=db,
+        tenant_id=tenant_id,
+        event_id=event_id,
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+        cursor_created_at=cursor_created_at,
+        output=output,
+        limit=limit,
+    )
+
+    db.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            action="consume_replay_history_export_token",
+            resource_type="replay_history_export_token",
+            resource_id=token_id,
+            details=(
+                "Consumed signed replay-history export token. "
+                f"event_id={event_id or 'all'}; output={output}; limit={limit}"
+            ),
+            created_by=actor_user_id,
+        )
+    )
+    db.commit()
+
+    return response

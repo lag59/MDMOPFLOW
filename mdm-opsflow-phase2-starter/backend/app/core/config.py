@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     PORT:int=8080
     ACCESS_TOKEN_MINUTES:int=30
     REFRESH_TOKEN_MINUTES:int=20160
+    INTAKE_REPLAY_EXPORT_TOKEN_MINUTES:int=5
     SUPER_ADMIN_EMAIL:str="founder@mdmopsflow.com"
     SUPER_ADMIN_PASSWORD:str="ChangeMe123!"
     FOUNDER_DISPLAY_NAME:str="Libia A. Gaviria, RN, BSN"

@@ -547,6 +547,12 @@ class IntakeReplayAuditEntryResponse(BaseModel):
     updated_at: datetime
 
 
+class IntakeReplayExportTokenResponse(BaseModel):
+    token: str
+    download_url: str
+    expires_at: datetime
+
+
 class TicketBase(BaseModel):
     intake_item_id: str | None = None
     project_id: str | None = None
