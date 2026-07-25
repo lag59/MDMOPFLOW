@@ -502,6 +502,19 @@ def test_dead_letter_event_can_be_replayed_with_operator_approval_notes(client: 
     assert "replay_approved_at" in replayed_payload
     assert "dead_letter_reason" not in replayed_payload
 
+    with TestingSessionLocal() as db:
+        replay_audit_log = db.scalars(
+            select(AuditLog)
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.resource_type == "integration_event")
+            .where(AuditLog.resource_id == target_event["id"])
+            .where(AuditLog.action == "replay_dead_letter_intake_event")
+        ).first()
+
+    assert replay_audit_log is not None
+    assert "Ops manager approved replay after incident review" in replay_audit_log.details
+    assert "replay_count=1" in replay_audit_log.details
+
     pending_after = client.get(
         "/api/intake/events",
         params={"status": "pending"},

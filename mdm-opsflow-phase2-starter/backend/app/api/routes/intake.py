@@ -588,6 +588,21 @@ def replay_dead_letter_intake_integration_event(
     event.payload_json = json.dumps(event_payload)
     event.processed_at = None
 
+    db.add(
+        AuditLog(
+            tenant_id=event.tenant_id,
+            actor_user_id=context.user.id,
+            action="replay_dead_letter_intake_event",
+            resource_type="integration_event",
+            resource_id=event.id,
+            details=(
+                "Manual dead-letter replay approved. "
+                f"replay_count={replay_count}; approval_notes={approval_notes}"
+            ),
+            created_by=context.user.id,
+        )
+    )
+
     db.commit()
     db.refresh(event)
     return event
