@@ -33,16 +33,24 @@ def _tenant_id_from_context(context: RequestContext) -> str:
 )
 def list_intake_items(
     tenant_id: str | None = Query(default=None),
+    review_queue: bool = Query(default=False),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
+    query = select(IntakeItem)
+
     if "*" in context.permissions:
         if tenant_id:
-            return db.scalars(select(IntakeItem).where(IntakeItem.tenant_id == tenant_id)).all()
-        return db.scalars(select(IntakeItem)).all()
+            query = query.where(IntakeItem.tenant_id == tenant_id)
+        if review_queue:
+            query = query.where(IntakeItem.needs_review.is_(True))
+        return db.scalars(query).all()
 
     assert context.membership is not None
-    return db.scalars(select(IntakeItem).where(IntakeItem.tenant_id == context.membership.tenant_id)).all()
+    query = query.where(IntakeItem.tenant_id == context.membership.tenant_id)
+    if review_queue:
+        query = query.where(IntakeItem.needs_review.is_(True))
+    return db.scalars(query).all()
 
 
 @router.get(
@@ -110,6 +118,20 @@ async def upload_intake_files(
         payload=payload,
     )
 
+    duplicate_of_item_id: str | None = db.scalars(
+        select(IntakeItem.id)
+        .where(IntakeItem.tenant_id == tenant_id)
+        .where(IntakeItem.content_hash == processed.content_hash)
+        .limit(1)
+    ).first()
+
+    is_duplicate = duplicate_of_item_id is not None
+    if is_duplicate:
+        processed.needs_review = True
+        processed.review_reason = f"Possible duplicate of intake item {duplicate_of_item_id}."
+        processed.status = IntakeStatus.REVIEWING
+        processed.processing_stage = "reviewing"
+
     item = IntakeItem(
         tenant_id=tenant_id,
         batch_id=batch.id,
@@ -132,6 +154,7 @@ async def upload_intake_files(
         ai_status=processed.ai_status,
         needs_review=processed.needs_review,
         review_reason=processed.review_reason,
+        duplicate_of_item_id=duplicate_of_item_id,
         classification_confidence=processed.classification_confidence,
         match_confidence=processed.match_confidence,
         conflict_notes="",
@@ -144,7 +167,7 @@ async def upload_intake_files(
     created_ticket_ids: list[str] = []
     extracted_entities = json.loads(processed.extracted_entities or "{}")
     ticket_number = (extracted_entities.get("ticket_number") or "").strip()
-    if ticket_number:
+    if ticket_number and not is_duplicate:
         ticket = Ticket(
             tenant_id=tenant_id,
             intake_item_id=item.id,
@@ -165,6 +188,7 @@ async def upload_intake_files(
 
     batch.created_documents = 1
     batch.matched_documents = len(created_ticket_ids)
+    batch.duplicate_documents = 1 if is_duplicate else 0
     batch.needs_review_documents = 1 if processed.needs_review else 0
     batch.status = (
         IngestionBatchStatus.COMPLETED_WITH_REVIEW
