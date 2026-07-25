@@ -407,3 +407,105 @@ def test_event_moves_to_dead_letter_after_exceeding_max_retries(client: TestClie
     )
     assert dead_letter_list.status_code == 200
     assert any(event["id"] == target_event["id"] for event in dead_letter_list.json())
+
+
+def test_dead_letter_event_can_be_replayed_with_operator_approval_notes(client: TestClient) -> None:
+    user = register_user(client, "event-replay@example.com", "Pass12345!", "Event Replay Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Civil", "Replay Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay.txt", b"Ticket: TCK-9001\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    invalid_replay = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Operator override"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert invalid_replay.status_code == 400
+    assert invalid_replay.json()["detail"] == "Only dead-lettered events can be replayed"
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_without_notes = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "   "},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_without_notes.status_code == 400
+    assert replay_without_notes.json()["detail"] == "approval_notes is required"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Ops manager approved replay after incident review"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+    replayed_event = replay_response.json()
+
+    assert replayed_event["status"] == "pending"
+    assert replayed_event["processed_at"] is None
+    replayed_payload = json.loads(replayed_event["payload_json"])
+    assert replayed_payload["replay_count"] == 1
+    assert replayed_payload["replay_approved_by"] == user["user_id"]
+    assert replayed_payload["replay_approval_notes"] == "Ops manager approved replay after incident review"
+    assert "replay_approved_at" in replayed_payload
+    assert "dead_letter_reason" not in replayed_payload
+
+    pending_after = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_after.status_code == 200
+    assert any(event["id"] == target_event["id"] for event in pending_after.json())

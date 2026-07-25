@@ -469,6 +469,10 @@ class IntakeIntegrationEventRetryRequest(BaseModel):
     retry_notes: str = ""
 
 
+class IntakeIntegrationEventReplayRequest(BaseModel):
+    approval_notes: str = ""
+
+
 class IntakeItemResponse(IntakeItemBase):
     model_config = ConfigDict(from_attributes=True)
 
