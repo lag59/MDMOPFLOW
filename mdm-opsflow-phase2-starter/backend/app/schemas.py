@@ -618,6 +618,18 @@ class IntakeReplayExportTokenStateResponse(BaseModel):
     export_limit: int | None = None
 
 
+class IntakeReplayExportTokenStateListResponse(BaseModel):
+    items: list[IntakeReplayExportTokenStateResponse] = Field(default_factory=list)
+    limit: int
+    has_more: bool
+    next_cursor_issued_at: datetime | None = None
+    next_cursor_token_id: str | None = None
+    sort: str
+    window_start_issued_at: datetime | None = None
+    window_end_issued_at: datetime | None = None
+    window_effective_timezone: str = "UTC"
+
+
 class IntakeReplayExportTokenActorStateSummaryResponse(BaseModel):
     actor_user_id: str
     total_tokens: int
@@ -637,6 +649,22 @@ class IntakeReplayExportTokenStateSummaryResponse(BaseModel):
     revoked_tokens: int
     expired_tokens: int
     actors: list[IntakeReplayExportTokenActorStateSummaryResponse] = Field(default_factory=list)
+
+
+class IntakeReplayExportTokenStateAlertsResponse(BaseModel):
+    as_of: datetime
+    stale_threshold_minutes: int
+    stale_active_threshold_count: int
+    window_start_issued_at: datetime | None = None
+    window_end_issued_at: datetime | None = None
+    window_effective_timezone: str = "UTC"
+    total_tokens: int
+    active_tokens: int
+    active_tokens_older_than_threshold: int
+    active_tokens_older_than_threshold_exceeded: bool
+    consumed_tokens: int
+    revoked_tokens: int
+    consumed_to_revoked_ratio: float | None = None
 
 
 class TicketBase(BaseModel):
