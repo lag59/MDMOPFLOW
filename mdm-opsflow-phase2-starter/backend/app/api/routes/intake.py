@@ -27,6 +27,7 @@ from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
+    IntakeReplayExportTokenAuditEntryResponse,
     IntakeReplayExportTokenRevokeRequest,
     IntakeReplayExportTokenRevokeResponse,
     IntakeReplayExportTokenResponse,
@@ -42,6 +43,11 @@ from app.services.intake_processing import process_intake_upload
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
 MAX_INTEGRATION_EVENT_RETRIES = 3
+REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS = (
+    "issue_replay_history_export_token",
+    "consume_replay_history_export_token",
+    "revoke_replay_history_export_token",
+)
 
 
 def _tenant_id_from_context(context: RequestContext) -> str:
@@ -768,6 +774,59 @@ def _render_replay_audit_history_export_response(
     return PlainTextResponse(buffer.getvalue(), media_type="text/csv", headers=headers)
 
 
+def _build_replay_export_token_audit_query(
+    *,
+    context: RequestContext,
+    tenant_id: str | None,
+    token_id: str | None,
+    actor_user_id: str | None,
+    action: str | None,
+    start_created_at: datetime | None,
+    end_created_at: datetime | None,
+    cursor_created_at: datetime | None,
+    limit: int,
+):
+    _validate_replay_audit_history_date_range(
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+    )
+
+    query = (
+        select(AuditLog)
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.action.in_(REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS))
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    )
+
+    if "*" in context.permissions:
+        if tenant_id:
+            query = query.where(AuditLog.tenant_id == tenant_id)
+    else:
+        assert context.membership is not None
+        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+
+    if token_id:
+        query = query.where(AuditLog.resource_id == token_id)
+
+    if actor_user_id:
+        query = query.where(AuditLog.actor_user_id == actor_user_id)
+
+    if action:
+        query = query.where(AuditLog.action == action)
+
+    if start_created_at:
+        query = query.where(AuditLog.created_at >= start_created_at)
+
+    if end_created_at:
+        query = query.where(AuditLog.created_at <= end_created_at)
+
+    if cursor_created_at:
+        query = query.where(AuditLog.created_at < cursor_created_at)
+
+    return query
+
+
 @router.get(
     "/events/replay-history",
     response_model=list[IntakeReplayAuditEntryResponse],
@@ -789,6 +848,48 @@ def list_replay_dead_letter_audit_history(
         context=context,
         tenant_id=tenant_id,
         event_id=event_id,
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+        cursor_created_at=cursor_created_at,
+        limit=limit + 1,
+    )
+    entries = db.scalars(query).all()
+    has_more = len(entries) > limit
+    if has_more:
+        entries = entries[:limit]
+        response.headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
+
+    return entries
+
+
+@router.get(
+    "/events/replay-history/export-token-history",
+    response_model=list[IntakeReplayExportTokenAuditEntryResponse],
+    operation_id="intake_events_replay_history_export_token_history",
+    summary="List replay export token audit history",
+)
+def list_replay_export_token_audit_history(
+    response: Response,
+    tenant_id: str | None = Query(default=None),
+    token_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    action: str | None = Query(
+        default=None,
+        pattern="^(issue_replay_history_export_token|consume_replay_history_export_token|revoke_replay_history_export_token)$",
+    ),
+    start_created_at: datetime | None = Query(default=None),
+    end_created_at: datetime | None = Query(default=None),
+    cursor_created_at: datetime | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    query = _build_replay_export_token_audit_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        actor_user_id=actor_user_id,
+        action=action,
         start_created_at=start_created_at,
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
