@@ -361,6 +361,46 @@ export default function IntakePage() {
     }
   }
 
+  async function resetAuditFilters(): Promise<void> {
+    setAuditAction("all");
+    setAuditSort("-created_at");
+    setAuditTrendGranularity("day");
+    setAuditWindowPreset("all");
+    setAuditActorUserId("");
+    setAuditTokenId("");
+    setAuditStartCreatedAt("");
+    setAuditEndCreatedAt("");
+
+    setAuditLoading(true);
+    try {
+      const [page, summary, trend] = await Promise.all([
+        fetchReplayTokenAuditHistoryPage({
+          limit: 10,
+          sort: "-created_at",
+        }),
+        fetchReplayTokenAuditSummary({}),
+        fetchReplayTokenAuditTrend({
+          granularity: "day",
+        }),
+      ]);
+      setAuditEntries(page.items);
+      setAuditSummary(summary);
+      setAuditTrend(trend);
+      setAuditHasMore(page.has_more);
+      setAuditNextCursorCreatedAt(page.next_cursor_created_at);
+      setAuditNextCursorId(page.next_cursor_id);
+    } catch {
+      setAuditEntries([]);
+      setAuditSummary(null);
+      setAuditTrend(null);
+      setAuditHasMore(false);
+      setAuditNextCursorCreatedAt(null);
+      setAuditNextCursorId(null);
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
   function getIssuedBeforeCutoffIso(): string {
     const cutoff = new Date(Date.now() - staleThresholdMinutes * 60 * 1000);
     return cutoff.toISOString();
@@ -624,6 +664,9 @@ export default function IntakePage() {
         <div className="section-header">
           <h3>Audit trail</h3>
           <div className="replay-action-row">
+            <button onClick={() => void resetAuditFilters()} disabled={auditLoading || auditExportBusy}>
+              Reset audit filters
+            </button>
             <button onClick={() => void refreshAudit()} disabled={auditLoading}>
               {auditLoading ? "Refreshing..." : "Refresh audit"}
             </button>

@@ -95,6 +95,15 @@ This runbook covers the replay export token observability endpoints and how to t
   Selecting a preset updates the audit filter fields; clicking `Refresh audit`
   then propagates those timestamps to history, summary, and trends requests.
 
+  Operators can also click `Reset audit filters` to restore default audit controls
+  in one step:
+
+  - `Audit action`: `All actions`
+  - `Audit sort`: `Newest first`
+  - `Trend granularity`: `Day`
+  - `Audit window preset`: `All time`
+  - `Actor user ID`, `Token ID`, `Start created at`, `End created at`: cleared
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:
