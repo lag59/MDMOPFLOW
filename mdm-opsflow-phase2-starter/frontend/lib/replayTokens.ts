@@ -46,6 +46,44 @@ export type ReplayTokenStateAlerts = {
   consumed_to_revoked_ratio: number | null;
 };
 
+export type ReplayTokenAuditEntry = {
+  id: string;
+  tenant_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: string;
+  actor_user_id: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReplayTokenBulkRevokeActiveResponse = {
+  tenant_id: string;
+  dry_run: boolean;
+  inspected_tokens: number;
+  candidate_count: number;
+  revoked_count: number;
+  skipped_consumed_count: number;
+  skipped_revoked_count: number;
+  skipped_expired_count: number;
+  candidate_token_ids: string[];
+  revoked_token_ids: string[];
+  revoked_at: string;
+};
+
+export class ReplayTokenApiError extends Error {
+  status: number;
+  detail: string;
+
+  constructor(status: number, detail: string) {
+    super(detail);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 function buildAuthHeaders(): Record<string, string> {
   const token = getAccessToken();
   const tenantId = getTenantId();
@@ -90,9 +128,7 @@ export async function fetchReplayTokenStateEnvelope(params: {
   const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-states/list?${query.toString()}`, {
     headers: buildAuthHeaders(),
   });
-  if (!response.ok) {
-    throw new Error("Unable to load replay token states");
-  }
+  await throwIfNotOk(response, "Unable to load replay token states");
 
   return (await response.json()) as ReplayTokenStateListEnvelope;
 }
@@ -109,9 +145,59 @@ export async function fetchReplayTokenStateAlerts(params: {
   const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-states/alerts?${query.toString()}`, {
     headers: buildAuthHeaders(),
   });
-  if (!response.ok) {
-    throw new Error("Unable to load replay token alerts");
-  }
+  await throwIfNotOk(response, "Unable to load replay token alerts");
 
   return (await response.json()) as ReplayTokenStateAlerts;
+}
+
+export async function fetchReplayTokenAuditHistory(limit = 20): Promise<ReplayTokenAuditEntry[]> {
+  const query = new URLSearchParams({
+    limit: String(limit),
+  });
+  const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token-history?${query.toString()}`, {
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to load replay token audit history");
+  return (await response.json()) as ReplayTokenAuditEntry[];
+}
+
+export async function bulkRevokeActiveReplayTokens(params: {
+  limit: number;
+  issuedBefore: string;
+  reason: string;
+  dryRun: boolean;
+}): Promise<ReplayTokenBulkRevokeActiveResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/api/intake/events/replay-history/export-token/revoke-active`, {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      limit: params.limit,
+      issued_before: params.issuedBefore,
+      reason: params.reason,
+      dry_run: params.dryRun,
+    }),
+  });
+  await throwIfNotOk(response, "Unable to revoke active replay tokens");
+  return (await response.json()) as ReplayTokenBulkRevokeActiveResponse;
+}
+
+async function throwIfNotOk(response: Response, fallbackMessage: string): Promise<void> {
+  if (response.ok) {
+    return;
+  }
+
+  let detail = fallbackMessage;
+  try {
+    const payload = (await response.json()) as { detail?: string };
+    if (payload?.detail) {
+      detail = payload.detail;
+    }
+  } catch {
+    // Keep fallback detail when response body is not JSON.
+  }
+
+  throw new ReplayTokenApiError(response.status, detail);
 }
