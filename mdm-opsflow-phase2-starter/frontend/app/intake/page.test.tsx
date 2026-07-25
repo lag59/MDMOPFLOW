@@ -161,6 +161,130 @@ describe("Intake replay token observability page", () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 
+  it("loads additional audit rows with cursor_created_at and cursor_id", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history") && !url.includes("cursor_created_at")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "log-1",
+                tenant_id: "tenant-1",
+                action: "issue_replay_history_export_token",
+                resource_type: "replay_history_export_token",
+                resource_id: "tok-1",
+                details: "issued",
+                actor_user_id: "u-1",
+                created_by: "u-1",
+                created_at: "2026-07-25T18:00:00Z",
+                updated_at: "2026-07-25T18:00:00Z",
+              },
+            ]),
+            {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "X-Next-Cursor-Created-At": "2026-07-25T18:00:00Z",
+                "X-Next-Cursor-Id": "log-1",
+              },
+            }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history") && url.includes("cursor_created_at") && url.includes("cursor_id=log-1")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "log-2",
+                tenant_id: "tenant-1",
+                action: "revoke_replay_history_export_token",
+                resource_type: "replay_history_export_token",
+                resource_id: "tok-2",
+                details: "revoked",
+                actor_user_id: "u-2",
+                created_by: "u-2",
+                created_at: "2026-07-25T17:59:00Z",
+                updated_at: "2026-07-25T17:59:00Z",
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("tok-1")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Load more audit" })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Load more audit" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("tok-2")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "No more audit rows" })).toBeDisabled();
+    });
+
+    const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
+    const loadMoreAuditUrl = calledUrls.find((url) =>
+      url.includes("/export-token-history") &&
+      url.includes("cursor_created_at=2026-07-25T18%3A00%3A00Z") &&
+      url.includes("cursor_id=log-1")
+    );
+    expect(loadMoreAuditUrl).toBeTruthy();
+  });
+
   it("applies stale-threshold and sort controls when refreshing", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);

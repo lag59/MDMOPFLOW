@@ -84,6 +84,18 @@ Use these query parameters on `GET /api/intake/events/replay-history/export-toke
 - `start_created_at` and `end_created_at`
   - Filter by UTC timestamp window.
 
+## Audit Pagination Contract
+
+For deterministic paging on `GET /api/intake/events/replay-history/export-token-history`:
+
+- Read both response headers when more rows are available:
+  - `X-Next-Cursor-Created-At`
+  - `X-Next-Cursor-Id`
+- Request the next page with both query parameters:
+  - `cursor_created_at`
+  - `cursor_id`
+- If `cursor_id` is provided without `cursor_created_at`, the API returns `400`.
+
 ## Suggested Polling Strategy
 
 - Alerts endpoint: poll every 60 seconds.
