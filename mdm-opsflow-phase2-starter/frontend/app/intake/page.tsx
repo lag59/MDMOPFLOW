@@ -755,33 +755,39 @@ export default function IntakePage() {
               onChange={(e) => applyAuditWindowPreset(e.target.value as ReplayTokenAuditWindowPreset)}
             >
               <option value="all">All time</option>
-              <option value="last_1h">Last 1 hour</option>
-              <option value="last_6h">Last 6 hours</option>
-              <option value="last_12h">Last 12 hours</option>
-              <option value="last_24h">Last 24 hours</option>
-              <option value="last_48h">Last 48 hours</option>
-              <option value="last_72h">Last 72 hours</option>
-              <option value="last_96h">Last 96 hours</option>
-              <option value="last_120h">Last 120 hours</option>
-              <option value="last_144h">Last 144 hours</option>
-              <option value="last_168h">Last 168 hours</option>
-              <option value="last_7d">Last 7 days</option>
-              <option value="last_14d">Last 14 days</option>
-              <option value="last_21d">Last 21 days</option>
-              <option value="last_28d">Last 28 days</option>
-              <option value="last_60d">Last 60 days</option>
-              <option value="last_90d">Last 90 days</option>
-              <option value="last_180d">Last 180 days</option>
-              <option value="last_365d">Last 365 days</option>
-              <option value="last_730d">Last 730 days</option>
-              <option value="last_1095d">Last 1095 days</option>
-              <option value="last_1460d">Last 1460 days</option>
-              <option value="last_1825d">Last 1825 days</option>
-              <option value="last_3650d">Last 3650 days</option>
-              <option value="last_7300d">Last 7300 days</option>
-              <option value="last_10950d">Last 10950 days</option>
-              <option value="last_30d">Last 30 days</option>
-              <option value="custom">Custom</option>
+              <optgroup label="Hours">
+                <option value="last_1h">Last 1 hour</option>
+                <option value="last_6h">Last 6 hours</option>
+                <option value="last_12h">Last 12 hours</option>
+                <option value="last_24h">Last 24 hours</option>
+                <option value="last_48h">Last 48 hours</option>
+                <option value="last_72h">Last 72 hours</option>
+                <option value="last_96h">Last 96 hours</option>
+                <option value="last_120h">Last 120 hours</option>
+                <option value="last_144h">Last 144 hours</option>
+                <option value="last_168h">Last 168 hours</option>
+              </optgroup>
+              <optgroup label="Days and months">
+                <option value="last_7d">Last 7 days</option>
+                <option value="last_14d">Last 14 days</option>
+                <option value="last_21d">Last 21 days</option>
+                <option value="last_28d">Last 28 days</option>
+                <option value="last_30d">Last 30 days</option>
+                <option value="last_60d">Last 60 days</option>
+                <option value="last_90d">Last 90 days</option>
+                <option value="last_180d">Last 180 days</option>
+              </optgroup>
+              <optgroup label="Years and long-range">
+                <option value="last_365d">Last 1 year (365 days)</option>
+                <option value="last_730d">Last 2 years (730 days)</option>
+                <option value="last_1095d">Last 3 years (1095 days)</option>
+                <option value="last_1460d">Last 4 years (1460 days)</option>
+                <option value="last_1825d">Last 5 years (1825 days)</option>
+                <option value="last_3650d">Last 10 years (3650 days)</option>
+                <option value="last_7300d">Last 20 years (7300 days)</option>
+                <option value="last_10950d">Last 30 years (10950 days)</option>
+              </optgroup>
+              <option value="custom">Custom (manual timestamps)</option>
             </select>
           </label>
           <label>

@@ -57,6 +57,12 @@ This runbook covers the replay export token observability endpoints and how to t
 
   Operators can also set `Audit window preset` to quickly bound filter timestamps:
 
+  Presets are grouped in the selector to speed up scanning during incidents:
+
+  - `Hours`
+  - `Days and months`
+  - `Years and long-range`
+
   - `All time`: clears `start_created_at` and `end_created_at`.
   - `Last 1 hour`: sets an auto-generated UTC window ending now.
   - `Last 6 hours`: sets an auto-generated UTC window ending now.
@@ -75,16 +81,16 @@ This runbook covers the replay export token observability endpoints and how to t
   - `Last 60 days`: sets an auto-generated UTC window ending now.
   - `Last 90 days`: sets an auto-generated UTC window ending now.
   - `Last 180 days`: sets an auto-generated UTC window ending now.
-  - `Last 365 days`: sets an auto-generated UTC window ending now.
-  - `Last 730 days`: sets an auto-generated UTC window ending now.
-  - `Last 1095 days`: sets an auto-generated UTC window ending now.
-  - `Last 1460 days`: sets an auto-generated UTC window ending now.
-  - `Last 1825 days`: sets an auto-generated UTC window ending now.
-  - `Last 3650 days`: sets an auto-generated UTC window ending now.
-  - `Last 7300 days`: sets an auto-generated UTC window ending now.
-  - `Last 10950 days`: sets an auto-generated UTC window ending now.
+  - `Last 1 year (365 days)`: sets an auto-generated UTC window ending now.
+  - `Last 2 years (730 days)`: sets an auto-generated UTC window ending now.
+  - `Last 3 years (1095 days)`: sets an auto-generated UTC window ending now.
+  - `Last 4 years (1460 days)`: sets an auto-generated UTC window ending now.
+  - `Last 5 years (1825 days)`: sets an auto-generated UTC window ending now.
+  - `Last 10 years (3650 days)`: sets an auto-generated UTC window ending now.
+  - `Last 20 years (7300 days)`: sets an auto-generated UTC window ending now.
+  - `Last 30 years (10950 days)`: sets an auto-generated UTC window ending now.
   - `Last 30 days`: sets an auto-generated UTC window ending now.
-  - `Custom`: preserves manual timestamp values.
+  - `Custom (manual timestamps)`: preserves manual timestamp values.
 
   Selecting a preset updates the audit filter fields; clicking `Refresh audit`
   then propagates those timestamps to history, summary, and trends requests.
