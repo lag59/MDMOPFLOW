@@ -27,6 +27,7 @@ Latest delivered increment:
 - Intake audit window presets now include `last 72 hours` for three-day operational slices, with deterministic UTC query propagation coverage.
 - Intake audit window presets now include `last 96 hours` for four-day operational slices, with deterministic UTC query propagation coverage.
 - Intake audit window presets now include `last 120 hours` for five-day operational slices, with deterministic UTC query propagation coverage.
+- Intake audit window presets now include `last 144 hours` for six-day operational slices, with deterministic UTC query propagation coverage.
 
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.
