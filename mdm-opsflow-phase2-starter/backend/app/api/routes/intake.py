@@ -682,7 +682,7 @@ def _validate_replay_audit_history_date_range(
     start_created_at: datetime | None,
     end_created_at: datetime | None,
 ) -> None:
-    if start_created_at and end_created_at and start_created_at > end_created_at:
+    if start_created_at and end_created_at and _as_utc(start_created_at) > _as_utc(end_created_at):
         raise HTTPException(status_code=400, detail="start_created_at must be <= end_created_at")
 
 

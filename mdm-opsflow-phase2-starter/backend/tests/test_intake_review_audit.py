@@ -1507,6 +1507,186 @@ def test_replay_export_token_state_summary_reports_totals_and_actor_breakdown(cl
     assert invalid_range.json()["detail"] == "start_created_at must be <= end_created_at"
 
 
+def test_replay_export_token_state_summary_matches_list_for_actor_and_date_filters(
+    client: TestClient,
+) -> None:
+    user = register_user(client, "event-replay-token-parity@example.com", "Pass12345!", "Replay Token Parity Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Parity Civil", "Replay Token Parity Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-token-parity.txt", b"Ticket: TCK-9650\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for token state parity test"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    consumed_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert consumed_token_response.status_code == 200
+    consumed_token_payload = consumed_token_response.json()
+    consumed_download = client.get(consumed_token_payload["download_url"])
+    assert consumed_download.status_code == 200
+
+    revoked_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoked_token_response.status_code == 200
+    revoked_token_payload = revoked_token_response.json()
+    revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": revoked_token_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_response.status_code == 200
+
+    issued_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "csv"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert issued_token_response.status_code == 200
+
+    end_issued_at = (datetime.utcnow() + timedelta(minutes=5)).isoformat()
+    broad_list_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "end_issued_at": end_issued_at,
+            "limit": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert broad_list_response.status_code == 200
+    broad_states = broad_list_response.json()
+    assert len(broad_states) >= 3
+
+    broad_summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/summary",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "end_issued_at": end_issued_at,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert broad_summary_response.status_code == 200
+    broad_summary = broad_summary_response.json()
+
+    broad_state_counts = {"issued": 0, "consumed": 0, "revoked": 0, "expired": 0}
+    for entry in broad_states:
+        broad_state_counts[entry["state"]] += 1
+
+    assert broad_summary["total_tokens"] == len(broad_states)
+    assert broad_summary["issued_tokens"] == broad_state_counts["issued"]
+    assert broad_summary["consumed_tokens"] == broad_state_counts["consumed"]
+    assert broad_summary["revoked_tokens"] == broad_state_counts["revoked"]
+    assert broad_summary["expired_tokens"] == broad_state_counts["expired"]
+    assert len(broad_summary["actors"]) == 1
+    assert broad_summary["actors"][0]["actor_user_id"] == user["user_id"]
+    assert broad_summary["actors"][0]["total_tokens"] == len(broad_states)
+
+    latest_issued_at = max(entry["issued_at"] for entry in broad_states)
+    narrow_list_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "start_issued_at": latest_issued_at,
+            "end_issued_at": end_issued_at,
+            "limit": 100,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert narrow_list_response.status_code == 200
+    narrow_states = narrow_list_response.json()
+    assert len(narrow_states) >= 1
+
+    narrow_summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/summary",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "start_issued_at": latest_issued_at,
+            "end_issued_at": end_issued_at,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert narrow_summary_response.status_code == 200
+    narrow_summary = narrow_summary_response.json()
+
+    narrow_state_counts = {"issued": 0, "consumed": 0, "revoked": 0, "expired": 0}
+    for entry in narrow_states:
+        narrow_state_counts[entry["state"]] += 1
+
+    assert narrow_summary["total_tokens"] == len(narrow_states)
+    assert narrow_summary["issued_tokens"] == narrow_state_counts["issued"]
+    assert narrow_summary["consumed_tokens"] == narrow_state_counts["consumed"]
+    assert narrow_summary["revoked_tokens"] == narrow_state_counts["revoked"]
+    assert narrow_summary["expired_tokens"] == narrow_state_counts["expired"]
+
+
 def test_replay_export_token_bulk_revoke_active_revokes_only_issued_tokens(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-bulk-revoke@example.com", "Pass12345!", "Replay Token Revoker")
     token = user["tokens"]["access_token"]
