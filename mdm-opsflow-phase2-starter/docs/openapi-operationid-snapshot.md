@@ -16,6 +16,7 @@ Generated from `backend/app/main.py`.
 | POST | `/api/auth/register` | `auth_register` |
 | GET | `/api/intake/events` | `intake_events_list` |
 | GET | `/api/intake/events/replay-history` | `intake_events_replay_history` |
+| GET | `/api/intake/events/replay-history/export` | `intake_events_replay_history_export` |
 | POST | `/api/intake/events/{event_id}/mark-processed` | `intake_events_mark_processed` |
 | POST | `/api/intake/events/{event_id}/replay-dead-letter` | `intake_events_replay_dead_letter` |
 | POST | `/api/intake/events/{event_id}/retry` | `intake_events_retry` |
