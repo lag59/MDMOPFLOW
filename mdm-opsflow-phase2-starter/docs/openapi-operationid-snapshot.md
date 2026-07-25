@@ -22,6 +22,7 @@ Generated from `backend/app/main.py`.
 | GET | `/api/intake/events/replay-history/export-token-states` | `intake_events_replay_history_export_token_states` |
 | GET | `/api/intake/events/replay-history/export-token-states/summary` | `intake_events_replay_history_export_token_states_summary` |
 | POST | `/api/intake/events/replay-history/export-token/revoke` | `intake_events_replay_history_export_token_revoke` |
+| POST | `/api/intake/events/replay-history/export-token/revoke-active` | `intake_events_replay_history_export_token_revoke_active` |
 | GET | `/api/intake/events/replay-history/export/download` | `intake_events_replay_history_export_download` |
 | POST | `/api/intake/events/{event_id}/mark-processed` | `intake_events_mark_processed` |
 | POST | `/api/intake/events/{event_id}/replay-dead-letter` | `intake_events_replay_dead_letter` |
