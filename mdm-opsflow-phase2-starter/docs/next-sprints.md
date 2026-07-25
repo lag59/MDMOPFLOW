@@ -19,6 +19,7 @@ Latest delivered increment:
 - Replay-token audit history now has a summary endpoint with action totals, unique actors, and latest-event timestamp; intake audit panel now shows these metrics for the active filter scope.
 - Replay-token audit summary now includes consume/revoke percentage KPIs (relative to issue count), and intake audit cards display these rates for the active filter scope.
 - Intake audit trend panel now includes an operator-selectable granularity control (`day`/`hour`) that is propagated to trends API requests.
+- Intake audit filters now include window presets (`all time`, `last 24 hours`, `last 7 days`, `last 30 days`, `custom`) that auto-fill UTC timestamps for faster scoped refreshes.
 
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.

@@ -55,6 +55,17 @@ This runbook covers the replay export token observability endpoints and how to t
   Changing this selector and clicking `Refresh audit` applies the selected
   granularity to the trends endpoint request.
 
+  Operators can also set `Audit window preset` to quickly bound filter timestamps:
+
+  - `All time`: clears `start_created_at` and `end_created_at`.
+  - `Last 24 hours`: sets an auto-generated UTC window ending now.
+  - `Last 7 days`: sets an auto-generated UTC window ending now.
+  - `Last 30 days`: sets an auto-generated UTC window ending now.
+  - `Custom`: preserves manual timestamp values.
+
+  Selecting a preset updates the audit filter fields; clicking `Refresh audit`
+  then propagates those timestamps to history, summary, and trends requests.
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:

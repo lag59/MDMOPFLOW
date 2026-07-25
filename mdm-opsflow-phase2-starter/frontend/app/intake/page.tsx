@@ -30,6 +30,7 @@ type ReplayTokenAuditAction =
   | "revoke_replay_history_export_token";
 type ReplayTokenAuditSort = "-created_at" | "+created_at";
 type ReplayTokenAuditTrendGranularity = "day" | "hour";
+type ReplayTokenAuditWindowPreset = "all" | "last_24h" | "last_7d" | "last_30d" | "custom";
 
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -44,6 +45,27 @@ function formatTrendLabel(value: string): string {
 
 function formatTrendWindow(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "n/a";
+}
+
+function resolveAuditWindowPresetRange(
+  preset: ReplayTokenAuditWindowPreset,
+  now: Date = new Date()
+): { start: string; end: string } | null {
+  if (preset === "all" || preset === "custom") {
+    return null;
+  }
+
+  const end = now.toISOString();
+  const start = new Date(now.getTime());
+  if (preset === "last_24h") {
+    start.setUTCHours(start.getUTCHours() - 24);
+  } else if (preset === "last_7d") {
+    start.setUTCDate(start.getUTCDate() - 7);
+  } else {
+    start.setUTCDate(start.getUTCDate() - 30);
+  }
+
+  return { start: start.toISOString(), end };
 }
 
 export default function IntakePage() {
@@ -74,6 +96,7 @@ export default function IntakePage() {
   const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
   const [auditSort, setAuditSort] = useState<ReplayTokenAuditSort>("-created_at");
   const [auditTrendGranularity, setAuditTrendGranularity] = useState<ReplayTokenAuditTrendGranularity>("day");
+  const [auditWindowPreset, setAuditWindowPreset] = useState<ReplayTokenAuditWindowPreset>("all");
   const [auditActorUserId, setAuditActorUserId] = useState<string>("");
   const [auditTokenId, setAuditTokenId] = useState<string>("");
   const [auditStartCreatedAt, setAuditStartCreatedAt] = useState<string>("");
@@ -246,6 +269,21 @@ export default function IntakePage() {
     setRevokeResult("");
     await refreshAll();
     await refreshAudit();
+  }
+
+  function applyAuditWindowPreset(preset: ReplayTokenAuditWindowPreset): void {
+    setAuditWindowPreset(preset);
+    const range = resolveAuditWindowPresetRange(preset);
+    if (range) {
+      setAuditStartCreatedAt(range.start);
+      setAuditEndCreatedAt(range.end);
+      return;
+    }
+
+    if (preset === "all") {
+      setAuditStartCreatedAt("");
+      setAuditEndCreatedAt("");
+    }
   }
 
   function getIssuedBeforeCutoffIso(): string {
@@ -636,6 +674,19 @@ export default function IntakePage() {
             </select>
           </label>
           <label>
+            Audit window preset
+            <select
+              value={auditWindowPreset}
+              onChange={(e) => applyAuditWindowPreset(e.target.value as ReplayTokenAuditWindowPreset)}
+            >
+              <option value="all">All time</option>
+              <option value="last_24h">Last 24 hours</option>
+              <option value="last_7d">Last 7 days</option>
+              <option value="last_30d">Last 30 days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>
             Actor user ID
             <input
               type="text"
@@ -658,7 +709,10 @@ export default function IntakePage() {
             <input
               type="text"
               value={auditStartCreatedAt}
-              onChange={(e) => setAuditStartCreatedAt(e.target.value)}
+              onChange={(e) => {
+                setAuditStartCreatedAt(e.target.value);
+                setAuditWindowPreset("custom");
+              }}
               placeholder="2026-07-25T00:00:00Z"
             />
           </label>
@@ -667,7 +721,10 @@ export default function IntakePage() {
             <input
               type="text"
               value={auditEndCreatedAt}
-              onChange={(e) => setAuditEndCreatedAt(e.target.value)}
+              onChange={(e) => {
+                setAuditEndCreatedAt(e.target.value);
+                setAuditWindowPreset("custom");
+              }}
               placeholder="2026-07-26T00:00:00Z"
             />
           </label>
