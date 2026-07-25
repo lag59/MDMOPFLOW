@@ -1111,10 +1111,13 @@ def summarize_replay_export_token_states(
         issue_query = issue_query.where(AuditLog.created_at <= end_issued_at)
 
     issue_logs = db.scalars(issue_query).all()
+    normalized_start_issued_at = _as_utc(start_issued_at) if start_issued_at else None
+    normalized_end_issued_at = _as_utc(end_issued_at) if end_issued_at else None
     if not issue_logs:
         return IntakeReplayExportTokenStateSummaryResponse(
-            window_start_issued_at=start_issued_at,
-            window_end_issued_at=end_issued_at,
+            window_start_issued_at=normalized_start_issued_at,
+            window_end_issued_at=normalized_end_issued_at,
+            window_effective_timezone="UTC",
             total_tokens=0,
             issued_tokens=0,
             consumed_tokens=0,
@@ -1203,8 +1206,9 @@ def summarize_replay_export_token_states(
     ]
 
     return IntakeReplayExportTokenStateSummaryResponse(
-        window_start_issued_at=start_issued_at,
-        window_end_issued_at=end_issued_at,
+        window_start_issued_at=normalized_start_issued_at,
+        window_end_issued_at=normalized_end_issued_at,
+        window_effective_timezone="UTC",
         total_tokens=len(issue_logs),
         issued_tokens=issued_count,
         consumed_tokens=consumed_count,

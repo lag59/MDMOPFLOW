@@ -1473,6 +1473,7 @@ def test_replay_export_token_state_summary_reports_totals_and_actor_breakdown(cl
     assert summary["consumed_tokens"] >= 1
     assert summary["revoked_tokens"] >= 1
     assert summary["expired_tokens"] >= 0
+    assert summary["window_effective_timezone"] == "UTC"
     assert len(summary["actors"]) >= 1
 
     actor_summary = next(actor for actor in summary["actors"] if actor["actor_user_id"] == user["user_id"])
@@ -1643,6 +1644,7 @@ def test_replay_export_token_state_summary_matches_list_for_actor_and_date_filte
     assert broad_summary["consumed_tokens"] == broad_state_counts["consumed"]
     assert broad_summary["revoked_tokens"] == broad_state_counts["revoked"]
     assert broad_summary["expired_tokens"] == broad_state_counts["expired"]
+    assert broad_summary["window_effective_timezone"] == "UTC"
     assert len(broad_summary["actors"]) == 1
     assert broad_summary["actors"][0]["actor_user_id"] == user["user_id"]
     assert broad_summary["actors"][0]["total_tokens"] == len(broad_states)
@@ -1685,6 +1687,22 @@ def test_replay_export_token_state_summary_matches_list_for_actor_and_date_filte
     assert narrow_summary["consumed_tokens"] == narrow_state_counts["consumed"]
     assert narrow_summary["revoked_tokens"] == narrow_state_counts["revoked"]
     assert narrow_summary["expired_tokens"] == narrow_state_counts["expired"]
+    assert narrow_summary["window_effective_timezone"] == "UTC"
+
+    aware_start_summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/summary",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "start_issued_at": latest_issued_at,
+            "end_issued_at": end_issued_at,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert aware_start_summary_response.status_code == 200
+    aware_start_summary = aware_start_summary_response.json()
+    assert aware_start_summary["window_start_issued_at"].endswith(("+00:00", "Z"))
+    assert aware_start_summary["window_end_issued_at"].endswith(("+00:00", "Z"))
 
 
 def test_replay_export_token_bulk_revoke_active_revokes_only_issued_tokens(client: TestClient) -> None:

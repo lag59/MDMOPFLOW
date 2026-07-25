@@ -630,6 +630,7 @@ class IntakeReplayExportTokenActorStateSummaryResponse(BaseModel):
 class IntakeReplayExportTokenStateSummaryResponse(BaseModel):
     window_start_issued_at: datetime | None = None
     window_end_issued_at: datetime | None = None
+    window_effective_timezone: str = "UTC"
     total_tokens: int
     issued_tokens: int
     consumed_tokens: int
