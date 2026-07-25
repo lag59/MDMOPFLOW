@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
-from app.models import AuditLog, IngestionBatch, IngestionBatchStatus, IntakeItem, IntakeStatus, Ticket
+from app.models import (
+    AuditLog,
+    IngestionBatch,
+    IngestionBatchStatus,
+    IntakeItem,
+    IntakeStatus,
+    IntegrationEvent,
+    Ticket,
+)
 from app.schemas import IntakeDuplicateResolutionRequest, IntakeItemResponse
 from app.services.intake_processing import process_intake_upload
 
@@ -53,6 +61,28 @@ def _add_intake_audit_log(
             resource_type="intake_item",
             resource_id=item.id,
             details=details,
+            created_by=actor_user_id,
+        )
+    )
+
+
+def _add_integration_event(
+    db: Session,
+    *,
+    tenant_id: str,
+    actor_user_id: str,
+    event_type: str,
+    resource_id: str,
+    payload: dict[str, str | int | bool | None],
+) -> None:
+    db.add(
+        IntegrationEvent(
+            tenant_id=tenant_id,
+            event_type=event_type,
+            resource_type="intake_item",
+            resource_id=resource_id,
+            payload_json=json.dumps(payload),
+            status="pending",
             created_by=actor_user_id,
         )
     )
@@ -229,6 +259,21 @@ async def upload_intake_files(
         }
     )
 
+    _add_integration_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=context.user.id,
+        event_type="intake_item_uploaded",
+        resource_id=item.id,
+        payload={
+            "batch_id": batch.id,
+            "status": item.status.value,
+            "needs_review": item.needs_review,
+            "duplicate_of_item_id": item.duplicate_of_item_id,
+            "created_ticket_count": len(created_ticket_ids),
+        },
+    )
+
     db.commit()
     db.refresh(item)
     return item
@@ -258,6 +303,17 @@ def approve_intake_item(
         actor_user_id=context.user.id,
         action="approve_intake_item",
         details="Intake item approved through review workflow.",
+    )
+    _add_integration_event(
+        db,
+        tenant_id=item.tenant_id,
+        actor_user_id=context.user.id,
+        event_type="intake_item_approved",
+        resource_id=item.id,
+        payload={
+            "status": item.status.value,
+            "needs_review": item.needs_review,
+        },
     )
 
     db.commit()
@@ -291,6 +347,18 @@ def reject_intake_item(
         actor_user_id=context.user.id,
         action="reject_intake_item",
         details=f"Intake item rejected. reason={item.review_reason}",
+    )
+    _add_integration_event(
+        db,
+        tenant_id=item.tenant_id,
+        actor_user_id=context.user.id,
+        event_type="intake_item_rejected",
+        resource_id=item.id,
+        payload={
+            "status": item.status.value,
+            "needs_review": item.needs_review,
+            "review_reason": item.review_reason,
+        },
     )
 
     db.commit()
@@ -342,6 +410,18 @@ def resolve_duplicate_intake_item(
             f"previous_duplicate_of={previous_duplicate_of or ''}; "
             f"notes={item.conflict_notes or ''}"
         ),
+    )
+    _add_integration_event(
+        db,
+        tenant_id=item.tenant_id,
+        actor_user_id=context.user.id,
+        event_type="intake_item_duplicate_resolved",
+        resource_id=item.id,
+        payload={
+            "status": item.status.value,
+            "needs_review": item.needs_review,
+            "duplicate_of_item_id": item.duplicate_of_item_id,
+        },
     )
 
     db.commit()

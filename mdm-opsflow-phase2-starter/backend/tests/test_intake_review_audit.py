@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import AuditLog
+from app.models import AuditLog, IntegrationEvent
 
 from .helpers import complete_onboarding, register_user
 
@@ -66,12 +68,48 @@ def test_approve_and_reject_create_audit_entries(client: TestClient) -> None:
             .where(AuditLog.resource_id == second_item["id"])
             .where(AuditLog.action == "reject_intake_item")
         ).first()
+        upload_event = db.scalars(
+            select(IntegrationEvent)
+            .where(IntegrationEvent.tenant_id == tenant_id)
+            .where(IntegrationEvent.resource_type == "intake_item")
+            .where(IntegrationEvent.resource_id == first_item["id"])
+            .where(IntegrationEvent.event_type == "intake_item_uploaded")
+        ).first()
+        approve_event = db.scalars(
+            select(IntegrationEvent)
+            .where(IntegrationEvent.tenant_id == tenant_id)
+            .where(IntegrationEvent.resource_type == "intake_item")
+            .where(IntegrationEvent.resource_id == first_item["id"])
+            .where(IntegrationEvent.event_type == "intake_item_approved")
+        ).first()
+        reject_event = db.scalars(
+            select(IntegrationEvent)
+            .where(IntegrationEvent.tenant_id == tenant_id)
+            .where(IntegrationEvent.resource_type == "intake_item")
+            .where(IntegrationEvent.resource_id == second_item["id"])
+            .where(IntegrationEvent.event_type == "intake_item_rejected")
+        ).first()
 
     assert approve_log is not None
     assert "approved" in approve_log.details
 
     assert reject_log is not None
     assert "Missing load signature" in reject_log.details
+
+    assert upload_event is not None
+    upload_payload = json.loads(upload_event.payload_json)
+    assert upload_payload["batch_id"] == first_item["batch_id"]
+    assert upload_payload["status"] == first_item["status"]
+
+    assert approve_event is not None
+    approve_payload = json.loads(approve_event.payload_json)
+    assert approve_payload["status"] == "approved"
+    assert approve_payload["needs_review"] is False
+
+    assert reject_event is not None
+    reject_payload = json.loads(reject_event.payload_json)
+    assert reject_payload["status"] == "rejected"
+    assert reject_payload["review_reason"] == "Missing load signature"
 
 
 def test_duplicate_resolution_clears_review_and_logs_audit(client: TestClient) -> None:
@@ -125,7 +163,33 @@ def test_duplicate_resolution_clears_review_and_logs_audit(client: TestClient) -
             .where(AuditLog.resource_id == second_item["id"])
             .where(AuditLog.action == "resolve_intake_duplicate")
         ).first()
+        duplicate_upload_event = db.scalars(
+            select(IntegrationEvent)
+            .where(IntegrationEvent.tenant_id == tenant_id)
+            .where(IntegrationEvent.resource_type == "intake_item")
+            .where(IntegrationEvent.resource_id == second_item["id"])
+            .where(IntegrationEvent.event_type == "intake_item_uploaded")
+        ).first()
+        resolve_event = db.scalars(
+            select(IntegrationEvent)
+            .where(IntegrationEvent.tenant_id == tenant_id)
+            .where(IntegrationEvent.resource_type == "intake_item")
+            .where(IntegrationEvent.resource_id == second_item["id"])
+            .where(IntegrationEvent.event_type == "intake_item_duplicate_resolved")
+        ).first()
 
     assert resolution_log is not None
     assert first_item["id"] in resolution_log.details
     assert "Confirmed duplicate" in resolution_log.details
+
+    assert duplicate_upload_event is not None
+    duplicate_upload_payload = json.loads(duplicate_upload_event.payload_json)
+    assert duplicate_upload_payload["status"] == second_item["status"]
+    assert duplicate_upload_payload["needs_review"] is True
+    assert duplicate_upload_payload["duplicate_of_item_id"] == first_item["id"]
+
+    assert resolve_event is not None
+    resolve_payload = json.loads(resolve_event.payload_json)
+    assert resolve_payload["status"] == "approved"
+    assert resolve_payload["needs_review"] is False
+    assert resolve_payload["duplicate_of_item_id"] == first_item["id"]
