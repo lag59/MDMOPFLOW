@@ -108,6 +108,9 @@ This runbook covers the replay export token observability endpoints and how to t
   window preset, actor, token, and time range so operators can confirm scope
   before refresh or export.
 
+  `Download audit export` is enabled only when an audit time window is set.
+  Use a window preset or provide `Start created at` / `End created at` first.
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:
