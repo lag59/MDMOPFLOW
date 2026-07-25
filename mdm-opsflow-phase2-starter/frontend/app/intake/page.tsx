@@ -30,7 +30,7 @@ type ReplayTokenAuditAction =
   | "revoke_replay_history_export_token";
 type ReplayTokenAuditSort = "-created_at" | "+created_at";
 type ReplayTokenAuditTrendGranularity = "day" | "hour";
-type ReplayTokenAuditWindowPreset = "all" | "last_1h" | "last_24h" | "last_7d" | "last_30d" | "custom";
+type ReplayTokenAuditWindowPreset = "all" | "last_1h" | "last_6h" | "last_24h" | "last_7d" | "last_30d" | "custom";
 
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -60,6 +60,8 @@ function resolveAuditWindowPresetRange(
   const start = new Date(endDate.getTime());
   if (preset === "last_1h") {
     start.setUTCHours(start.getUTCHours() - 1);
+  } else if (preset === "last_6h") {
+    start.setUTCHours(start.getUTCHours() - 6);
   } else if (preset === "last_24h") {
     start.setUTCHours(start.getUTCHours() - 24);
   } else if (preset === "last_7d") {
@@ -684,6 +686,7 @@ export default function IntakePage() {
             >
               <option value="all">All time</option>
               <option value="last_1h">Last 1 hour</option>
+              <option value="last_6h">Last 6 hours</option>
               <option value="last_24h">Last 24 hours</option>
               <option value="last_7d">Last 7 days</option>
               <option value="last_30d">Last 30 days</option>
