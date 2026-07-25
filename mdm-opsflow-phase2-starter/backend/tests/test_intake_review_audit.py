@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import AuditLog, IntegrationEvent
+from app.security import decode_token
 
 from .helpers import complete_onboarding, register_user
 
@@ -1197,3 +1198,163 @@ def test_replay_export_token_audit_history_supports_action_actor_and_cursor_filt
     paged_next_entries = paged_history_next_response.json()
     assert len(paged_next_entries) >= 1
     assert paged_next_entries[0]["id"] != paged_entries[0]["id"]
+
+
+def test_replay_export_token_states_show_effective_lifecycle_projection(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-state@example.com", "Pass12345!", "Replay Token State Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token State Civil", "Replay Token State Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-token-state.txt", b"Ticket: TCK-9500\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for signed export token state test"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    consumed_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert consumed_token_response.status_code == 200
+    consumed_token_payload = consumed_token_response.json()
+    consumed_token_id = decode_token(consumed_token_payload["token"])["jti"]
+
+    consumed_download = client.get(consumed_token_payload["download_url"])
+    assert consumed_download.status_code == 200
+
+    revoked_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoked_token_response.status_code == 200
+    revoked_token_payload = revoked_token_response.json()
+    revoked_token_id = decode_token(revoked_token_payload["token"])["jti"]
+
+    revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": revoked_token_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_response.status_code == 200
+
+    issued_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "csv"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert issued_token_response.status_code == 200
+    issued_token_payload = issued_token_response.json()
+    issued_token_id = decode_token(issued_token_payload["token"])["jti"]
+
+    states_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert states_response.status_code == 200
+    states_payload = states_response.json()
+
+    by_token_id = {entry["token_id"]: entry for entry in states_payload}
+    assert by_token_id[consumed_token_id]["state"] == "consumed"
+    assert by_token_id[consumed_token_id]["consumed_at"] is not None
+    assert by_token_id[consumed_token_id]["revoked_at"] is None
+    assert by_token_id[consumed_token_id]["output"] == "json"
+
+    assert by_token_id[revoked_token_id]["state"] == "revoked"
+    assert by_token_id[revoked_token_id]["revoked_at"] is not None
+    assert by_token_id[revoked_token_id]["consumed_at"] is None
+    assert by_token_id[revoked_token_id]["output"] == "json"
+
+    assert by_token_id[issued_token_id]["state"] == "issued"
+    assert by_token_id[issued_token_id]["consumed_at"] is None
+    assert by_token_id[issued_token_id]["revoked_at"] is None
+    assert by_token_id[issued_token_id]["output"] == "csv"
+
+    token_filter_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "token_id": consumed_token_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert token_filter_response.status_code == 200
+    token_filter_payload = token_filter_response.json()
+    assert len(token_filter_payload) == 1
+    assert token_filter_payload[0]["token_id"] == consumed_token_id
+
+    paged_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "limit": 2},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert paged_response.status_code == 200
+    paged_payload = paged_response.json()
+    assert len(paged_payload) == 2
+    next_cursor = paged_response.headers.get("x-next-cursor-issued-at")
+    assert next_cursor is not None
+
+    paged_next_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "limit": 2, "cursor_issued_at": next_cursor},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert paged_next_response.status_code == 200
+    paged_next_payload = paged_next_response.json()
+    assert len(paged_next_payload) >= 1
+    assert paged_next_payload[0]["token_id"] != paged_payload[0]["token_id"]

@@ -578,6 +578,23 @@ class IntakeReplayExportTokenAuditEntryResponse(BaseModel):
     updated_at: datetime
 
 
+class IntakeReplayExportTokenStateResponse(BaseModel):
+    token_id: str
+    tenant_id: str
+    state: str
+    issued_at: datetime
+    issued_by_user_id: str
+    consumed_at: datetime | None = None
+    consumed_by_user_id: str | None = None
+    revoked_at: datetime | None = None
+    revoked_by_user_id: str | None = None
+    expires_at: datetime
+    latest_activity_at: datetime
+    event_id: str | None = None
+    output: str | None = None
+    export_limit: int | None = None
+
+
 class TicketBase(BaseModel):
     intake_item_id: str | None = None
     project_id: str | None = None
