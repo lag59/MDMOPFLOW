@@ -21,6 +21,7 @@ from app.models import (
 from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
+    IntakeIntegrationEventReplayRequest,
     IntakeIntegrationEventRetryRequest,
     IntakeIntegrationEventResponse,
     IntakeItemResponse,
@@ -546,6 +547,46 @@ def retry_intake_integration_event(
         event.processed_at = None
 
     event.payload_json = json.dumps(event_payload)
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post(
+    "/events/{event_id}/replay-dead-letter",
+    response_model=IntakeIntegrationEventResponse,
+    operation_id="intake_events_replay_dead_letter",
+    summary="Replay dead-lettered intake integration event",
+)
+def replay_dead_letter_intake_integration_event(
+    event_id: str,
+    payload: IntakeIntegrationEventReplayRequest,
+    context: RequestContext = Depends(require_permissions("intake_review")),
+    db: Session = Depends(get_db),
+):
+    event = _ensure_event_access(db.get(IntegrationEvent, event_id), context)
+    if event.status != "dead_lettered":
+        raise HTTPException(status_code=400, detail="Only dead-lettered events can be replayed")
+
+    approval_notes = payload.approval_notes.strip()
+    if not approval_notes:
+        raise HTTPException(status_code=400, detail="approval_notes is required")
+
+    event_payload = json.loads(event.payload_json or "{}")
+    replay_count = int(event_payload.get("replay_count") or 0) + 1
+    event_payload["replay_count"] = replay_count
+    event_payload["replay_approved_by"] = context.user.id
+    event_payload["replay_approval_notes"] = approval_notes
+    event_payload["replay_approved_at"] = datetime.utcnow().isoformat()
+    event_payload.pop("dead_letter_reason", None)
+    event_payload.pop("dead_lettered_by", None)
+    event_payload.pop("dead_lettered_at", None)
+    event_payload.pop("failure_reason", None)
+
+    event.status = "pending"
+    event.payload_json = json.dumps(event_payload)
+    event.processed_at = None
 
     db.commit()
     db.refresh(event)
