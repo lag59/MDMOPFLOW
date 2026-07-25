@@ -563,6 +563,25 @@ class IntakeReplayExportTokenRevokeResponse(BaseModel):
     revoked_at: datetime
 
 
+class IntakeReplayExportTokenBulkRevokeActiveRequest(BaseModel):
+    tenant_id: str | None = None
+    actor_user_id: str | None = None
+    issued_before: datetime | None = None
+    limit: int = Field(default=100, ge=1, le=500)
+    reason: str | None = None
+
+
+class IntakeReplayExportTokenBulkRevokeActiveResponse(BaseModel):
+    tenant_id: str
+    inspected_tokens: int
+    revoked_count: int
+    skipped_consumed_count: int
+    skipped_revoked_count: int
+    skipped_expired_count: int
+    revoked_token_ids: list[str] = Field(default_factory=list)
+    revoked_at: datetime
+
+
 class IntakeReplayExportTokenAuditEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

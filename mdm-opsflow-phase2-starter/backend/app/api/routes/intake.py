@@ -29,6 +29,8 @@ from app.schemas import (
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
     IntakeReplayExportTokenAuditEntryResponse,
+    IntakeReplayExportTokenBulkRevokeActiveRequest,
+    IntakeReplayExportTokenBulkRevokeActiveResponse,
     IntakeReplayExportTokenActorStateSummaryResponse,
     IntakeReplayExportTokenStateResponse,
     IntakeReplayExportTokenStateSummaryResponse,
@@ -688,13 +690,14 @@ def _resolve_replay_export_tenant_scope(
     *,
     context: RequestContext,
     requested_tenant_id: str | None,
+    required_purpose: str = "replay export token generation",
 ) -> str:
     if "*" in context.permissions:
         if requested_tenant_id:
             return requested_tenant_id
         raise HTTPException(
             status_code=400,
-            detail="tenant_id is required for replay export token generation",
+            detail=f"tenant_id is required for {required_purpose}",
         )
 
     assert context.membership is not None
@@ -1495,5 +1498,129 @@ def revoke_replay_dead_letter_export_token(
     return IntakeReplayExportTokenRevokeResponse(
         token_id=token_id,
         revoked=True,
+        revoked_at=revoked_at,
+    )
+
+
+@router.post(
+    "/events/replay-history/export-token/revoke-active",
+    response_model=IntakeReplayExportTokenBulkRevokeActiveResponse,
+    operation_id="intake_events_replay_history_export_token_revoke_active",
+    summary="Bulk revoke active signed replay-history export tokens",
+)
+def revoke_active_replay_dead_letter_export_tokens(
+    payload: IntakeReplayExportTokenBulkRevokeActiveRequest,
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    tenant_scope = _resolve_replay_export_tenant_scope(
+        context=context,
+        requested_tenant_id=payload.tenant_id,
+        required_purpose="bulk replay export token revocation",
+    )
+
+    issue_query = (
+        select(AuditLog)
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.action == "issue_replay_history_export_token")
+        .where(AuditLog.tenant_id == tenant_scope)
+        .order_by(AuditLog.created_at.desc())
+        .limit(payload.limit)
+    )
+    if payload.actor_user_id:
+        issue_query = issue_query.where(AuditLog.actor_user_id == payload.actor_user_id)
+    if payload.issued_before:
+        issue_query = issue_query.where(AuditLog.created_at <= payload.issued_before)
+
+    issue_logs = db.scalars(issue_query).all()
+    if not issue_logs:
+        return IntakeReplayExportTokenBulkRevokeActiveResponse(
+            tenant_id=tenant_scope,
+            inspected_tokens=0,
+            revoked_count=0,
+            skipped_consumed_count=0,
+            skipped_revoked_count=0,
+            skipped_expired_count=0,
+            revoked_token_ids=[],
+            revoked_at=datetime.now(timezone.utc),
+        )
+
+    token_ids = [log.resource_id for log in issue_logs]
+    lifecycle_logs = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id.in_(token_ids))
+        .where(
+            AuditLog.action.in_(
+                (
+                    "consume_replay_history_export_token",
+                    "revoke_replay_history_export_token",
+                )
+            )
+        )
+        .order_by(AuditLog.created_at.desc())
+    ).all()
+
+    consumed_token_ids: set[str] = set()
+    revoked_token_ids: set[str] = set()
+    for log in lifecycle_logs:
+        if log.action == "consume_replay_history_export_token":
+            consumed_token_ids.add(log.resource_id)
+        if log.action == "revoke_replay_history_export_token":
+            revoked_token_ids.add(log.resource_id)
+
+    now_utc = datetime.now(timezone.utc)
+    revoked_at = now_utc
+    revoke_reason = (payload.reason or "").strip() or "Bulk incident-response revocation of active token"
+    newly_revoked_token_ids: list[str] = []
+    skipped_consumed_count = 0
+    skipped_revoked_count = 0
+    skipped_expired_count = 0
+
+    for issue in issue_logs:
+        token_id = issue.resource_id
+        if token_id in revoked_token_ids:
+            skipped_revoked_count += 1
+            continue
+        if token_id in consumed_token_ids:
+            skipped_consumed_count += 1
+            continue
+
+        expires_at = _as_utc(issue.created_at) + timedelta(
+            minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES
+        )
+        if expires_at < now_utc:
+            skipped_expired_count += 1
+            continue
+
+        db.add(
+            AuditLog(
+                tenant_id=tenant_scope,
+                actor_user_id=context.user.id,
+                action="revoke_replay_history_export_token",
+                resource_type="replay_history_export_token",
+                resource_id=token_id,
+                details=(
+                    "Bulk revoked signed replay-history export token before consumption. "
+                    f"reason={revoke_reason}"
+                ),
+                created_by=context.user.id,
+                created_at=revoked_at,
+                updated_at=revoked_at,
+            )
+        )
+        newly_revoked_token_ids.append(token_id)
+
+    if newly_revoked_token_ids:
+        db.commit()
+
+    return IntakeReplayExportTokenBulkRevokeActiveResponse(
+        tenant_id=tenant_scope,
+        inspected_tokens=len(issue_logs),
+        revoked_count=len(newly_revoked_token_ids),
+        skipped_consumed_count=skipped_consumed_count,
+        skipped_revoked_count=skipped_revoked_count,
+        skipped_expired_count=skipped_expired_count,
+        revoked_token_ids=newly_revoked_token_ids,
         revoked_at=revoked_at,
     )

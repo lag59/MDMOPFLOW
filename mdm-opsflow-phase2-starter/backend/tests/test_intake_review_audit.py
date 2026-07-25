@@ -1505,3 +1505,145 @@ def test_replay_export_token_state_summary_reports_totals_and_actor_breakdown(cl
     )
     assert invalid_range.status_code == 400
     assert invalid_range.json()["detail"] == "start_created_at must be <= end_created_at"
+
+
+def test_replay_export_token_bulk_revoke_active_revokes_only_issued_tokens(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-bulk-revoke@example.com", "Pass12345!", "Replay Token Revoker")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Bulk Revoke Civil", "Replay Token Bulk Revoke Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-token-bulk-revoke.txt", b"Ticket: TCK-9700\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for bulk token revoke test"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    consumed_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert consumed_token_response.status_code == 200
+    consumed_token_payload = consumed_token_response.json()
+    consumed_token_id = decode_token(consumed_token_payload["token"])["jti"]
+    consumed_download = client.get(consumed_token_payload["download_url"])
+    assert consumed_download.status_code == 200
+
+    already_revoked_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert already_revoked_token_response.status_code == 200
+    already_revoked_token_payload = already_revoked_token_response.json()
+    already_revoked_token_id = decode_token(already_revoked_token_payload["token"])["jti"]
+
+    already_revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": already_revoked_token_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert already_revoke_response.status_code == 200
+
+    issued_token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "csv"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert issued_token_response.status_code == 200
+    issued_token_payload = issued_token_response.json()
+    issued_token_id = decode_token(issued_token_payload["token"])["jti"]
+
+    bulk_revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={
+            "tenant_id": tenant_id,
+            "limit": 20,
+            "reason": "Security incident token sweep",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert bulk_revoke_response.status_code == 200
+    bulk_payload = bulk_revoke_response.json()
+
+    assert bulk_payload["tenant_id"] == tenant_id
+    assert bulk_payload["inspected_tokens"] >= 3
+    assert bulk_payload["revoked_count"] >= 1
+    assert bulk_payload["skipped_consumed_count"] >= 1
+    assert bulk_payload["skipped_revoked_count"] >= 1
+    assert issued_token_id in bulk_payload["revoked_token_ids"]
+    assert consumed_token_id not in bulk_payload["revoked_token_ids"]
+    assert already_revoked_token_id not in bulk_payload["revoked_token_ids"]
+
+    issued_download_after_bulk = client.get(issued_token_payload["download_url"])
+    assert issued_download_after_bulk.status_code == 410
+    assert issued_download_after_bulk.json()["detail"] == "Export token has been revoked"
+
+    second_bulk_revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={
+            "tenant_id": tenant_id,
+            "limit": 20,
+            "reason": "Second token sweep",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert second_bulk_revoke_response.status_code == 200
+    second_bulk_payload = second_bulk_revoke_response.json()
+    assert second_bulk_payload["revoked_count"] == 0
