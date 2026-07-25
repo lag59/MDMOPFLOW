@@ -36,6 +36,15 @@ This runbook covers the replay export token observability endpoints and how to t
     - `unique_actor_count`
     - `latest_created_at`
 
+- `GET /api/intake/events/replay-history/export-token-history/trends`
+  - Bucketed audit trend counts for the current filter scope.
+  - Supports `granularity=day` or `granularity=hour`.
+  - Returns:
+    - `items` with `bucket_start_created_at`, `issued_count`, `consumed_count`, `revoked_count`, and `total_count`
+    - `window_start_created_at`
+    - `window_end_created_at`
+    - `window_effective_timezone`
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:
@@ -97,6 +106,7 @@ Use these query parameters on `GET /api/intake/events/replay-history/export-toke
   - Filter by UTC timestamp window.
 
 These same filters also apply to `GET /api/intake/events/replay-history/export-token-history/summary`.
+They also apply to `GET /api/intake/events/replay-history/export-token-history/trends`.
 
 ## Audit Pagination Contract
 

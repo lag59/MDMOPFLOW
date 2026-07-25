@@ -621,6 +621,22 @@ class IntakeReplayExportTokenAuditSummaryResponse(BaseModel):
     latest_created_at: datetime | None = None
 
 
+class IntakeReplayExportTokenAuditTrendBucketResponse(BaseModel):
+    bucket_start_created_at: datetime
+    issued_count: int
+    consumed_count: int
+    revoked_count: int
+    total_count: int
+
+
+class IntakeReplayExportTokenAuditTrendResponse(BaseModel):
+    items: list[IntakeReplayExportTokenAuditTrendBucketResponse] = Field(default_factory=list)
+    granularity: str
+    window_start_created_at: datetime | None = None
+    window_end_created_at: datetime | None = None
+    window_effective_timezone: str = "UTC"
+
+
 class IntakeReplayExportTokenStateResponse(BaseModel):
     token_id: str
     tenant_id: str

@@ -31,6 +31,8 @@ from app.schemas import (
     IntakeReplayExportTokenAuditEntryResponse,
     IntakeReplayExportTokenAuditHistoryListResponse,
     IntakeReplayExportTokenAuditSummaryResponse,
+    IntakeReplayExportTokenAuditTrendBucketResponse,
+    IntakeReplayExportTokenAuditTrendResponse,
     IntakeReplayExportTokenBulkRevokeActiveRequest,
     IntakeReplayExportTokenBulkRevokeActiveResponse,
     IntakeReplayExportTokenStateAlertsResponse,
@@ -930,6 +932,43 @@ def _build_replay_export_token_audit_summary_query(
     return query
 
 
+def _bucket_replay_export_token_audit_trend(
+    *,
+    logs: list[AuditLog],
+    granularity: str,
+) -> list[IntakeReplayExportTokenAuditTrendBucketResponse]:
+    buckets: dict[datetime, dict[str, int]] = {}
+    for log in logs:
+        created_at = _as_utc(log.created_at)
+        if granularity == "hour":
+            bucket_start = created_at.replace(minute=0, second=0, microsecond=0)
+        else:
+            bucket_start = created_at.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        bucket = buckets.setdefault(
+            bucket_start,
+            {"issued_count": 0, "consumed_count": 0, "revoked_count": 0, "total_count": 0},
+        )
+        if log.action == "issue_replay_history_export_token":
+            bucket["issued_count"] += 1
+        elif log.action == "consume_replay_history_export_token":
+            bucket["consumed_count"] += 1
+        elif log.action == "revoke_replay_history_export_token":
+            bucket["revoked_count"] += 1
+        bucket["total_count"] += 1
+
+    return [
+        IntakeReplayExportTokenAuditTrendBucketResponse(
+            bucket_start_created_at=bucket_start,
+            issued_count=counts["issued_count"],
+            consumed_count=counts["consumed_count"],
+            revoked_count=counts["revoked_count"],
+            total_count=counts["total_count"],
+        )
+        for bucket_start, counts in sorted(buckets.items(), key=lambda item: item[0])
+    ]
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
@@ -1321,6 +1360,51 @@ def summarize_replay_export_token_audit_history(
         revoke_rate_percent=revoke_rate_percent,
         unique_actor_count=int(row.unique_actor_count or 0),
         latest_created_at=_as_utc(row.latest_created_at) if row.latest_created_at else None,
+    )
+
+
+@router.get(
+    "/events/replay-history/export-token-history/trends",
+    response_model=IntakeReplayExportTokenAuditTrendResponse,
+    operation_id="intake_events_replay_history_export_token_history_trends",
+    summary="Trend replay export token audit history",
+)
+def trend_replay_export_token_audit_history(
+    tenant_id: str | None = Query(default=None),
+    token_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    action: str | None = Query(
+        default=None,
+        pattern="^(issue_replay_history_export_token|consume_replay_history_export_token|revoke_replay_history_export_token)$",
+    ),
+    start_created_at: datetime | None = Query(default=None),
+    end_created_at: datetime | None = Query(default=None),
+    granularity: str = Query(default="day", pattern="^(hour|day)$"),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    query = _build_replay_export_token_audit_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+        cursor_created_at=None,
+        cursor_id=None,
+        sort_desc=False,
+        limit=None,
+    )
+    logs = db.scalars(query).all()
+    items = _bucket_replay_export_token_audit_trend(logs=logs, granularity=granularity)
+
+    return IntakeReplayExportTokenAuditTrendResponse(
+        items=items,
+        granularity=granularity,
+        window_start_created_at=start_created_at,
+        window_end_created_at=end_created_at,
+        window_effective_timezone="UTC",
     )
 
 
