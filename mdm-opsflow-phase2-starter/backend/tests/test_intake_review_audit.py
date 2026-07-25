@@ -1213,6 +1213,90 @@ def test_replay_export_token_audit_history_supports_action_actor_and_cursor_filt
     assert future_window_response.json() == []
 
 
+def test_replay_export_token_audit_history_summary_supports_filters_and_tenant_isolation(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-audit-summary@example.com", "Pass12345!", "Replay Token Summary")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Summary Civil", "Replay Token Summary Project")
+    tenant_id = onboarding["tenant_id"]
+
+    first_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert first_issue.status_code == 200
+    first_payload = first_issue.json()
+
+    first_download = client.get(first_payload["download_url"])
+    assert first_download.status_code == 200
+
+    second_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert second_issue.status_code == 200
+    second_payload = second_issue.json()
+
+    revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": second_payload["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_response.status_code == 200
+
+    summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/summary",
+        params={"tenant_id": tenant_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert summary_response.status_code == 200
+    summary_payload = summary_response.json()
+    assert summary_payload["total_entries"] == 4
+    assert summary_payload["issued_count"] == 2
+    assert summary_payload["consumed_count"] == 1
+    assert summary_payload["revoked_count"] == 1
+    assert summary_payload["unique_actor_count"] == 1
+    assert summary_payload["latest_created_at"] is not None
+
+    revoke_only_summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/summary",
+        params={
+            "tenant_id": tenant_id,
+            "action": "revoke_replay_history_export_token",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_only_summary_response.status_code == 200
+    revoke_only_summary_payload = revoke_only_summary_response.json()
+    assert revoke_only_summary_payload["total_entries"] == 1
+    assert revoke_only_summary_payload["issued_count"] == 0
+    assert revoke_only_summary_payload["consumed_count"] == 0
+    assert revoke_only_summary_payload["revoked_count"] == 1
+    assert revoke_only_summary_payload["unique_actor_count"] == 1
+
+    other_user = register_user(client, "event-replay-token-audit-summary-other@example.com", "Pass12345!", "Replay Other")
+    other_token = other_user["tokens"]["access_token"]
+    other_onboarding = complete_onboarding(client, other_token, "Replay Token Other Civil", "Replay Token Other Project")
+    other_tenant_id = other_onboarding["tenant_id"]
+
+    other_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": other_tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {other_token}", "X-Tenant-ID": other_tenant_id},
+    )
+    assert other_issue.status_code == 200
+
+    tenant_isolation_summary_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/summary",
+        params={"tenant_id": other_tenant_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert tenant_isolation_summary_response.status_code == 200
+    tenant_isolation_summary_payload = tenant_isolation_summary_response.json()
+    assert tenant_isolation_summary_payload["total_entries"] == 4
+
+
 def test_replay_export_token_audit_history_cursor_supports_created_at_id_tiebreaker(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-cursorid@example.com", "Pass12345!", "Replay Cursor ID Owner")
     token = user["tokens"]["access_token"]
