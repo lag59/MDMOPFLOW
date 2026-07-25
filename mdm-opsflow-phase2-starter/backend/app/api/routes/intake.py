@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
 import re
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse, PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -31,7 +31,9 @@ from app.schemas import (
     IntakeReplayExportTokenAuditEntryResponse,
     IntakeReplayExportTokenBulkRevokeActiveRequest,
     IntakeReplayExportTokenBulkRevokeActiveResponse,
+    IntakeReplayExportTokenStateAlertsResponse,
     IntakeReplayExportTokenActorStateSummaryResponse,
+    IntakeReplayExportTokenStateListResponse,
     IntakeReplayExportTokenStateResponse,
     IntakeReplayExportTokenStateSummaryResponse,
     IntakeReplayExportTokenRevokeRequest,
@@ -857,6 +859,184 @@ def _parse_token_issue_details(details: str) -> tuple[str | None, str | None, in
     return normalized_event_id, output, export_limit
 
 
+def _validate_replay_export_token_state_cursor(
+    *,
+    cursor_issued_at: datetime | None,
+    cursor_token_id: UUID | None,
+) -> None:
+    if cursor_token_id is not None and cursor_issued_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="cursor_token_id requires cursor_issued_at",
+        )
+
+
+def _build_replay_export_token_issue_query(
+    *,
+    context: RequestContext,
+    tenant_id: str | None,
+    token_id: str | None,
+    actor_user_id: str | None,
+    start_issued_at: datetime | None,
+    end_issued_at: datetime | None,
+    cursor_issued_at: datetime | None,
+    cursor_token_id: UUID | None,
+    sort_desc: bool,
+    limit: int | None,
+):
+    _validate_replay_audit_history_date_range(
+        start_created_at=start_issued_at,
+        end_created_at=end_issued_at,
+    )
+    _validate_replay_export_token_state_cursor(
+        cursor_issued_at=cursor_issued_at,
+        cursor_token_id=cursor_token_id,
+    )
+
+    query = (
+        select(AuditLog)
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.action == "issue_replay_history_export_token")
+    )
+
+    if "*" in context.permissions:
+        if tenant_id:
+            query = query.where(AuditLog.tenant_id == tenant_id)
+    else:
+        assert context.membership is not None
+        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+
+    if token_id:
+        query = query.where(AuditLog.resource_id == token_id)
+
+    if actor_user_id:
+        query = query.where(AuditLog.actor_user_id == actor_user_id)
+
+    if start_issued_at:
+        query = query.where(AuditLog.created_at >= start_issued_at)
+
+    if end_issued_at:
+        query = query.where(AuditLog.created_at <= end_issued_at)
+
+    if cursor_issued_at:
+        if cursor_token_id:
+            cursor_token_id_text = str(cursor_token_id)
+            if sort_desc:
+                query = query.where(
+                    or_(
+                        AuditLog.created_at < cursor_issued_at,
+                        and_(
+                            AuditLog.created_at == cursor_issued_at,
+                            AuditLog.resource_id < cursor_token_id_text,
+                        ),
+                    )
+                )
+            else:
+                query = query.where(
+                    or_(
+                        AuditLog.created_at > cursor_issued_at,
+                        and_(
+                            AuditLog.created_at == cursor_issued_at,
+                            AuditLog.resource_id > cursor_token_id_text,
+                        ),
+                    )
+                )
+        elif sort_desc:
+            query = query.where(AuditLog.created_at < cursor_issued_at)
+        else:
+            query = query.where(AuditLog.created_at > cursor_issued_at)
+
+    if sort_desc:
+        query = query.order_by(AuditLog.created_at.desc(), AuditLog.resource_id.desc())
+    else:
+        query = query.order_by(AuditLog.created_at.asc(), AuditLog.resource_id.asc())
+
+    if limit is not None:
+        query = query.limit(limit)
+
+    return query
+
+
+def _project_replay_export_token_states(
+    *,
+    db: Session,
+    issue_logs: list[AuditLog],
+) -> list[IntakeReplayExportTokenStateResponse]:
+    if not issue_logs:
+        return []
+
+    issue_by_token_id = {log.resource_id: log for log in issue_logs}
+    token_ids = list(issue_by_token_id.keys())
+
+    lifecycle_logs = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.resource_type == "replay_history_export_token")
+        .where(AuditLog.resource_id.in_(token_ids))
+        .where(
+            AuditLog.action.in_(
+                (
+                    "consume_replay_history_export_token",
+                    "revoke_replay_history_export_token",
+                )
+            )
+        )
+        .order_by(AuditLog.created_at.desc())
+    ).all()
+
+    consume_by_token_id: dict[str, AuditLog] = {}
+    revoke_by_token_id: dict[str, AuditLog] = {}
+    for log in lifecycle_logs:
+        if log.action == "consume_replay_history_export_token" and log.resource_id not in consume_by_token_id:
+            consume_by_token_id[log.resource_id] = log
+        if log.action == "revoke_replay_history_export_token" and log.resource_id not in revoke_by_token_id:
+            revoke_by_token_id[log.resource_id] = log
+
+    now_utc = datetime.now(timezone.utc)
+    states: list[IntakeReplayExportTokenStateResponse] = []
+    for issue in issue_logs:
+        consumed = consume_by_token_id.get(issue.resource_id)
+        revoked = revoke_by_token_id.get(issue.resource_id)
+
+        issued_at_utc = _as_utc(issue.created_at)
+        expires_at = issued_at_utc + timedelta(minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES)
+
+        state = "issued"
+        if revoked is not None:
+            state = "revoked"
+        elif consumed is not None:
+            state = "consumed"
+        elif expires_at < now_utc:
+            state = "expired"
+
+        latest_activity = issued_at_utc
+        if consumed is not None:
+            latest_activity = max(latest_activity, _as_utc(consumed.created_at))
+        if revoked is not None:
+            latest_activity = max(latest_activity, _as_utc(revoked.created_at))
+
+        event_id, output, export_limit = _parse_token_issue_details(issue.details)
+        states.append(
+            IntakeReplayExportTokenStateResponse(
+                token_id=issue.resource_id,
+                tenant_id=issue.tenant_id,
+                state=state,
+                issued_at=issued_at_utc,
+                issued_by_user_id=issue.actor_user_id,
+                consumed_at=_as_utc(consumed.created_at) if consumed else None,
+                consumed_by_user_id=consumed.actor_user_id if consumed else None,
+                revoked_at=_as_utc(revoked.created_at) if revoked else None,
+                revoked_by_user_id=revoked.actor_user_id if revoked else None,
+                expires_at=expires_at,
+                latest_activity_at=latest_activity,
+                event_id=event_id,
+                output=output,
+                export_limit=export_limit,
+            )
+        )
+
+    return states
+
+
 @router.get(
     "/events/replay-history",
     response_model=list[IntakeReplayAuditEntryResponse],
@@ -948,125 +1128,92 @@ def list_replay_export_token_states(
     start_issued_at: datetime | None = Query(default=None),
     end_issued_at: datetime | None = Query(default=None),
     cursor_issued_at: datetime | None = Query(default=None),
+    cursor_token_id: UUID | None = Query(default=None),
+    sort: str = Query(default="-issued_at", pattern=r"^(-issued_at|\+issued_at)$"),
     limit: int = Query(default=100, ge=1, le=500),
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
-    _validate_replay_audit_history_date_range(
-        start_created_at=start_issued_at,
-        end_created_at=end_issued_at,
-    )
     response.headers["X-Window-Effective-Timezone"] = "UTC"
 
-    issue_query = (
-        select(AuditLog)
-        .where(AuditLog.resource_type == "replay_history_export_token")
-        .where(AuditLog.action == "issue_replay_history_export_token")
-        .order_by(AuditLog.created_at.desc())
-        .limit(limit + 1)
+    sort_desc = sort == "-issued_at"
+    issue_query = _build_replay_export_token_issue_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        actor_user_id=actor_user_id,
+        start_issued_at=start_issued_at,
+        end_issued_at=end_issued_at,
+        cursor_issued_at=cursor_issued_at,
+        cursor_token_id=cursor_token_id,
+        sort_desc=sort_desc,
+        limit=limit + 1,
     )
-
-    if "*" in context.permissions:
-        if tenant_id:
-            issue_query = issue_query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        issue_query = issue_query.where(AuditLog.tenant_id == context.membership.tenant_id)
-
-    if token_id:
-        issue_query = issue_query.where(AuditLog.resource_id == token_id)
-
-    if actor_user_id:
-        issue_query = issue_query.where(AuditLog.actor_user_id == actor_user_id)
-
-    if start_issued_at:
-        issue_query = issue_query.where(AuditLog.created_at >= start_issued_at)
-
-    if end_issued_at:
-        issue_query = issue_query.where(AuditLog.created_at <= end_issued_at)
-
-    if cursor_issued_at:
-        issue_query = issue_query.where(AuditLog.created_at < cursor_issued_at)
 
     issue_logs = db.scalars(issue_query).all()
     has_more = len(issue_logs) > limit
     if has_more:
         issue_logs = issue_logs[:limit]
         response.headers["X-Next-Cursor-Issued-At"] = issue_logs[-1].created_at.isoformat()
+        response.headers["X-Next-Cursor-Token-Id"] = issue_logs[-1].resource_id
 
-    if not issue_logs:
-        return []
+    return _project_replay_export_token_states(db=db, issue_logs=issue_logs)
 
-    issue_by_token_id = {log.resource_id: log for log in issue_logs}
-    token_ids = list(issue_by_token_id.keys())
 
-    lifecycle_logs = db.scalars(
-        select(AuditLog)
-        .where(AuditLog.resource_type == "replay_history_export_token")
-        .where(AuditLog.resource_id.in_(token_ids))
-        .where(
-            AuditLog.action.in_(
-                (
-                    "consume_replay_history_export_token",
-                    "revoke_replay_history_export_token",
-                )
-            )
-        )
-        .order_by(AuditLog.created_at.desc())
-    ).all()
+@router.get(
+    "/events/replay-history/export-token-states/list",
+    response_model=IntakeReplayExportTokenStateListResponse,
+    operation_id="intake_events_replay_history_export_token_states_list",
+    summary="List replay export token effective states with window metadata",
+)
+def list_replay_export_token_states_with_window(
+    tenant_id: str | None = Query(default=None),
+    token_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    start_issued_at: datetime | None = Query(default=None),
+    end_issued_at: datetime | None = Query(default=None),
+    cursor_issued_at: datetime | None = Query(default=None),
+    cursor_token_id: UUID | None = Query(default=None),
+    sort: str = Query(default="-issued_at", pattern=r"^(-issued_at|\+issued_at)$"),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    sort_desc = sort == "-issued_at"
+    issue_query = _build_replay_export_token_issue_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        actor_user_id=actor_user_id,
+        start_issued_at=start_issued_at,
+        end_issued_at=end_issued_at,
+        cursor_issued_at=cursor_issued_at,
+        cursor_token_id=cursor_token_id,
+        sort_desc=sort_desc,
+        limit=limit + 1,
+    )
 
-    consume_by_token_id: dict[str, AuditLog] = {}
-    revoke_by_token_id: dict[str, AuditLog] = {}
-    for log in lifecycle_logs:
-        if log.action == "consume_replay_history_export_token" and log.resource_id not in consume_by_token_id:
-            consume_by_token_id[log.resource_id] = log
-        if log.action == "revoke_replay_history_export_token" and log.resource_id not in revoke_by_token_id:
-            revoke_by_token_id[log.resource_id] = log
+    issue_logs = db.scalars(issue_query).all()
+    has_more = len(issue_logs) > limit
+    next_cursor_issued_at: datetime | None = None
+    next_cursor_token_id: str | None = None
+    if has_more:
+        issue_logs = issue_logs[:limit]
+        next_cursor_issued_at = _as_utc(issue_logs[-1].created_at)
+        next_cursor_token_id = issue_logs[-1].resource_id
 
-    now_utc = datetime.now(timezone.utc)
-    states: list[IntakeReplayExportTokenStateResponse] = []
-    for issue in issue_logs:
-        consumed = consume_by_token_id.get(issue.resource_id)
-        revoked = revoke_by_token_id.get(issue.resource_id)
-
-        issued_at_utc = _as_utc(issue.created_at)
-        expires_at = issued_at_utc + timedelta(minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES)
-
-        state = "issued"
-        if revoked is not None:
-            state = "revoked"
-        elif consumed is not None:
-            state = "consumed"
-        elif expires_at < now_utc:
-            state = "expired"
-
-        latest_activity = issued_at_utc
-        if consumed is not None:
-            latest_activity = max(latest_activity, _as_utc(consumed.created_at))
-        if revoked is not None:
-            latest_activity = max(latest_activity, _as_utc(revoked.created_at))
-
-        event_id, output, export_limit = _parse_token_issue_details(issue.details)
-        states.append(
-            IntakeReplayExportTokenStateResponse(
-                token_id=issue.resource_id,
-                tenant_id=issue.tenant_id,
-                state=state,
-                issued_at=issued_at_utc,
-                issued_by_user_id=issue.actor_user_id,
-                consumed_at=_as_utc(consumed.created_at) if consumed else None,
-                consumed_by_user_id=consumed.actor_user_id if consumed else None,
-                revoked_at=_as_utc(revoked.created_at) if revoked else None,
-                revoked_by_user_id=revoked.actor_user_id if revoked else None,
-                expires_at=expires_at,
-                latest_activity_at=latest_activity,
-                event_id=event_id,
-                output=output,
-                export_limit=export_limit,
-            )
-        )
-
-    return states
+    states = _project_replay_export_token_states(db=db, issue_logs=issue_logs)
+    return IntakeReplayExportTokenStateListResponse(
+        items=states,
+        limit=limit,
+        has_more=has_more,
+        next_cursor_issued_at=next_cursor_issued_at,
+        next_cursor_token_id=next_cursor_token_id,
+        sort=sort,
+        window_start_issued_at=_as_utc(start_issued_at) if start_issued_at else None,
+        window_end_issued_at=_as_utc(end_issued_at) if end_issued_at else None,
+        window_effective_timezone="UTC",
+    )
 
 
 @router.get(
@@ -1083,34 +1230,18 @@ def summarize_replay_export_token_states(
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
-    _validate_replay_audit_history_date_range(
-        start_created_at=start_issued_at,
-        end_created_at=end_issued_at,
+    issue_query = _build_replay_export_token_issue_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=None,
+        actor_user_id=actor_user_id,
+        start_issued_at=start_issued_at,
+        end_issued_at=end_issued_at,
+        cursor_issued_at=None,
+        cursor_token_id=None,
+        sort_desc=True,
+        limit=None,
     )
-
-    issue_query = (
-        select(AuditLog)
-        .where(AuditLog.resource_type == "replay_history_export_token")
-        .where(AuditLog.action == "issue_replay_history_export_token")
-        .order_by(AuditLog.created_at.desc())
-    )
-
-    if "*" in context.permissions:
-        if tenant_id:
-            issue_query = issue_query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        issue_query = issue_query.where(AuditLog.tenant_id == context.membership.tenant_id)
-
-    if actor_user_id:
-        issue_query = issue_query.where(AuditLog.actor_user_id == actor_user_id)
-
-    if start_issued_at:
-        issue_query = issue_query.where(AuditLog.created_at >= start_issued_at)
-
-    if end_issued_at:
-        issue_query = issue_query.where(AuditLog.created_at <= end_issued_at)
-
     issue_logs = db.scalars(issue_query).all()
     normalized_start_issued_at = _as_utc(start_issued_at) if start_issued_at else None
     normalized_end_issued_at = _as_utc(end_issued_at) if end_issued_at else None
@@ -1127,31 +1258,7 @@ def summarize_replay_export_token_states(
             actors=[],
         )
 
-    token_ids = [log.resource_id for log in issue_logs]
-    lifecycle_logs = db.scalars(
-        select(AuditLog)
-        .where(AuditLog.resource_type == "replay_history_export_token")
-        .where(AuditLog.resource_id.in_(token_ids))
-        .where(
-            AuditLog.action.in_(
-                (
-                    "consume_replay_history_export_token",
-                    "revoke_replay_history_export_token",
-                )
-            )
-        )
-        .order_by(AuditLog.created_at.desc())
-    ).all()
-
-    consume_by_token_id: dict[str, AuditLog] = {}
-    revoke_by_token_id: dict[str, AuditLog] = {}
-    for log in lifecycle_logs:
-        if log.action == "consume_replay_history_export_token" and log.resource_id not in consume_by_token_id:
-            consume_by_token_id[log.resource_id] = log
-        if log.action == "revoke_replay_history_export_token" and log.resource_id not in revoke_by_token_id:
-            revoke_by_token_id[log.resource_id] = log
-
-    now_utc = datetime.now(timezone.utc)
+    states = _project_replay_export_token_states(db=db, issue_logs=issue_logs)
     issued_count = 0
     consumed_count = 0
     revoked_count = 0
@@ -1159,27 +1266,19 @@ def summarize_replay_export_token_states(
 
     actor_totals: dict[str, dict[str, int]] = {}
 
-    for issue in issue_logs:
-        consumed = consume_by_token_id.get(issue.resource_id)
-        revoked = revoke_by_token_id.get(issue.resource_id)
-        issued_at_utc = _as_utc(issue.created_at)
-        expires_at = issued_at_utc + timedelta(minutes=settings.INTAKE_REPLAY_EXPORT_TOKEN_MINUTES)
-
-        state = "issued"
-        if revoked is not None:
-            state = "revoked"
+    for state_entry in states:
+        state = state_entry.state
+        if state == "revoked":
             revoked_count += 1
-        elif consumed is not None:
-            state = "consumed"
+        elif state == "consumed":
             consumed_count += 1
-        elif expires_at < now_utc:
-            state = "expired"
+        elif state == "expired":
             expired_count += 1
         else:
             issued_count += 1
 
         actor_bucket = actor_totals.setdefault(
-            issue.actor_user_id,
+            state_entry.issued_by_user_id,
             {
                 "total_tokens": 0,
                 "issued_tokens": 0,
@@ -1523,6 +1622,11 @@ def revoke_active_replay_dead_letter_export_tokens(
         requested_tenant_id=payload.tenant_id,
         required_purpose="bulk replay export token revocation",
     )
+    if not payload.dry_run and "*" not in context.permissions and "intake_review" not in context.permissions:
+        raise HTTPException(
+            status_code=403,
+            detail="Live bulk token revocation requires intake_review permission",
+        )
 
     issue_query = (
         select(AuditLog)
@@ -1639,4 +1743,64 @@ def revoke_active_replay_dead_letter_export_tokens(
         candidate_token_ids=candidate_token_ids,
         revoked_token_ids=newly_revoked_token_ids,
         revoked_at=revoked_at,
+    )
+
+
+@router.get(
+    "/events/replay-history/export-token-states/alerts",
+    response_model=IntakeReplayExportTokenStateAlertsResponse,
+    operation_id="intake_events_replay_history_export_token_states_alerts",
+    summary="Summarize replay export token alert thresholds",
+)
+def replay_export_token_state_alerts(
+    tenant_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    start_issued_at: datetime | None = Query(default=None),
+    end_issued_at: datetime | None = Query(default=None),
+    stale_threshold_minutes: int = Query(default=60, ge=1, le=10080),
+    stale_active_threshold_count: int = Query(default=10, ge=1, le=10000),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    issue_query = _build_replay_export_token_issue_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=None,
+        actor_user_id=actor_user_id,
+        start_issued_at=start_issued_at,
+        end_issued_at=end_issued_at,
+        cursor_issued_at=None,
+        cursor_token_id=None,
+        sort_desc=True,
+        limit=None,
+    )
+    issue_logs = db.scalars(issue_query).all()
+    states = _project_replay_export_token_states(db=db, issue_logs=issue_logs)
+
+    as_of = datetime.now(timezone.utc)
+    stale_cutoff = as_of - timedelta(minutes=stale_threshold_minutes)
+    active_tokens = [entry for entry in states if entry.state == "issued"]
+    stale_active_tokens = [entry for entry in active_tokens if _as_utc(entry.issued_at) <= stale_cutoff]
+    consumed_tokens = [entry for entry in states if entry.state == "consumed"]
+    revoked_tokens = [entry for entry in states if entry.state == "revoked"]
+    consumed_to_revoked_ratio: float | None = None
+    if revoked_tokens:
+        consumed_to_revoked_ratio = len(consumed_tokens) / len(revoked_tokens)
+
+    return IntakeReplayExportTokenStateAlertsResponse(
+        as_of=as_of,
+        stale_threshold_minutes=stale_threshold_minutes,
+        stale_active_threshold_count=stale_active_threshold_count,
+        window_start_issued_at=_as_utc(start_issued_at) if start_issued_at else None,
+        window_end_issued_at=_as_utc(end_issued_at) if end_issued_at else None,
+        window_effective_timezone="UTC",
+        total_tokens=len(states),
+        active_tokens=len(active_tokens),
+        active_tokens_older_than_threshold=len(stale_active_tokens),
+        active_tokens_older_than_threshold_exceeded=(
+            len(stale_active_tokens) >= stale_active_threshold_count
+        ),
+        consumed_tokens=len(consumed_tokens),
+        revoked_tokens=len(revoked_tokens),
+        consumed_to_revoked_ratio=consumed_to_revoked_ratio,
     )

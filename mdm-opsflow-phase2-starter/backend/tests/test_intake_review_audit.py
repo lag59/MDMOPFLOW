@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import AuditLog, IntegrationEvent
+from app.models import AuditLog, IntegrationEvent, Role, TenantMembership
 from app.security import decode_token
 
 from .helpers import complete_onboarding, register_user
@@ -1350,11 +1351,18 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
     paged_payload = paged_response.json()
     assert len(paged_payload) == 2
     next_cursor = paged_response.headers.get("x-next-cursor-issued-at")
+    next_cursor_token_id = paged_response.headers.get("x-next-cursor-token-id")
     assert next_cursor is not None
+    assert next_cursor_token_id is not None
 
     paged_next_response = client.get(
         "/api/intake/events/replay-history/export-token-states",
-        params={"tenant_id": tenant_id, "limit": 2, "cursor_issued_at": next_cursor},
+        params={
+            "tenant_id": tenant_id,
+            "limit": 2,
+            "cursor_issued_at": next_cursor,
+            "cursor_token_id": next_cursor_token_id,
+        },
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert paged_next_response.status_code == 200
@@ -1362,6 +1370,21 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
     paged_next_payload = paged_next_response.json()
     assert len(paged_next_payload) >= 1
     assert paged_next_payload[0]["token_id"] != paged_payload[0]["token_id"]
+
+    envelope_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/list",
+        params={"tenant_id": tenant_id, "limit": 2, "sort": "-issued_at"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert envelope_response.status_code == 200
+    envelope_payload = envelope_response.json()
+    assert envelope_payload["window_effective_timezone"] == "UTC"
+    assert envelope_payload["limit"] == 2
+    assert envelope_payload["sort"] == "-issued_at"
+    assert len(envelope_payload["items"]) == 2
+    assert envelope_payload["has_more"] is True
+    assert envelope_payload["next_cursor_issued_at"] is not None
+    assert envelope_payload["next_cursor_token_id"] is not None
 
 
 def test_replay_export_token_state_summary_reports_totals_and_actor_breakdown(client: TestClient) -> None:
@@ -1479,6 +1502,26 @@ def test_replay_export_token_state_summary_reports_totals_and_actor_breakdown(cl
     assert summary["expired_tokens"] >= 0
     assert summary["window_effective_timezone"] == "UTC"
     assert len(summary["actors"]) >= 1
+
+    alerts_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/alerts",
+        params={
+            "tenant_id": tenant_id,
+            "actor_user_id": user["user_id"],
+            "stale_threshold_minutes": 1,
+            "stale_active_threshold_count": 1,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert alerts_response.status_code == 200
+    alerts_payload = alerts_response.json()
+    assert alerts_payload["window_effective_timezone"] == "UTC"
+    assert alerts_payload["total_tokens"] >= 3
+    assert alerts_payload["active_tokens"] >= 1
+    assert alerts_payload["revoked_tokens"] >= 1
+    assert alerts_payload["consumed_tokens"] >= 1
+    assert alerts_payload["stale_threshold_minutes"] == 1
+    assert alerts_payload["stale_active_threshold_count"] == 1
 
     actor_summary = next(actor for actor in summary["actors"] if actor["actor_user_id"] == user["user_id"])
     assert actor_summary["total_tokens"] >= 3
@@ -1967,3 +2010,87 @@ def test_replay_export_token_bulk_revoke_active_dry_run_does_not_revoke_tokens(c
     assert live_revoke_response.status_code == 200
     live_revoke_payload = live_revoke_response.json()
     assert live_revoke_payload["revoked_count"] == 0
+
+
+def test_replay_export_token_bulk_revoke_live_requires_intake_review_permission(client: TestClient) -> None:
+    owner = register_user(client, "event-replay-token-perms-owner@example.com", "Pass12345!", "Replay Owner")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Replay Perm Civil", "Replay Perm Project")
+    tenant_id = onboarding["tenant_id"]
+
+    with TestingSessionLocal() as db:
+        membership = db.scalar(
+            select(TenantMembership).where(
+                TenantMembership.tenant_id == tenant_id,
+                TenantMembership.user_id == owner["user_id"],
+            )
+        )
+        assert membership is not None
+        role = db.get(Role, membership.role_id)
+        assert role is not None
+        role.name = "custom_read_only"
+        role.permissions = "intake_read"
+        db.commit()
+
+    dry_run_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={"tenant_id": tenant_id, "dry_run": True, "limit": 5},
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dry_run_response.status_code == 200
+
+    live_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke-active",
+        json={"tenant_id": tenant_id, "dry_run": False, "limit": 5},
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert live_response.status_code == 403
+    assert live_response.json()["detail"] == "Live bulk token revocation requires intake_review permission"
+
+
+def test_replay_export_token_state_cursor_and_datetime_edge_cases(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-edges@example.com", "Pass12345!", "Replay Edge User")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Edge Civil", "Replay Edge Project")
+    tenant_id = onboarding["tenant_id"]
+
+    cursor_without_issued_at = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "cursor_token_id": str(uuid4())},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert cursor_without_issued_at.status_code == 400
+    assert cursor_without_issued_at.json()["detail"] == "cursor_token_id requires cursor_issued_at"
+
+    invalid_cursor_token_id = client.get(
+        "/api/intake/events/replay-history/export-token-states/list",
+        params={
+            "tenant_id": tenant_id,
+            "cursor_issued_at": datetime.utcnow().isoformat(),
+            "cursor_token_id": "not-a-uuid",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert invalid_cursor_token_id.status_code == 422
+
+    invalid_datetime = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "start_issued_at": "2026-13-40T25:61:61Z"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert invalid_datetime.status_code == 422
+
+    now_value = datetime.utcnow().isoformat()
+    borderline_window = client.get(
+        "/api/intake/events/replay-history/export-token-states/summary",
+        params={
+            "tenant_id": tenant_id,
+            "start_issued_at": now_value,
+            "end_issued_at": now_value,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert borderline_window.status_code == 200
+    borderline_payload = borderline_window.json()
+    assert borderline_payload["window_effective_timezone"] == "UTC"
+    assert borderline_payload["total_tokens"] == 0
