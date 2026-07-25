@@ -725,9 +725,14 @@ def export_replay_dead_letter_audit_history(
         for entry in entries
     ]
 
+    generated_at_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    filename_extension = "json" if output == "json" else "csv"
+    export_filename = f"intake-replay-history-{generated_at_stamp}.{filename_extension}"
+
     headers: dict[str, str] = {}
     if has_more and entries:
         headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
+    headers["Content-Disposition"] = f'attachment; filename="{export_filename}"'
 
     if output == "json":
         return JSONResponse(payload, headers=headers)

@@ -693,6 +693,9 @@ def test_replay_history_export_supports_csv_json_and_date_validation(client: Tes
     )
     assert csv_export.status_code == 200
     assert "text/csv" in csv_export.headers["content-type"]
+    assert "attachment;" in csv_export.headers["content-disposition"]
+    assert "intake-replay-history-" in csv_export.headers["content-disposition"]
+    assert ".csv\"" in csv_export.headers["content-disposition"]
     csv_body = csv_export.text
     assert "resource_id" in csv_body
     assert target_event["id"] in csv_body
@@ -704,6 +707,9 @@ def test_replay_history_export_supports_csv_json_and_date_validation(client: Tes
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
     assert json_export.status_code == 200
+    assert "attachment;" in json_export.headers["content-disposition"]
+    assert "intake-replay-history-" in json_export.headers["content-disposition"]
+    assert ".json\"" in json_export.headers["content-disposition"]
     payload = json_export.json()
     assert len(payload) == 1
     assert payload[0]["resource_id"] == target_event["id"]
