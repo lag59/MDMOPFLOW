@@ -45,6 +45,16 @@ This runbook covers the replay export token observability endpoints and how to t
     - `window_end_created_at`
     - `window_effective_timezone`
 
+  ## Intake UI Trend Controls
+
+  In the Intake Hub audit panel, operators can now set `Trend granularity`:
+
+  - `Day` (default): useful for longer operational windows.
+  - `Hour`: useful for incident response and short-horizon burst analysis.
+
+  Changing this selector and clicking `Refresh audit` applies the selected
+  granularity to the trends endpoint request.
+
 ## Alert Tuning
 
 Use these query parameters on alerts endpoint:

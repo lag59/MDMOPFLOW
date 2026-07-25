@@ -29,6 +29,7 @@ type ReplayTokenAuditAction =
   | "consume_replay_history_export_token"
   | "revoke_replay_history_export_token";
 type ReplayTokenAuditSort = "-created_at" | "+created_at";
+type ReplayTokenAuditTrendGranularity = "day" | "hour";
 
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -72,6 +73,7 @@ export default function IntakePage() {
   const [auditExportBusy, setAuditExportBusy] = useState(false);
   const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
   const [auditSort, setAuditSort] = useState<ReplayTokenAuditSort>("-created_at");
+  const [auditTrendGranularity, setAuditTrendGranularity] = useState<ReplayTokenAuditTrendGranularity>("day");
   const [auditActorUserId, setAuditActorUserId] = useState<string>("");
   const [auditTokenId, setAuditTokenId] = useState<string>("");
   const [auditStartCreatedAt, setAuditStartCreatedAt] = useState<string>("");
@@ -146,6 +148,7 @@ export default function IntakePage() {
           tokenId: auditTokenId.trim() || undefined,
           startCreatedAt: auditStartCreatedAt || undefined,
           endCreatedAt: auditEndCreatedAt || undefined,
+          granularity: auditTrendGranularity,
         }),
       ]);
       setAuditEntries(page.items);
@@ -620,6 +623,16 @@ export default function IntakePage() {
               <option value="issue_replay_history_export_token">Issue</option>
               <option value="consume_replay_history_export_token">Consume</option>
               <option value="revoke_replay_history_export_token">Revoke</option>
+            </select>
+          </label>
+          <label>
+            Trend granularity
+            <select
+              value={auditTrendGranularity}
+              onChange={(e) => setAuditTrendGranularity(e.target.value as ReplayTokenAuditTrendGranularity)}
+            >
+              <option value="day">Day</option>
+              <option value="hour">Hour</option>
             </select>
           </label>
           <label>
