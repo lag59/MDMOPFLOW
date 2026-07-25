@@ -1,0 +1,74 @@
+# Replay Token Observability Runbook
+
+This runbook covers the replay export token observability endpoints and how to tune stale-token alert thresholds.
+
+## Endpoints
+
+- `GET /api/intake/events/replay-history/export-token-states`
+  - Legacy list contract.
+  - Returns token state items and pagination headers.
+  - Keeps compatibility for existing clients.
+
+- `GET /api/intake/events/replay-history/export-token-states/list`
+  - Envelope list contract.
+  - Returns `items`, cursor fields, `has_more`, `sort`, and UTC window metadata.
+
+- `GET /api/intake/events/replay-history/export-token-states/summary`
+  - Aggregated totals and actor breakdown.
+  - Includes UTC window metadata.
+
+- `GET /api/intake/events/replay-history/export-token-states/alerts`
+  - Operational thresholds and ratios.
+  - Main fields for dashboards:
+    - `active_tokens_older_than_threshold`
+    - `active_tokens_older_than_threshold_exceeded`
+    - `consumed_to_revoked_ratio`
+
+## Alert Tuning
+
+Use these query parameters on alerts endpoint:
+
+- `stale_threshold_minutes`
+  - Age threshold for active issued tokens.
+  - Suggested defaults:
+    - Normal operations: `60`
+    - Incident mode: `15`
+
+- `stale_active_threshold_count`
+  - Count threshold that flips `active_tokens_older_than_threshold_exceeded` to `true`.
+  - Suggested defaults:
+    - Small tenant: `5`
+    - Medium tenant: `10`
+    - Large tenant: `25`
+
+## Pager Guidance
+
+Treat alert conditions as severity by combining age and count:
+
+- Low: exceeded for one polling cycle only.
+- Medium: exceeded for three consecutive cycles.
+- High: exceeded and ratio `consumed_to_revoked_ratio < 1` for at least 30 minutes.
+
+## Cursor And Sort Contract
+
+For deterministic paging in state lists:
+
+- Use `sort=-issued_at` for newest-first feed.
+- Pass both cursor fields from response for next page:
+  - `next_cursor_issued_at`
+  - `next_cursor_token_id`
+- Request next page with:
+  - `cursor_issued_at`
+  - `cursor_token_id`
+
+## Governance Notes
+
+- `POST /api/intake/events/replay-history/export-token/revoke-active`
+  - `dry_run=true`: available with `intake_read`.
+  - `dry_run=false`: requires `intake_review` permission or platform wildcard.
+
+## Suggested Polling Strategy
+
+- Alerts endpoint: poll every 60 seconds.
+- Envelope list endpoint: refresh every 2 to 5 minutes, or on operator demand.
+- Summary endpoint: refresh every 5 minutes for management dashboards.

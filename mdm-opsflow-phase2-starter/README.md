@@ -38,6 +38,10 @@ Runs the quick contract checks for OpenAPI and Streamlit file integrity before h
 
 In CI, fast-guardrail output is saved as the `backend-fast-guardrails-output` artifact for easier failure triage.
 
+## Replay Token Observability Runbook
+
+See `docs/replay-token-observability-runbook.md` for endpoint contracts, cursor/sort usage, alert-threshold tuning, and bulk revoke governance behavior.
+
 ## Validation Baseline
 
 Use these commands as the canonical local validation flow:

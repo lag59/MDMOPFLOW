@@ -381,6 +381,132 @@ textarea:focus {
 	color: #166534;
 }
 
+.status-pill.status-issued {
+	background: #ecfdf5;
+	border-color: #86efac;
+	color: #166534;
+}
+
+.status-pill.status-consumed {
+	background: #eff6ff;
+	border-color: #93c5fd;
+	color: #1e3a8a;
+}
+
+.status-pill.status-revoked {
+	background: #fff1f2;
+	border-color: #fda4af;
+	color: #9f1239;
+}
+
+.status-pill.status-expired {
+	background: #f8fafc;
+	border-color: #cbd5e1;
+	color: #475569;
+}
+
+.warning-card {
+	border-color: #fed7aa;
+	background: linear-gradient(120deg, #fff7ed, #fffbeb);
+}
+
+.danger-card {
+	border-color: #fecaca;
+	background: #fef2f2;
+	color: #991b1b;
+}
+
+.replay-controls-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.token-state-table-wrap {
+	overflow-x: auto;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+}
+
+.token-state-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: white;
+}
+
+.token-state-table th,
+.token-state-table td {
+	padding: 10px;
+	border-bottom: 1px solid var(--line);
+	text-align: left;
+	font-size: 13px;
+	vertical-align: top;
+}
+
+.token-state-table th {
+	background: #f8fafc;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #475569;
+}
+
+.mono-cell {
+	font-family: Consolas, "Courier New", monospace;
+	font-size: 12px;
+	word-break: break-word;
+	min-width: 210px;
+}
+
+.replay-pagination-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 10px;
+	margin-top: 12px;
+}
+
+@media (max-width: 1024px) {
+	.shell {
+		grid-template-columns: 1fr;
+	}
+
+	.side {
+		padding: 16px;
+	}
+
+	.nav {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.main {
+		padding: 20px;
+	}
+
+	.grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 700px) {
+	.top-row {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.nav {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.grid,
+	.replay-controls-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.replay-pagination-row {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+}
+
 .two-col {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));

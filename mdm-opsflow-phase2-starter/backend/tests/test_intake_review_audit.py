@@ -1373,6 +1373,30 @@ def test_replay_export_token_states_show_effective_lifecycle_projection(client: 
 
     envelope_response = client.get(
         "/api/intake/events/replay-history/export-token-states/list",
+        params={"tenant_id": tenant_id, "limit": 100, "sort": "-issued_at"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert envelope_response.status_code == 200
+    envelope_payload = envelope_response.json()
+    assert envelope_payload["window_effective_timezone"] == "UTC"
+    assert envelope_payload["sort"] == "-issued_at"
+    assert envelope_payload["limit"] == 100
+
+    legacy_ordered_response = client.get(
+        "/api/intake/events/replay-history/export-token-states",
+        params={"tenant_id": tenant_id, "limit": 100, "sort": "-issued_at"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert legacy_ordered_response.status_code == 200
+    legacy_items = legacy_ordered_response.json()
+    envelope_items = envelope_payload["items"]
+
+    assert len(envelope_items) == len(legacy_items)
+    assert [entry["token_id"] for entry in envelope_items] == [entry["token_id"] for entry in legacy_items]
+    assert [entry["state"] for entry in envelope_items] == [entry["state"] for entry in legacy_items]
+
+    envelope_response = client.get(
+        "/api/intake/events/replay-history/export-token-states/list",
         params={"tenant_id": tenant_id, "limit": 2, "sort": "-issued_at"},
         headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
     )
