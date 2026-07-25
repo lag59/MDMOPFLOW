@@ -1301,6 +1301,72 @@ def test_replay_export_token_audit_history_summary_supports_filters_and_tenant_i
     assert tenant_isolation_summary_payload["total_entries"] == 4
 
 
+def test_replay_export_token_audit_history_trends_supports_filters_and_tenant_isolation(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-audit-trends@example.com", "Pass12345!", "Replay Token Trends")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Trends Civil", "Replay Token Trends Project")
+    tenant_id = onboarding["tenant_id"]
+
+    first_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert first_issue.status_code == 200
+    first_download = client.get(first_issue.json()["download_url"])
+    assert first_download.status_code == 200
+
+    second_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert second_issue.status_code == 200
+
+    revoke_response = client.post(
+        "/api/intake/events/replay-history/export-token/revoke",
+        json={"token": second_issue.json()["token"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert revoke_response.status_code == 200
+
+    trend_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/trends",
+        params={"tenant_id": tenant_id, "granularity": "day"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert trend_response.status_code == 200
+    trend_payload = trend_response.json()
+    assert trend_payload["granularity"] == "day"
+    assert trend_payload["window_effective_timezone"] == "UTC"
+    assert len(trend_payload["items"]) == 1
+    assert trend_payload["items"][0]["issued_count"] == 2
+    assert trend_payload["items"][0]["consumed_count"] == 1
+    assert trend_payload["items"][0]["revoked_count"] == 1
+    assert trend_payload["items"][0]["total_count"] == 4
+
+    other_user = register_user(client, "event-replay-token-audit-trends-other@example.com", "Pass12345!", "Replay Trends Other")
+    other_token = other_user["tokens"]["access_token"]
+    other_onboarding = complete_onboarding(client, other_token, "Replay Trends Other Civil", "Replay Trends Other Project")
+    other_tenant_id = other_onboarding["tenant_id"]
+
+    other_issue = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": other_tenant_id, "output": "json"},
+        headers={"Authorization": f"Bearer {other_token}", "X-Tenant-ID": other_tenant_id},
+    )
+    assert other_issue.status_code == 200
+
+    tenant_isolation_trend_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/trends",
+        params={"tenant_id": other_tenant_id},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert tenant_isolation_trend_response.status_code == 200
+    tenant_isolation_trend_payload = tenant_isolation_trend_response.json()
+    assert len(tenant_isolation_trend_payload["items"]) == 1
+
+
 def test_replay_export_token_audit_history_cursor_supports_created_at_id_tiebreaker(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-cursorid@example.com", "Pass12345!", "Replay Cursor ID Owner")
     token = user["tokens"]["access_token"]

@@ -32,12 +32,12 @@ describe("Intake replay token observability page", () => {
                   state: "issued",
                   issued_at: "2026-07-25T18:00:00Z",
                   issued_by_user_id: "u-1",
-                  consumed_at: null,
-                  consumed_by_user_id: null,
+                  consumed_at: "2026-07-25T17:41:00Z",
+                  consumed_by_user_id: "u-1",
                   revoked_at: null,
                   revoked_by_user_id: null,
-                  expires_at: "2026-07-25T18:05:00Z",
-                  latest_activity_at: "2026-07-25T18:00:00Z",
+                  expires_at: "2026-07-25T17:45:00Z",
+                  latest_activity_at: "2026-07-25T17:41:00Z",
                   event_id: "evt-1",
                   output: "json",
                   export_limit: 100,
@@ -127,6 +127,29 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  bucket_start_created_at: "2026-07-25T00:00:00Z",
+                  issued_count: 1,
+                  consumed_count: 0,
+                  revoked_count: 0,
+                  total_count: 1,
+                },
+              ],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       if (url.includes("/export-token-states/list") && url.includes("cursor_issued_at")) {
         return Promise.resolve(
           new Response(
@@ -178,6 +201,8 @@ describe("Intake replay token observability page", () => {
       expect(screen.getByText("1/0/0")).toBeInTheDocument();
       expect(screen.getByText("Consume / revoke rate")).toBeInTheDocument();
       expect(screen.getByText("0.0% / 0.0%")).toBeInTheDocument();
+      expect(screen.getByText("Audit trend")).toBeInTheDocument();
+      expect(screen.getByText("Total 1")).toBeInTheDocument();
     });
 
     await user.click(screen.getByRole("button", { name: "Load more" }));
@@ -277,6 +302,21 @@ describe("Intake replay token observability page", () => {
               revoke_rate_percent: 100,
               unique_actor_count: 2,
               latest_created_at: "2026-07-25T18:00:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -420,6 +460,21 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       return Promise.resolve(new Response("not found", { status: 404 }));
     });
 
@@ -537,6 +592,21 @@ describe("Intake replay token observability page", () => {
         );
       }
 
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
       if (url.includes("/revoke-active") && method === "POST") {
         const payload = JSON.parse(String(init?.body || "{}")) as { dry_run?: boolean };
         if (payload.dry_run) {
@@ -594,6 +664,134 @@ describe("Intake replay token observability page", () => {
     });
 
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("requests a signed audit export token and starts the download", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+              sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              token: "signed-token",
+              download_url: "/api/intake/events/replay-history/export/download?token=signed-token",
+              expires_at: "2026-07-25T18:15:00Z",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const user = userEvent.setup();
+    render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Download audit export" })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Download audit export" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+      expect(openSpy).toHaveBeenCalledWith("/api/intake/events/replay-history/export/download?token=signed-token", "_self");
+    });
   });
 
   it("applies audit filters when refreshing audit history", async () => {
@@ -670,6 +868,21 @@ describe("Intake replay token observability page", () => {
               revoke_rate_percent: null,
               unique_actor_count: 0,
               latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )

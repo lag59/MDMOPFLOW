@@ -9,12 +9,15 @@ import {
   ReplayTokenApiError,
   ReplayTokenAuditEntry,
   ReplayTokenAuditSummary,
+  ReplayTokenAuditTrend,
   ReplayTokenBulkRevokeActiveResponse,
   ReplayTokenState,
   ReplayTokenStateAlerts,
+  createReplayTokenAuditExportToken,
   bulkRevokeActiveReplayTokens,
   fetchReplayTokenAuditHistoryPage,
   fetchReplayTokenAuditSummary,
+  fetchReplayTokenAuditTrend,
   fetchReplayTokenStateAlerts,
   fetchReplayTokenStateEnvelope,
 } from "@/lib/replayTokens";
@@ -32,6 +35,14 @@ function formatPercent(value: number | null | undefined): string {
     return "n/a";
   }
   return `${value.toFixed(1)}%`;
+}
+
+function formatTrendLabel(value: string): string {
+  return new Date(value).toLocaleString();
+}
+
+function formatTrendWindow(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : "n/a";
 }
 
 export default function IntakePage() {
@@ -53,10 +64,12 @@ export default function IntakePage() {
   const [liveRevokeReason, setLiveRevokeReason] = useState<string>("");
   const [auditEntries, setAuditEntries] = useState<ReplayTokenAuditEntry[]>([]);
   const [auditSummary, setAuditSummary] = useState<ReplayTokenAuditSummary | null>(null);
+  const [auditTrend, setAuditTrend] = useState<ReplayTokenAuditTrend | null>(null);
   const [auditHasMore, setAuditHasMore] = useState(false);
   const [auditNextCursorCreatedAt, setAuditNextCursorCreatedAt] = useState<string | null>(null);
   const [auditNextCursorId, setAuditNextCursorId] = useState<string | null>(null);
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
+  const [auditExportBusy, setAuditExportBusy] = useState(false);
   const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
   const [auditSort, setAuditSort] = useState<ReplayTokenAuditSort>("-created_at");
   const [auditActorUserId, setAuditActorUserId] = useState<string>("");
@@ -110,7 +123,7 @@ export default function IntakePage() {
   async function refreshAudit(): Promise<void> {
     setAuditLoading(true);
     try {
-      const [page, summary] = await Promise.all([
+      const [page, summary, trend] = await Promise.all([
         fetchReplayTokenAuditHistoryPage({
           limit: 10,
           sort: auditSort,
@@ -127,15 +140,24 @@ export default function IntakePage() {
           startCreatedAt: auditStartCreatedAt || undefined,
           endCreatedAt: auditEndCreatedAt || undefined,
         }),
+        fetchReplayTokenAuditTrend({
+          action: auditAction === "all" ? undefined : auditAction,
+          actorUserId: auditActorUserId.trim() || undefined,
+          tokenId: auditTokenId.trim() || undefined,
+          startCreatedAt: auditStartCreatedAt || undefined,
+          endCreatedAt: auditEndCreatedAt || undefined,
+        }),
       ]);
       setAuditEntries(page.items);
       setAuditSummary(summary);
+      setAuditTrend(trend);
       setAuditHasMore(page.has_more);
       setAuditNextCursorCreatedAt(page.next_cursor_created_at);
       setAuditNextCursorId(page.next_cursor_id);
     } catch {
       setAuditEntries([]);
       setAuditSummary(null);
+      setAuditTrend(null);
       setAuditHasMore(false);
       setAuditNextCursorCreatedAt(null);
       setAuditNextCursorId(null);
@@ -170,6 +192,24 @@ export default function IntakePage() {
       setError("Unable to load more replay token audit entries.");
     } finally {
       setAuditLoadingMore(false);
+    }
+  }
+
+  async function downloadAuditExport(): Promise<void> {
+    setAuditExportBusy(true);
+    setError("");
+    try {
+      const response = await createReplayTokenAuditExportToken({
+        startCreatedAt: auditStartCreatedAt || undefined,
+        endCreatedAt: auditEndCreatedAt || undefined,
+        output: "csv",
+        limit: 500,
+      });
+      window.open(response.download_url, "_self");
+    } catch {
+      setError("Unable to start replay token audit download.");
+    } finally {
+      setAuditExportBusy(false);
     }
   }
 
@@ -467,9 +507,14 @@ export default function IntakePage() {
       <div className="card">
         <div className="section-header">
           <h3>Audit trail</h3>
-          <button onClick={() => void refreshAudit()} disabled={auditLoading}>
-            {auditLoading ? "Refreshing..." : "Refresh audit"}
-          </button>
+          <div className="replay-action-row">
+            <button onClick={() => void refreshAudit()} disabled={auditLoading}>
+              {auditLoading ? "Refreshing..." : "Refresh audit"}
+            </button>
+            <button onClick={() => void downloadAuditExport()} disabled={auditLoading || auditExportBusy}>
+              {auditExportBusy ? "Preparing download..." : "Download audit export"}
+            </button>
+          </div>
         </div>
         <div className="grid">
           <div className="card">
@@ -507,6 +552,58 @@ export default function IntakePage() {
             </div>
             <div className="metric-note">Most recent created_at in filter window</div>
           </div>
+        </div>
+        <div className="card trend-card">
+          <div className="section-header">
+            <h3>Audit trend</h3>
+            <span className="metric-note">
+              {auditTrend ? `${auditTrend.granularity} buckets` : "No trend data"}
+            </span>
+          </div>
+          {auditTrend && auditTrend.items.length > 0 ? (
+            <div className="trend-panel">
+              <div className="trend-meta">
+                <span>Window start: {formatTrendWindow(auditTrend.window_start_created_at)}</span>
+                <span>Window end: {formatTrendWindow(auditTrend.window_end_created_at)}</span>
+                <span>Timezone: {auditTrend.window_effective_timezone}</span>
+              </div>
+              <div className="trend-chart" role="img" aria-label="Replay token audit trend chart">
+                {auditTrend.items.map((bucket) => {
+                  const maxValue = Math.max(bucket.issued_count, bucket.consumed_count, bucket.revoked_count, 1);
+                  return (
+                    <div className="trend-column" key={bucket.bucket_start_created_at}>
+                      <div className="trend-bars" title={formatTrendLabel(bucket.bucket_start_created_at)}>
+                        <div
+                          className="trend-segment trend-issued"
+                          style={{ height: `${(bucket.issued_count / maxValue) * 100}%` }}
+                          aria-label={`Issued ${bucket.issued_count}`}
+                        />
+                        <div
+                          className="trend-segment trend-consumed"
+                          style={{ height: `${(bucket.consumed_count / maxValue) * 100}%` }}
+                          aria-label={`Consumed ${bucket.consumed_count}`}
+                        />
+                        <div
+                          className="trend-segment trend-revoked"
+                          style={{ height: `${(bucket.revoked_count / maxValue) * 100}%` }}
+                          aria-label={`Revoked ${bucket.revoked_count}`}
+                        />
+                      </div>
+                      <div className="trend-label">{formatTrendLabel(bucket.bucket_start_created_at)}</div>
+                      <div className="metric-note">Total {bucket.total_count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="trend-legend">
+                <span><i className="trend-swatch trend-issued" />Issue</span>
+                <span><i className="trend-swatch trend-consumed" />Consume</span>
+                <span><i className="trend-swatch trend-revoked" />Revoke</span>
+              </div>
+            </div>
+          ) : (
+            <p className="metric-note">No trend buckets found for the current audit filters.</p>
+          )}
         </div>
         <div className="form-grid replay-controls-grid">
           <label>
