@@ -522,3 +522,97 @@ def test_dead_letter_event_can_be_replayed_with_operator_approval_notes(client: 
     )
     assert pending_after.status_code == 200
     assert any(event["id"] == target_event["id"] for event in pending_after.json())
+
+
+def test_replay_history_lists_manual_replay_audit_entries(client: TestClient) -> None:
+    user = register_user(client, "event-replay-history@example.com", "Pass12345!", "Replay History Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay History Civil", "Replay History Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-history.txt", b"Ticket: TCK-9002\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for replay in ops review"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    history_response = client.get(
+        "/api/intake/events/replay-history",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert history_response.status_code == 200
+    history_entries = history_response.json()
+    matching_entries = [entry for entry in history_entries if entry["resource_id"] == target_event["id"]]
+    assert len(matching_entries) == 1
+
+    replay_entry = matching_entries[0]
+    assert replay_entry["tenant_id"] == tenant_id
+    assert replay_entry["action"] == "replay_dead_letter_intake_event"
+    assert replay_entry["resource_type"] == "integration_event"
+    assert replay_entry["actor_user_id"] == user["user_id"]
+    assert "Approved for replay in ops review" in replay_entry["details"]
+
+    filtered_response = client.get(
+        "/api/intake/events/replay-history",
+        params={"event_id": target_event["id"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert filtered_response.status_code == 200
+    filtered_entries = filtered_response.json()
+    assert len(filtered_entries) == 1
+    assert filtered_entries[0]["resource_id"] == target_event["id"]

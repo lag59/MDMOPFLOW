@@ -22,6 +22,7 @@ from app.schemas import (
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
+    IntakeReplayAuditEntryResponse,
     IntakeIntegrationEventRetryRequest,
     IntakeIntegrationEventResponse,
     IntakeItemResponse,
@@ -606,3 +607,37 @@ def replay_dead_letter_intake_integration_event(
     db.commit()
     db.refresh(event)
     return event
+
+
+@router.get(
+    "/events/replay-history",
+    response_model=list[IntakeReplayAuditEntryResponse],
+    operation_id="intake_events_replay_history",
+    summary="List dead-letter replay audit history",
+)
+def list_replay_dead_letter_audit_history(
+    tenant_id: str | None = Query(default=None),
+    event_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    query = (
+        select(AuditLog)
+        .where(AuditLog.action == "replay_dead_letter_intake_event")
+        .where(AuditLog.resource_type == "integration_event")
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+    )
+
+    if "*" in context.permissions:
+        if tenant_id:
+            query = query.where(AuditLog.tenant_id == tenant_id)
+    else:
+        assert context.membership is not None
+        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+
+    if event_id:
+        query = query.where(AuditLog.resource_id == event_id)
+
+    return db.scalars(query).all()
