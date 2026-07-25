@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.models import AuditLog
+
+from .helpers import complete_onboarding, register_user
+
+
+TEST_DB_URL = "sqlite:///./test_opsflow.db"
+engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
+
+
+def test_approve_and_reject_create_audit_entries(client: TestClient) -> None:
+    user = register_user(client, "intake-audit@example.com", "Pass12345!", "Intake Auditor")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Audit Civil", "Audit Project")
+    tenant_id = onboarding["tenant_id"]
+
+    first_upload = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-approve.txt", b"Ticket: TCK-3001\n", "text/plain")},
+    )
+    assert first_upload.status_code == 201
+    first_item = first_upload.json()
+
+    approve_response = client.post(
+        f"/api/intake/items/{first_item['id']}/approve",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "approved"
+
+    second_upload = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-reject.txt", b"Ticket: TCK-3002\n", "text/plain")},
+    )
+    assert second_upload.status_code == 201
+    second_item = second_upload.json()
+
+    reject_response = client.post(
+        f"/api/intake/items/{second_item['id']}/reject",
+        params={"reason": "Missing load signature"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert reject_response.status_code == 200
+    assert reject_response.json()["status"] == "rejected"
+
+    with TestingSessionLocal() as db:
+        approve_log = db.scalars(
+            select(AuditLog)
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.resource_type == "intake_item")
+            .where(AuditLog.resource_id == first_item["id"])
+            .where(AuditLog.action == "approve_intake_item")
+        ).first()
+        reject_log = db.scalars(
+            select(AuditLog)
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.resource_type == "intake_item")
+            .where(AuditLog.resource_id == second_item["id"])
+            .where(AuditLog.action == "reject_intake_item")
+        ).first()
+
+    assert approve_log is not None
+    assert "approved" in approve_log.details
+
+    assert reject_log is not None
+    assert "Missing load signature" in reject_log.details
+
+
+def test_duplicate_resolution_clears_review_and_logs_audit(client: TestClient) -> None:
+    user = register_user(client, "resolve-dup@example.com", "Pass12345!", "Duplicate Resolver")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Resolve Civil", "Resolve Project")
+    tenant_id = onboarding["tenant_id"]
+
+    duplicate_payload = (
+        b"Ticket: TCK-4010\n"
+        b"Driver: Avery Nash\n"
+        b"Truck: Unit 20\n"
+        b"Material: Base Rock\n"
+    )
+
+    first_upload = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-4010.txt", duplicate_payload, "text/plain")},
+    )
+    assert first_upload.status_code == 201
+    first_item = first_upload.json()
+
+    second_upload = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-4010-copy.txt", duplicate_payload, "text/plain")},
+    )
+    assert second_upload.status_code == 201
+    second_item = second_upload.json()
+    assert second_item["needs_review"] is True
+
+    resolve_response = client.post(
+        f"/api/intake/items/{second_item['id']}/resolve-duplicate",
+        json={"conflict_notes": "Confirmed duplicate after reviewer comparison."},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert resolve_response.status_code == 200
+
+    resolved = resolve_response.json()
+    assert resolved["status"] == "approved"
+    assert resolved["needs_review"] is False
+    assert resolved["reviewed_by"] == user["user_id"]
+    assert resolved["duplicate_of_item_id"] == first_item["id"]
+
+    with TestingSessionLocal() as db:
+        resolution_log = db.scalars(
+            select(AuditLog)
+            .where(AuditLog.tenant_id == tenant_id)
+            .where(AuditLog.resource_type == "intake_item")
+            .where(AuditLog.resource_id == second_item["id"])
+            .where(AuditLog.action == "resolve_intake_duplicate")
+        ).first()
+
+    assert resolution_log is not None
+    assert first_item["id"] in resolution_log.details
+    assert "Confirmed duplicate" in resolution_log.details

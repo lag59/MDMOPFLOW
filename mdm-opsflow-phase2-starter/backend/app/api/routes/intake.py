@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
-from app.models import IngestionBatch, IngestionBatchStatus, IntakeItem, IntakeStatus, Ticket
-from app.schemas import IntakeItemResponse
+from app.models import AuditLog, IngestionBatch, IngestionBatchStatus, IntakeItem, IntakeStatus, Ticket
+from app.schemas import IntakeDuplicateResolutionRequest, IntakeItemResponse
 from app.services.intake_processing import process_intake_upload
 
 
@@ -23,6 +23,39 @@ def _tenant_id_from_context(context: RequestContext) -> str:
     if context.membership:
         return context.membership.tenant_id
     raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
+
+
+def _ensure_item_access(item: IntakeItem | None, context: RequestContext) -> IntakeItem:
+    if not item:
+        raise HTTPException(status_code=404, detail="Intake item not found")
+
+    if "*" not in context.permissions and (
+        not context.membership or item.tenant_id != context.membership.tenant_id
+    ):
+        raise HTTPException(status_code=404, detail="Intake item not found")
+
+    return item
+
+
+def _add_intake_audit_log(
+    db: Session,
+    *,
+    item: IntakeItem,
+    actor_user_id: str,
+    action: str,
+    details: str,
+) -> None:
+    db.add(
+        AuditLog(
+            tenant_id=item.tenant_id,
+            actor_user_id=actor_user_id,
+            action=action,
+            resource_type="intake_item",
+            resource_id=item.id,
+            details=details,
+            created_by=actor_user_id,
+        )
+    )
 
 
 @router.get(
@@ -64,15 +97,7 @@ def get_intake_item(
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
-    item = db.get(IntakeItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Intake item not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or item.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Intake item not found")
-
+    item = _ensure_item_access(db.get(IntakeItem, item_id), context)
     return item
 
 
@@ -220,19 +245,20 @@ def approve_intake_item(
     context: RequestContext = Depends(require_permissions("intake_review")),
     db: Session = Depends(get_db),
 ):
-    item = db.get(IntakeItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Intake item not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or item.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Intake item not found")
+    item = _ensure_item_access(db.get(IntakeItem, item_id), context)
 
     item.status = IntakeStatus.APPROVED
     item.needs_review = False
     item.reviewed_by = context.user.id
     item.reviewed_at = datetime.utcnow()
+
+    _add_intake_audit_log(
+        db,
+        item=item,
+        actor_user_id=context.user.id,
+        action="approve_intake_item",
+        details="Intake item approved through review workflow.",
+    )
 
     db.commit()
     db.refresh(item)
@@ -251,20 +277,72 @@ def reject_intake_item(
     context: RequestContext = Depends(require_permissions("intake_review")),
     db: Session = Depends(get_db),
 ):
-    item = db.get(IntakeItem, item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Intake item not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or item.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Intake item not found")
+    item = _ensure_item_access(db.get(IntakeItem, item_id), context)
 
     item.status = IntakeStatus.REJECTED
     item.needs_review = True
     item.review_reason = reason or "Rejected by reviewer"
     item.reviewed_by = context.user.id
     item.reviewed_at = datetime.utcnow()
+
+    _add_intake_audit_log(
+        db,
+        item=item,
+        actor_user_id=context.user.id,
+        action="reject_intake_item",
+        details=f"Intake item rejected. reason={item.review_reason}",
+    )
+
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post(
+    "/items/{item_id}/resolve-duplicate",
+    response_model=IntakeItemResponse,
+    operation_id="intake_items_resolve_duplicate",
+    summary="Resolve duplicate intake item",
+)
+def resolve_duplicate_intake_item(
+    item_id: str,
+    payload: IntakeDuplicateResolutionRequest,
+    context: RequestContext = Depends(require_permissions("intake_review")),
+    db: Session = Depends(get_db),
+):
+    item = _ensure_item_access(db.get(IntakeItem, item_id), context)
+    previous_duplicate_of = item.duplicate_of_item_id
+
+    resolved_duplicate_of = payload.duplicate_of_item_id or item.duplicate_of_item_id
+    if not resolved_duplicate_of:
+        raise HTTPException(status_code=400, detail="Item is not marked as a duplicate")
+    if resolved_duplicate_of == item.id:
+        raise HTTPException(status_code=400, detail="Item cannot be marked duplicate of itself")
+
+    duplicate_target = db.get(IntakeItem, resolved_duplicate_of)
+    if not duplicate_target or duplicate_target.tenant_id != item.tenant_id:
+        raise HTTPException(status_code=400, detail="Duplicate target item is invalid")
+
+    item.duplicate_of_item_id = resolved_duplicate_of
+    item.status = IntakeStatus.APPROVED
+    item.needs_review = False
+    item.review_reason = "Duplicate resolved by reviewer"
+    item.reviewed_by = context.user.id
+    item.reviewed_at = datetime.utcnow()
+    if payload.conflict_notes:
+        item.conflict_notes = payload.conflict_notes.strip()
+
+    _add_intake_audit_log(
+        db,
+        item=item,
+        actor_user_id=context.user.id,
+        action="resolve_intake_duplicate",
+        details=(
+            f"resolved_duplicate_of={resolved_duplicate_of}; "
+            f"previous_duplicate_of={previous_duplicate_of or ''}; "
+            f"notes={item.conflict_notes or ''}"
+        ),
+    )
 
     db.commit()
     db.refresh(item)

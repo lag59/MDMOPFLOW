@@ -18,6 +18,7 @@ Generated from `backend/app/main.py`.
 | GET | `/api/intake/items/{item_id}` | `intake_items_get` |
 | POST | `/api/intake/items/{item_id}/approve` | `intake_items_approve` |
 | POST | `/api/intake/items/{item_id}/reject` | `intake_items_reject` |
+| POST | `/api/intake/items/{item_id}/resolve-duplicate` | `intake_items_resolve_duplicate` |
 | POST | `/api/intake/upload` | `intake_upload` |
 | GET | `/api/onboarding/company-types` | `onboarding_company_types` |
 | POST | `/api/onboarding/complete` | `onboarding_complete` |
