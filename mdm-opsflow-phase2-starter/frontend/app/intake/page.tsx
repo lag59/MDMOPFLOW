@@ -75,6 +75,60 @@ function formatTrendWindow(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "n/a";
 }
 
+const AUDIT_ACTION_LABELS: Record<ReplayTokenAuditAction, string> = {
+  all: "All actions",
+  issue_replay_history_export_token: "Issue",
+  consume_replay_history_export_token: "Consume",
+  revoke_replay_history_export_token: "Revoke",
+};
+
+const AUDIT_WINDOW_PRESET_LABELS: Record<ReplayTokenAuditWindowPreset, string> = {
+  all: "All time",
+  last_1h: "Last 1 hour",
+  last_6h: "Last 6 hours",
+  last_12h: "Last 12 hours",
+  last_24h: "Last 24 hours",
+  last_48h: "Last 48 hours",
+  last_72h: "Last 72 hours",
+  last_96h: "Last 96 hours",
+  last_120h: "Last 120 hours",
+  last_144h: "Last 144 hours",
+  last_168h: "Last 168 hours",
+  last_7d: "Last 7 days",
+  last_14d: "Last 14 days",
+  last_21d: "Last 21 days",
+  last_28d: "Last 28 days",
+  last_30d: "Last 30 days",
+  last_60d: "Last 60 days",
+  last_90d: "Last 90 days",
+  last_180d: "Last 180 days",
+  last_365d: "Last 1 year (365 days)",
+  last_730d: "Last 2 years (730 days)",
+  last_1095d: "Last 3 years (1095 days)",
+  last_1460d: "Last 4 years (1460 days)",
+  last_1825d: "Last 5 years (1825 days)",
+  last_3650d: "Last 10 years (3650 days)",
+  last_7300d: "Last 20 years (7300 days)",
+  last_10950d: "Last 30 years (10950 days)",
+  custom: "Custom",
+};
+
+function formatAuditTimeRange(startCreatedAt: string, endCreatedAt: string): string {
+  const startValue = startCreatedAt.trim();
+  const endValue = endCreatedAt.trim();
+
+  if (!startValue && !endValue) {
+    return "All time";
+  }
+  if (startValue && endValue) {
+    return `${startValue} -> ${endValue}`;
+  }
+  if (startValue) {
+    return `From ${startValue}`;
+  }
+  return `Until ${endValue}`;
+}
+
 function resolveAuditWindowPresetRange(
   preset: ReplayTokenAuditWindowPreset,
   nowMs: number = Date.now()
@@ -196,6 +250,18 @@ export default function IntakePage() {
     }
     return counts;
   }, [items]);
+
+  const auditScopeSummary = useMemo(() => {
+    const actorScope = auditActorUserId.trim() || "Any";
+    const tokenScope = auditTokenId.trim() || "Any";
+    return [
+      `Action: ${AUDIT_ACTION_LABELS[auditAction]}`,
+      `Window: ${AUDIT_WINDOW_PRESET_LABELS[auditWindowPreset]}`,
+      `Actor: ${actorScope}`,
+      `Token: ${tokenScope}`,
+      `Time: ${formatAuditTimeRange(auditStartCreatedAt, auditEndCreatedAt)}`,
+    ].join(" | ");
+  }, [auditAction, auditWindowPreset, auditActorUserId, auditTokenId, auditStartCreatedAt, auditEndCreatedAt]);
 
   async function refreshAll(): Promise<void> {
     setLoading(true);
@@ -675,6 +741,7 @@ export default function IntakePage() {
             </button>
           </div>
         </div>
+        <p className="metric-note">Active scope: {auditScopeSummary}</p>
         <div className="grid">
           <div className="card">
             Audit total
