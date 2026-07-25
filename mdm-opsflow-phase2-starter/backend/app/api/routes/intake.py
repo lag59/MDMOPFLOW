@@ -29,6 +29,7 @@ from app.schemas import (
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
     IntakeReplayExportTokenAuditEntryResponse,
+    IntakeReplayExportTokenAuditHistoryListResponse,
     IntakeReplayExportTokenBulkRevokeActiveRequest,
     IntakeReplayExportTokenBulkRevokeActiveResponse,
     IntakeReplayExportTokenStateAlertsResponse,
@@ -51,6 +52,7 @@ from app.services.intake_processing import process_intake_upload
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
 MAX_INTEGRATION_EVENT_RETRIES = 3
+REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP = 100
 REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS = (
     "issue_replay_history_export_token",
     "consume_replay_history_export_token",
@@ -1114,6 +1116,7 @@ def list_replay_export_token_audit_history(
     context: RequestContext = Depends(require_permissions("intake_read")),
     db: Session = Depends(get_db),
 ):
+    effective_limit = min(limit, REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP)
     query = _build_replay_export_token_audit_query(
         context=context,
         tenant_id=tenant_id,
@@ -1124,16 +1127,70 @@ def list_replay_export_token_audit_history(
         end_created_at=end_created_at,
         cursor_created_at=cursor_created_at,
         cursor_id=cursor_id,
-        limit=limit + 1,
+        limit=effective_limit + 1,
     )
     entries = db.scalars(query).all()
-    has_more = len(entries) > limit
+    has_more = len(entries) > effective_limit
     if has_more:
-        entries = entries[:limit]
+        entries = entries[:effective_limit]
         response.headers["X-Next-Cursor-Created-At"] = entries[-1].created_at.isoformat()
         response.headers["X-Next-Cursor-Id"] = entries[-1].id
 
     return entries
+
+
+@router.get(
+    "/events/replay-history/export-token-history/list",
+    response_model=IntakeReplayExportTokenAuditHistoryListResponse,
+    operation_id="intake_events_replay_history_export_token_history_list",
+    summary="List replay export token audit history with envelope metadata",
+)
+def list_replay_export_token_audit_history_with_envelope(
+    tenant_id: str | None = Query(default=None),
+    token_id: str | None = Query(default=None),
+    actor_user_id: str | None = Query(default=None),
+    action: str | None = Query(
+        default=None,
+        pattern="^(issue_replay_history_export_token|consume_replay_history_export_token|revoke_replay_history_export_token)$",
+    ),
+    start_created_at: datetime | None = Query(default=None),
+    end_created_at: datetime | None = Query(default=None),
+    cursor_created_at: datetime | None = Query(default=None),
+    cursor_id: UUID | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    effective_limit = min(limit, REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP)
+    query = _build_replay_export_token_audit_query(
+        context=context,
+        tenant_id=tenant_id,
+        token_id=token_id,
+        actor_user_id=actor_user_id,
+        action=action,
+        start_created_at=start_created_at,
+        end_created_at=end_created_at,
+        cursor_created_at=cursor_created_at,
+        cursor_id=cursor_id,
+        limit=effective_limit + 1,
+    )
+    entries = db.scalars(query).all()
+
+    has_more = len(entries) > effective_limit
+    next_cursor_created_at: datetime | None = None
+    next_cursor_id: str | None = None
+    if has_more:
+        entries = entries[:effective_limit]
+        next_cursor_created_at = _as_utc(entries[-1].created_at)
+        next_cursor_id = entries[-1].id
+
+    return IntakeReplayExportTokenAuditHistoryListResponse(
+        items=entries,
+        limit=effective_limit,
+        has_more=has_more,
+        next_cursor_created_at=next_cursor_created_at,
+        next_cursor_id=next_cursor_id,
+    )
 
 
 @router.get(

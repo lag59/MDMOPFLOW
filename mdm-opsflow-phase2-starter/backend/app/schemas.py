@@ -601,6 +601,14 @@ class IntakeReplayExportTokenAuditEntryResponse(BaseModel):
     updated_at: datetime
 
 
+class IntakeReplayExportTokenAuditHistoryListResponse(BaseModel):
+    items: list[IntakeReplayExportTokenAuditEntryResponse] = Field(default_factory=list)
+    limit: int
+    has_more: bool
+    next_cursor_created_at: datetime | None = None
+    next_cursor_id: str | None = None
+
+
 class IntakeReplayExportTokenStateResponse(BaseModel):
     token_id: str
     tenant_id: str

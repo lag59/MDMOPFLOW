@@ -80,23 +80,29 @@ describe("Intake replay token observability page", () => {
         );
       }
 
-      if (url.includes("/export-token-history")) {
+      if (url.includes("/export-token-history/list")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify([
-              {
-                id: "log-1",
-                tenant_id: "tenant-1",
-                action: "issue_replay_history_export_token",
-                resource_type: "replay_history_export_token",
-                resource_id: "tok-1",
-                details: "issued",
-                actor_user_id: "u-1",
-                created_by: "u-1",
-                created_at: "2026-07-25T18:00:00Z",
-                updated_at: "2026-07-25T18:00:00Z",
-              },
-            ]),
+            JSON.stringify({
+              items: [
+                {
+                  id: "log-1",
+                  tenant_id: "tenant-1",
+                  action: "issue_replay_history_export_token",
+                  resource_type: "replay_history_export_token",
+                  resource_id: "tok-1",
+                  details: "issued",
+                  actor_user_id: "u-1",
+                  created_by: "u-1",
+                  created_at: "2026-07-25T18:00:00Z",
+                  updated_at: "2026-07-25T18:00:00Z",
+                },
+              ],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
         );
@@ -207,52 +213,57 @@ describe("Intake replay token observability page", () => {
         );
       }
 
-      if (url.includes("/export-token-history") && !url.includes("cursor_created_at")) {
+      if (url.includes("/export-token-history/list") && !url.includes("cursor_created_at")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify([
-              {
-                id: "log-1",
-                tenant_id: "tenant-1",
-                action: "issue_replay_history_export_token",
-                resource_type: "replay_history_export_token",
-                resource_id: "tok-1",
-                details: "issued",
-                actor_user_id: "u-1",
-                created_by: "u-1",
-                created_at: "2026-07-25T18:00:00Z",
-                updated_at: "2026-07-25T18:00:00Z",
-              },
-            ]),
-            {
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-                "X-Next-Cursor-Created-At": "2026-07-25T18:00:00Z",
-                "X-Next-Cursor-Id": "log-1",
-              },
-            }
+            JSON.stringify({
+              items: [
+                {
+                  id: "log-1",
+                  tenant_id: "tenant-1",
+                  action: "issue_replay_history_export_token",
+                  resource_type: "replay_history_export_token",
+                  resource_id: "tok-1",
+                  details: "issued",
+                  actor_user_id: "u-1",
+                  created_by: "u-1",
+                  created_at: "2026-07-25T18:00:00Z",
+                  updated_at: "2026-07-25T18:00:00Z",
+                },
+              ],
+              limit: 10,
+              has_more: true,
+              next_cursor_created_at: "2026-07-25T18:00:00Z",
+              next_cursor_id: "log-1",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
           )
         );
       }
 
-      if (url.includes("/export-token-history") && url.includes("cursor_created_at") && url.includes("cursor_id=log-1")) {
+      if (url.includes("/export-token-history/list") && url.includes("cursor_created_at") && url.includes("cursor_id=log-1")) {
         return Promise.resolve(
           new Response(
-            JSON.stringify([
-              {
-                id: "log-2",
-                tenant_id: "tenant-1",
-                action: "revoke_replay_history_export_token",
-                resource_type: "replay_history_export_token",
-                resource_id: "tok-2",
-                details: "revoked",
-                actor_user_id: "u-2",
-                created_by: "u-2",
-                created_at: "2026-07-25T17:59:00Z",
-                updated_at: "2026-07-25T17:59:00Z",
-              },
-            ]),
+            JSON.stringify({
+              items: [
+                {
+                  id: "log-2",
+                  tenant_id: "tenant-1",
+                  action: "revoke_replay_history_export_token",
+                  resource_type: "replay_history_export_token",
+                  resource_id: "tok-2",
+                  details: "revoked",
+                  actor_user_id: "u-2",
+                  created_by: "u-2",
+                  created_at: "2026-07-25T17:59:00Z",
+                  updated_at: "2026-07-25T17:59:00Z",
+                },
+              ],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+            }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
         );
@@ -278,7 +289,7 @@ describe("Intake replay token observability page", () => {
 
     const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
     const loadMoreAuditUrl = calledUrls.find((url) =>
-      url.includes("/export-token-history") &&
+      url.includes("/export-token-history/list") &&
       url.includes("cursor_created_at=2026-07-25T18%3A00%3A00Z") &&
       url.includes("cursor_id=log-1")
     );
@@ -331,8 +342,19 @@ describe("Intake replay token observability page", () => {
         );
       }
 
-      if (url.includes("/export-token-history")) {
-        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
       }
 
       return Promise.resolve(new Response("not found", { status: 404 }));
@@ -418,8 +440,19 @@ describe("Intake replay token observability page", () => {
         );
       }
 
-      if (url.includes("/export-token-history")) {
-        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
       }
 
       if (url.includes("/revoke-active") && method === "POST") {
@@ -527,8 +560,19 @@ describe("Intake replay token observability page", () => {
         );
       }
 
-      if (url.includes("/export-token-history")) {
-        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
       }
 
       return Promise.resolve(new Response("not found", { status: 404 }));
@@ -554,7 +598,7 @@ describe("Intake replay token observability page", () => {
     });
 
     const calledUrls = fetchMock.mock.calls.map((entry) => String(entry[0]));
-    const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history"));
+    const latestAuditUrl = [...calledUrls].reverse().find((url) => url.includes("/export-token-history/list"));
 
     expect(latestAuditUrl).toBeTruthy();
     expect(latestAuditUrl).toContain("action=revoke_replay_history_export_token");

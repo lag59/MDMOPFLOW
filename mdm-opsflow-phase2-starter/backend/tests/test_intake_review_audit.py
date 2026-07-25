@@ -1291,6 +1291,60 @@ def test_replay_export_token_audit_history_cursor_supports_created_at_id_tiebrea
     assert cursor_id_without_timestamp.json()["detail"] == "cursor_id requires cursor_created_at"
 
 
+def test_replay_export_token_audit_history_list_envelope_returns_has_more_and_enforces_limit_cap(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token-list-envelope@example.com", "Pass12345!", "Replay List Envelope")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay List Civil", "Replay List Project")
+    tenant_id = onboarding["tenant_id"]
+
+    for _ in range(2):
+        issue_response = client.post(
+            "/api/intake/events/replay-history/export-token",
+            params={"tenant_id": tenant_id, "output": "json"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert issue_response.status_code == 200
+
+    envelope_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/list",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "limit": 1,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert envelope_response.status_code == 200
+    envelope_payload = envelope_response.json()
+
+    assert envelope_payload["limit"] == 1
+    assert envelope_payload["has_more"] is True
+    assert len(envelope_payload["items"]) == 1
+    assert envelope_payload["next_cursor_created_at"] is not None
+    assert envelope_payload["next_cursor_id"] is not None
+
+    capped_limit_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/list",
+        params={
+            "tenant_id": tenant_id,
+            "action": "issue_replay_history_export_token",
+            "limit": 500,
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert capped_limit_response.status_code == 200
+    capped_payload = capped_limit_response.json()
+    assert capped_payload["limit"] == 100
+
+    missing_cursor_anchor_response = client.get(
+        "/api/intake/events/replay-history/export-token-history/list",
+        params={"tenant_id": tenant_id, "cursor_id": envelope_payload["next_cursor_id"]},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert missing_cursor_anchor_response.status_code == 400
+    assert missing_cursor_anchor_response.json()["detail"] == "cursor_id requires cursor_created_at"
+
+
 def test_replay_export_token_states_show_effective_lifecycle_projection(client: TestClient) -> None:
     user = register_user(client, "event-replay-token-state@example.com", "Pass12345!", "Replay Token State Owner")
     token = user["tokens"]["access_token"]

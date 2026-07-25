@@ -86,11 +86,16 @@ Use these query parameters on `GET /api/intake/events/replay-history/export-toke
 
 ## Audit Pagination Contract
 
-For deterministic paging on `GET /api/intake/events/replay-history/export-token-history`:
+For deterministic paging on `GET /api/intake/events/replay-history/export-token-history/list`:
 
-- Read both response headers when more rows are available:
-  - `X-Next-Cursor-Created-At`
-  - `X-Next-Cursor-Id`
+- Response body includes envelope fields:
+  - `items`
+  - `limit`
+  - `has_more`
+  - `next_cursor_created_at`
+  - `next_cursor_id`
+- `limit` is server-capped to `100` even if a larger value is requested.
+
 - Request the next page with both query parameters:
   - `cursor_created_at`
   - `cursor_id`
