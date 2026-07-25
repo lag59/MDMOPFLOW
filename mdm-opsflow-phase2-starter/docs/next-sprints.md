@@ -12,6 +12,7 @@ Replay token observability and governance references:
 - docs/replay-token-observability-runbook.md
 
 Latest delivered increment:
+- Intake audit panel now includes `Reset audit filters` to restore default audit scope/controls in one click and immediately refresh unscoped history, summary, and trend queries.
 - Intake audit window preset selector is now grouped by horizon (`Hours`, `Days and months`, `Years and long-range`) and long-range labels now include year equivalents for faster operator scanning.
 - Intake operator UI now enforces a required reason for live stale-token bulk revoke and supports audit-trail filtering by action, actor, token, and UTC time window.
 - Replay-token audit history pagination now uses deterministic created_at + audit-log-id cursors, and intake UI supports load-more for audit rows.
