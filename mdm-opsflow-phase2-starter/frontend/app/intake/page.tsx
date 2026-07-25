@@ -23,6 +23,7 @@ type ReplayTokenAuditAction =
   | "issue_replay_history_export_token"
   | "consume_replay_history_export_token"
   | "revoke_replay_history_export_token";
+type ReplayTokenAuditSort = "-created_at" | "+created_at";
 
 export default function IntakePage() {
   const [items, setItems] = useState<ReplayTokenState[]>([]);
@@ -47,6 +48,7 @@ export default function IntakePage() {
   const [auditNextCursorId, setAuditNextCursorId] = useState<string | null>(null);
   const [auditLoadingMore, setAuditLoadingMore] = useState(false);
   const [auditAction, setAuditAction] = useState<ReplayTokenAuditAction>("all");
+  const [auditSort, setAuditSort] = useState<ReplayTokenAuditSort>("-created_at");
   const [auditActorUserId, setAuditActorUserId] = useState<string>("");
   const [auditTokenId, setAuditTokenId] = useState<string>("");
   const [auditStartCreatedAt, setAuditStartCreatedAt] = useState<string>("");
@@ -100,6 +102,7 @@ export default function IntakePage() {
     try {
       const page = await fetchReplayTokenAuditHistoryPage({
         limit: 10,
+        sort: auditSort,
         action: auditAction === "all" ? undefined : auditAction,
         actorUserId: auditActorUserId.trim() || undefined,
         tokenId: auditTokenId.trim() || undefined,
@@ -129,6 +132,7 @@ export default function IntakePage() {
     try {
       const page = await fetchReplayTokenAuditHistoryPage({
         limit: 10,
+        sort: auditSort,
         action: auditAction === "all" ? undefined : auditAction,
         actorUserId: auditActorUserId.trim() || undefined,
         tokenId: auditTokenId.trim() || undefined,
@@ -447,6 +451,13 @@ export default function IntakePage() {
           </button>
         </div>
         <div className="form-grid replay-controls-grid">
+          <label>
+            Audit sort
+            <select value={auditSort} onChange={(e) => setAuditSort(e.target.value as ReplayTokenAuditSort)}>
+              <option value="-created_at">Newest first</option>
+              <option value="+created_at">Oldest first</option>
+            </select>
+          </label>
           <label>
             Audit action
             <select value={auditAction} onChange={(e) => setAuditAction(e.target.value as ReplayTokenAuditAction)}>

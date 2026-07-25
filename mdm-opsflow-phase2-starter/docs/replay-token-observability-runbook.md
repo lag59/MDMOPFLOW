@@ -94,7 +94,12 @@ For deterministic paging on `GET /api/intake/events/replay-history/export-token-
   - `has_more`
   - `next_cursor_created_at`
   - `next_cursor_id`
+  - `sort`
 - `limit` is server-capped to `100` even if a larger value is requested.
+
+- Supported sort values:
+  - `-created_at` (default, newest first)
+  - `+created_at` (oldest first)
 
 - Request the next page with both query parameters:
   - `cursor_created_at`

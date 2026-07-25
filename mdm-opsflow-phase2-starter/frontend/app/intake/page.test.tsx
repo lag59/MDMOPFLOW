@@ -102,6 +102,7 @@ describe("Intake replay token observability page", () => {
               has_more: false,
               next_cursor_created_at: null,
               next_cursor_id: null,
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -235,6 +236,7 @@ describe("Intake replay token observability page", () => {
               has_more: true,
               next_cursor_created_at: "2026-07-25T18:00:00Z",
               next_cursor_id: "log-1",
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -263,6 +265,7 @@ describe("Intake replay token observability page", () => {
               has_more: false,
               next_cursor_created_at: null,
               next_cursor_id: null,
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -291,7 +294,8 @@ describe("Intake replay token observability page", () => {
     const loadMoreAuditUrl = calledUrls.find((url) =>
       url.includes("/export-token-history/list") &&
       url.includes("cursor_created_at=2026-07-25T18%3A00%3A00Z") &&
-      url.includes("cursor_id=log-1")
+      url.includes("cursor_id=log-1") &&
+      url.includes("sort=-created_at")
     );
     expect(loadMoreAuditUrl).toBeTruthy();
   });
@@ -351,6 +355,7 @@ describe("Intake replay token observability page", () => {
               has_more: false,
               next_cursor_created_at: null,
               next_cursor_id: null,
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -449,6 +454,7 @@ describe("Intake replay token observability page", () => {
               has_more: false,
               next_cursor_created_at: null,
               next_cursor_id: null,
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -569,6 +575,7 @@ describe("Intake replay token observability page", () => {
               has_more: false,
               next_cursor_created_at: null,
               next_cursor_id: null,
+              sort: "-created_at",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           )
@@ -586,6 +593,7 @@ describe("Intake replay token observability page", () => {
     });
 
     await user.selectOptions(screen.getByLabelText("Audit action"), "revoke_replay_history_export_token");
+    await user.selectOptions(screen.getByLabelText("Audit sort"), "+created_at");
     fireEvent.change(screen.getByLabelText("Actor user ID"), { target: { value: "u-99" } });
     fireEvent.change(screen.getByLabelText("Token ID"), { target: { value: "tok-xyz" } });
     fireEvent.change(screen.getByLabelText("Start created at (UTC ISO)"), { target: { value: "2026-07-25T00:00:00Z" } });
@@ -602,6 +610,7 @@ describe("Intake replay token observability page", () => {
 
     expect(latestAuditUrl).toBeTruthy();
     expect(latestAuditUrl).toContain("action=revoke_replay_history_export_token");
+    expect(latestAuditUrl).toContain("sort=%2Bcreated_at");
     expect(latestAuditUrl).toContain("actor_user_id=u-99");
     expect(latestAuditUrl).toContain("token_id=tok-xyz");
     expect(latestAuditUrl).toContain("start_created_at=2026-07-25T00%3A00%3A00Z");
