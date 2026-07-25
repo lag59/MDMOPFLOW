@@ -4,9 +4,9 @@ import re
 
 
 TICKET_NUMBER_PATTERN = re.compile(r"(?:ticket|ticket\s*#|ticket\s*number)\s*[:#-]?\s*([A-Za-z0-9-]{3,})", re.IGNORECASE)
-DRIVER_PATTERN = re.compile(r"driver\s*[:#-]\s*([A-Za-z][A-Za-z\s'.-]{1,80})", re.IGNORECASE)
-TRUCK_PATTERN = re.compile(r"truck\s*[:#-]\s*([A-Za-z0-9\s-]{1,40})", re.IGNORECASE)
-MATERIAL_PATTERN = re.compile(r"material\s*[:#-]\s*([A-Za-z][A-Za-z\s-]{1,80})", re.IGNORECASE)
+DRIVER_PATTERN = re.compile(r"driver\s*[:#-]\s*([^\r\n]{1,120})", re.IGNORECASE)
+TRUCK_PATTERN = re.compile(r"truck\s*[:#-]\s*([^\r\n]{1,80})", re.IGNORECASE)
+MATERIAL_PATTERN = re.compile(r"material\s*[:#-]\s*([^\r\n]{1,120})", re.IGNORECASE)
 
 
 def _first_group(pattern: re.Pattern[str], text: str) -> str:
