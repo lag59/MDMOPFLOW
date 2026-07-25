@@ -459,6 +459,11 @@ class IntakeDuplicateResolutionRequest(BaseModel):
     conflict_notes: str = ""
 
 
+class IntakeIntegrationEventProcessRequest(BaseModel):
+    status: str = Field(default="processed", pattern="^(processed|failed)$")
+    processing_notes: str = ""
+
+
 class IntakeItemResponse(IntakeItemBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -500,6 +505,22 @@ class IngestionBatchResponse(BaseModel):
 
 class IntakeBatchDetailResponse(IngestionBatchResponse):
     items: list[IntakeItemResponse] = Field(default_factory=list)
+
+
+class IntakeIntegrationEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    event_type: str
+    resource_type: str
+    resource_id: str
+    payload_json: str
+    status: str
+    created_by: str
+    processed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class TicketBase(BaseModel):

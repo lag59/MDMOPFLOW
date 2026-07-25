@@ -18,7 +18,12 @@ from app.models import (
     IntegrationEvent,
     Ticket,
 )
-from app.schemas import IntakeDuplicateResolutionRequest, IntakeItemResponse
+from app.schemas import (
+    IntakeDuplicateResolutionRequest,
+    IntakeIntegrationEventProcessRequest,
+    IntakeIntegrationEventResponse,
+    IntakeItemResponse,
+)
 from app.services.intake_processing import process_intake_upload
 
 
@@ -86,6 +91,18 @@ def _add_integration_event(
             created_by=actor_user_id,
         )
     )
+
+
+def _ensure_event_access(event: IntegrationEvent | None, context: RequestContext) -> IntegrationEvent:
+    if not event:
+        raise HTTPException(status_code=404, detail="Integration event not found")
+
+    if "*" not in context.permissions and (
+        not context.membership or event.tenant_id != context.membership.tenant_id
+    ):
+        raise HTTPException(status_code=404, detail="Integration event not found")
+
+    return event
 
 
 @router.get(
@@ -427,3 +444,58 @@ def resolve_duplicate_intake_item(
     db.commit()
     db.refresh(item)
     return item
+
+
+@router.get(
+    "/events",
+    response_model=list[IntakeIntegrationEventResponse],
+    operation_id="intake_events_list",
+    summary="List intake integration events",
+)
+def list_intake_integration_events(
+    tenant_id: str | None = Query(default=None),
+    event_status: str | None = Query(default="pending", alias="status"),
+    limit: int = Query(default=100, ge=1, le=500),
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    query = select(IntegrationEvent).order_by(IntegrationEvent.created_at.asc()).limit(limit)
+
+    if "*" in context.permissions:
+        if tenant_id:
+            query = query.where(IntegrationEvent.tenant_id == tenant_id)
+    else:
+        assert context.membership is not None
+        query = query.where(IntegrationEvent.tenant_id == context.membership.tenant_id)
+
+    if event_status:
+        query = query.where(IntegrationEvent.status == event_status)
+
+    return db.scalars(query).all()
+
+
+@router.post(
+    "/events/{event_id}/mark-processed",
+    response_model=IntakeIntegrationEventResponse,
+    operation_id="intake_events_mark_processed",
+    summary="Mark intake integration event as processed",
+)
+def mark_intake_integration_event_processed(
+    event_id: str,
+    payload: IntakeIntegrationEventProcessRequest,
+    context: RequestContext = Depends(require_permissions("intake_review")),
+    db: Session = Depends(get_db),
+):
+    event = _ensure_event_access(db.get(IntegrationEvent, event_id), context)
+
+    event_payload = json.loads(event.payload_json or "{}")
+    event_payload["processed_by"] = context.user.id
+    event_payload["processing_notes"] = payload.processing_notes.strip()
+
+    event.status = payload.status
+    event.payload_json = json.dumps(event_payload)
+    event.processed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(event)
+    return event
