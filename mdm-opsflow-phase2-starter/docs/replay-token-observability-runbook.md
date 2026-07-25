@@ -58,6 +58,7 @@ This runbook covers the replay export token observability endpoints and how to t
   Operators can also set `Audit window preset` to quickly bound filter timestamps:
 
   - `All time`: clears `start_created_at` and `end_created_at`.
+  - `Last 1 hour`: sets an auto-generated UTC window ending now.
   - `Last 24 hours`: sets an auto-generated UTC window ending now.
   - `Last 7 days`: sets an auto-generated UTC window ending now.
   - `Last 30 days`: sets an auto-generated UTC window ending now.
