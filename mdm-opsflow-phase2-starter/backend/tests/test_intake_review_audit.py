@@ -845,3 +845,103 @@ def test_replay_history_supports_cursor_pagination_for_list_and_export(client: T
     export_page_2_items = export_page_2.json()
     assert len(export_page_2_items) == 1
     assert export_page_2_items[0]["id"] != export_page_1_items[0]["id"]
+
+
+def test_replay_history_export_token_supports_signed_one_time_download(client: TestClient) -> None:
+    user = register_user(client, "event-replay-token@example.com", "Pass12345!", "Replay Token Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Token Civil", "Replay Token Project")
+    tenant_id = onboarding["tenant_id"]
+
+    upload_response = client.post(
+        "/api/intake/upload",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        files={"file": ("ticket-replay-token.txt", b"Ticket: TCK-9200\n", "text/plain")},
+    )
+    assert upload_response.status_code == 201
+    item = upload_response.json()
+
+    pending_response = client.get(
+        "/api/intake/events",
+        params={"status": "pending"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert pending_response.status_code == 200
+    target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+    for attempt in range(1, 4):
+        fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": f"Attempt {attempt} failed",
+                "failure_reason": f"Transient failure {attempt}",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert fail_response.status_code == 200
+
+        retry_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": f"Retry attempt {attempt}"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert retry_response.status_code == 200
+
+    final_fail_response = client.post(
+        f"/api/intake/events/{target_event['id']}/mark-processed",
+        json={
+            "status": "failed",
+            "processing_notes": "Attempt 4 failed",
+            "failure_reason": "Persistent downstream outage",
+        },
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert final_fail_response.status_code == 200
+
+    dead_letter_response = client.post(
+        f"/api/intake/events/{target_event['id']}/retry",
+        json={"retry_notes": "Retry attempt 4"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert dead_letter_response.status_code == 200
+    assert dead_letter_response.json()["status"] == "dead_lettered"
+
+    replay_response = client.post(
+        f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+        json={"approval_notes": "Approved for signed export token test"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert replay_response.status_code == 200
+
+    token_response = client.post(
+        "/api/intake/events/replay-history/export-token",
+        params={"tenant_id": tenant_id, "event_id": target_event["id"], "output": "json"},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert token_response.status_code == 200
+
+    token_payload = token_response.json()
+    assert token_payload["token"]
+    assert token_payload["download_url"].startswith("/api/intake/events/replay-history/export/download?token=")
+    assert token_payload["expires_at"]
+
+    first_download = client.get(token_payload["download_url"])
+    assert first_download.status_code == 200
+    first_download_payload = first_download.json()
+    assert len(first_download_payload) == 1
+    assert first_download_payload[0]["resource_id"] == target_event["id"]
+    assert "attachment;" in first_download.headers["content-disposition"]
+    assert "intake-replay-history-" in first_download.headers["content-disposition"]
+    assert ".json\"" in first_download.headers["content-disposition"]
+
+    second_download = client.get(token_payload["download_url"])
+    assert second_download.status_code == 410
+    assert second_download.json()["detail"] == "Export token has already been used"
+
+    invalid_download = client.get(
+        "/api/intake/events/replay-history/export/download",
+        params={"token": "invalid-token"},
+    )
+    assert invalid_download.status_code == 401
+    assert invalid_download.json()["detail"] == "Invalid export token"
