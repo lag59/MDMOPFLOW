@@ -595,6 +595,26 @@ class IntakeReplayExportTokenStateResponse(BaseModel):
     export_limit: int | None = None
 
 
+class IntakeReplayExportTokenActorStateSummaryResponse(BaseModel):
+    actor_user_id: str
+    total_tokens: int
+    issued_tokens: int
+    consumed_tokens: int
+    revoked_tokens: int
+    expired_tokens: int
+
+
+class IntakeReplayExportTokenStateSummaryResponse(BaseModel):
+    window_start_issued_at: datetime | None = None
+    window_end_issued_at: datetime | None = None
+    total_tokens: int
+    issued_tokens: int
+    consumed_tokens: int
+    revoked_tokens: int
+    expired_tokens: int
+    actors: list[IntakeReplayExportTokenActorStateSummaryResponse] = Field(default_factory=list)
+
+
 class TicketBase(BaseModel):
     intake_item_id: str | None = None
     project_id: str | None = None
