@@ -720,3 +720,122 @@ def test_replay_history_export_supports_csv_json_and_date_validation(client: Tes
     )
     assert invalid_range.status_code == 400
     assert invalid_range.json()["detail"] == "start_created_at must be <= end_created_at"
+
+
+def test_replay_history_supports_cursor_pagination_for_list_and_export(client: TestClient) -> None:
+    user = register_user(client, "event-replay-cursor@example.com", "Pass12345!", "Replay Cursor Owner")
+    token = user["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Replay Cursor Civil", "Replay Cursor Project")
+    tenant_id = onboarding["tenant_id"]
+
+    def create_replay_entry(ticket_number: str, approval_notes: str) -> str:
+        upload_response = client.post(
+            "/api/intake/upload",
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+            files={"file": (f"ticket-{ticket_number}.txt", f"Ticket: {ticket_number}\n".encode(), "text/plain")},
+        )
+        assert upload_response.status_code == 201
+        item = upload_response.json()
+
+        pending_response = client.get(
+            "/api/intake/events",
+            params={"status": "pending"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert pending_response.status_code == 200
+        target_event = [event for event in pending_response.json() if event["resource_id"] == item["id"]][0]
+
+        for attempt in range(1, 4):
+            fail_response = client.post(
+                f"/api/intake/events/{target_event['id']}/mark-processed",
+                json={
+                    "status": "failed",
+                    "processing_notes": f"Attempt {attempt} failed",
+                    "failure_reason": f"Transient failure {attempt}",
+                },
+                headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+            )
+            assert fail_response.status_code == 200
+
+            retry_response = client.post(
+                f"/api/intake/events/{target_event['id']}/retry",
+                json={"retry_notes": f"Retry attempt {attempt}"},
+                headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+            )
+            assert retry_response.status_code == 200
+
+        final_fail_response = client.post(
+            f"/api/intake/events/{target_event['id']}/mark-processed",
+            json={
+                "status": "failed",
+                "processing_notes": "Attempt 4 failed",
+                "failure_reason": "Persistent downstream outage",
+            },
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert final_fail_response.status_code == 200
+
+        dead_letter_response = client.post(
+            f"/api/intake/events/{target_event['id']}/retry",
+            json={"retry_notes": "Retry attempt 4"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert dead_letter_response.status_code == 200
+        assert dead_letter_response.json()["status"] == "dead_lettered"
+
+        replay_response = client.post(
+            f"/api/intake/events/{target_event['id']}/replay-dead-letter",
+            json={"approval_notes": approval_notes},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert replay_response.status_code == 200
+        return target_event["id"]
+
+    event_id_1 = create_replay_entry("TCK-9101", "First cursor replay")
+    event_id_2 = create_replay_entry("TCK-9102", "Second cursor replay")
+
+    list_page_1 = client.get(
+        "/api/intake/events/replay-history",
+        params={"limit": 1},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert list_page_1.status_code == 200
+    list_page_1_items = list_page_1.json()
+    assert len(list_page_1_items) == 1
+    next_cursor = list_page_1.headers.get("x-next-cursor-created-at")
+    assert next_cursor is not None
+
+    list_page_2 = client.get(
+        "/api/intake/events/replay-history",
+        params={"limit": 1, "cursor_created_at": next_cursor},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert list_page_2.status_code == 200
+    list_page_2_items = list_page_2.json()
+    assert len(list_page_2_items) == 1
+    assert list_page_2_items[0]["id"] != list_page_1_items[0]["id"]
+
+    listed_ids = {list_page_1_items[0]["resource_id"], list_page_2_items[0]["resource_id"]}
+    assert event_id_1 in listed_ids
+    assert event_id_2 in listed_ids
+
+    export_page_1 = client.get(
+        "/api/intake/events/replay-history/export",
+        params={"output": "json", "limit": 1},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert export_page_1.status_code == 200
+    export_page_1_items = export_page_1.json()
+    assert len(export_page_1_items) == 1
+    export_cursor = export_page_1.headers.get("x-next-cursor-created-at")
+    assert export_cursor is not None
+
+    export_page_2 = client.get(
+        "/api/intake/events/replay-history/export",
+        params={"output": "json", "limit": 1, "cursor_created_at": export_cursor},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert export_page_2.status_code == 200
+    export_page_2_items = export_page_2.json()
+    assert len(export_page_2_items) == 1
+    assert export_page_2_items[0]["id"] != export_page_1_items[0]["id"]
