@@ -1536,11 +1536,14 @@ def revoke_active_replay_dead_letter_export_tokens(
     if not issue_logs:
         return IntakeReplayExportTokenBulkRevokeActiveResponse(
             tenant_id=tenant_scope,
+            dry_run=payload.dry_run,
             inspected_tokens=0,
+            candidate_count=0,
             revoked_count=0,
             skipped_consumed_count=0,
             skipped_revoked_count=0,
             skipped_expired_count=0,
+            candidate_token_ids=[],
             revoked_token_ids=[],
             revoked_at=datetime.now(timezone.utc),
         )
@@ -1572,6 +1575,7 @@ def revoke_active_replay_dead_letter_export_tokens(
     now_utc = datetime.now(timezone.utc)
     revoked_at = now_utc
     revoke_reason = (payload.reason or "").strip() or "Bulk incident-response revocation of active token"
+    candidate_token_ids: list[str] = []
     newly_revoked_token_ids: list[str] = []
     skipped_consumed_count = 0
     skipped_revoked_count = 0
@@ -1593,6 +1597,10 @@ def revoke_active_replay_dead_letter_export_tokens(
             skipped_expired_count += 1
             continue
 
+        candidate_token_ids.append(token_id)
+        if payload.dry_run:
+            continue
+
         db.add(
             AuditLog(
                 tenant_id=tenant_scope,
@@ -1611,16 +1619,19 @@ def revoke_active_replay_dead_letter_export_tokens(
         )
         newly_revoked_token_ids.append(token_id)
 
-    if newly_revoked_token_ids:
+    if not payload.dry_run and newly_revoked_token_ids:
         db.commit()
 
     return IntakeReplayExportTokenBulkRevokeActiveResponse(
         tenant_id=tenant_scope,
+        dry_run=payload.dry_run,
         inspected_tokens=len(issue_logs),
+        candidate_count=len(candidate_token_ids),
         revoked_count=len(newly_revoked_token_ids),
         skipped_consumed_count=skipped_consumed_count,
         skipped_revoked_count=skipped_revoked_count,
         skipped_expired_count=skipped_expired_count,
+        candidate_token_ids=candidate_token_ids,
         revoked_token_ids=newly_revoked_token_ids,
         revoked_at=revoked_at,
     )
