@@ -82,6 +82,7 @@ This runbook covers the replay export token observability endpoints and how to t
   - `Last 1825 days`: sets an auto-generated UTC window ending now.
   - `Last 3650 days`: sets an auto-generated UTC window ending now.
   - `Last 7300 days`: sets an auto-generated UTC window ending now.
+  - `Last 10950 days`: sets an auto-generated UTC window ending now.
   - `Last 30 days`: sets an auto-generated UTC window ending now.
   - `Custom`: preserves manual timestamp values.
 
