@@ -4,6 +4,7 @@ import es from "@/locales/es.json";
 export type Locale = "en" | "es";
 
 const dictionaries = { en, es } as const;
+const PRODUCTION_API_URL = "https://mdmopflow-production-cd89.up.railway.app";
 
 export function getLocale(): Locale {
   if (typeof window === "undefined") {
@@ -32,5 +33,21 @@ export function t(locale: Locale, key: string): string {
 }
 
 export function getApiBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  const configured = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+  if (configured) {
+    return configured;
+  }
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+    if (
+      host === "www.mdmopflow.com" ||
+      host === "mdmopflow.com" ||
+      host.endsWith(".up.railway.app")
+    ) {
+      return PRODUCTION_API_URL;
+    }
+  }
+
+  return "http://localhost:8080";
 }
