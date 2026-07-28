@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
@@ -41,6 +42,7 @@ export default function ProjectTicketsPage() {
 
   const fetchData = async () => {
     try {
+      setError(null);
       setLoading(true);
       const token = getAccessToken();
       const tenantId = getTenantId();
@@ -57,13 +59,24 @@ export default function ProjectTicketsPage() {
       if (projectRes.ok) {
         const projectData = await projectRes.json();
         setProjectName(projectData.project_name);
+      } else {
+        throw new Error(`Failed to fetch project (${projectRes.status})`);
       }
 
       // Fetch project tickets
       const ticketsRes = await fetch(`${baseUrl}/api/projects/${projectId}/tickets`, { headers });
-      if (!ticketsRes.ok) throw new Error('Failed to fetch tickets');
-      const ticketsData = await ticketsRes.json();
-      setTickets(ticketsData);
+      if (ticketsRes.ok) {
+        const ticketsData = await ticketsRes.json();
+        setTickets(ticketsData);
+      } else {
+        // Fallback for backends that don't yet expose /projects/{id}/tickets.
+        const allTicketsRes = await fetch(`${baseUrl}/api/tickets`, { headers });
+        if (!allTicketsRes.ok) {
+          throw new Error(`Failed to fetch tickets (${ticketsRes.status} / fallback ${allTicketsRes.status})`);
+        }
+        const allTicketsData = (await allTicketsRes.json()) as Ticket[];
+        setTickets(allTicketsData.filter((ticket) => ticket.project_id === projectId));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
