@@ -40,14 +40,13 @@ export function getApiBaseUrl(): string {
 
   if (typeof window !== "undefined") {
     const host = window.location.hostname.toLowerCase();
-    if (
-      host === "www.mdmopflow.com" ||
-      host === "mdmopflow.com" ||
-      host.endsWith(".up.railway.app")
-    ) {
-      return PRODUCTION_API_URL;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://localhost:8080";
     }
+
+    // Any non-local browser host should call the deployed backend when env is unset.
+    return PRODUCTION_API_URL;
   }
 
-  return "http://localhost:8080";
+  return PRODUCTION_API_URL;
 }
