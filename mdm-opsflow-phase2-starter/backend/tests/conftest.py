@@ -1,9 +1,11 @@
 import os
+import warnings
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SAWarning
 from sqlalchemy.orm import Session, sessionmaker
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_opsflow.db"
@@ -30,6 +32,11 @@ def override_get_db() -> Generator[Session, None, None]:
 
 @pytest.fixture()
 def client() -> Generator[TestClient, None, None]:
+    warnings.filterwarnings(
+        "ignore",
+        message=r"Can't sort tables for DROP; an unresolvable foreign key dependency exists between tables: document_extractions, tickets;.*",
+        category=SAWarning,
+    )
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = override_get_db
