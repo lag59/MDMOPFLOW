@@ -43,6 +43,7 @@ export default function TicketManagerPage() {
 
   const fetchData = async () => {
     try {
+      setError(null);
       setLoading(true);
       const token = getAccessToken();
       const tenantId = getTenantId();
@@ -56,13 +57,13 @@ export default function TicketManagerPage() {
 
       // Fetch tickets
       const ticketsRes = await fetch(`${baseUrl}/api/tickets`, { headers });
-      if (!ticketsRes.ok) throw new Error('Failed to fetch tickets');
+      if (!ticketsRes.ok) throw new Error(`Failed to fetch tickets (${ticketsRes.status})`);
       const ticketsData = await ticketsRes.json();
       setTickets(ticketsData);
 
       // Fetch projects
       const projectsRes = await fetch(`${baseUrl}/api/projects`, { headers });
-      if (!projectsRes.ok) throw new Error('Failed to fetch projects');
+      if (!projectsRes.ok) throw new Error(`Failed to fetch projects (${projectsRes.status})`);
       const projectsData = await projectsRes.json();
       setProjects(projectsData);
     } catch (err) {
@@ -148,7 +149,7 @@ export default function TicketManagerPage() {
   const assignedCount = tickets.filter((t) => !!t.project_id).length;
 
   return (
-    <AppShell titleKey="intake.title">
+    <AppShell titleKey="tickets.title">
       <div className="space-y-6 p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
