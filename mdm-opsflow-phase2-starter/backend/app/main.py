@@ -29,9 +29,11 @@ async def lifespan(_: FastAPI):
                     )
                     db.add(founder)
                 else:
+                    founder.password_hash = hash_password(settings.SUPER_ADMIN_PASSWORD)
                     founder.display_name = settings.FOUNDER_DISPLAY_NAME
                     founder.title = settings.FOUNDER_TITLE
                     founder.platform_role = PlatformRole.PLATFORM_SUPER_ADMIN
+                    founder.is_active = True
                 db.commit()
             break
         except OperationalError:
