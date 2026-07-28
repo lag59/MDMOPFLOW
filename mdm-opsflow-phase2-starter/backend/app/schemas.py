@@ -122,6 +122,60 @@ class TenantUserSummary(BaseModel):
     status: str
 
 
+class UserPermissionOverrideItem(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "permission": "billing_write",
+                "enabled": True,
+            }
+        }
+    )
+
+    permission: str = Field(min_length=2, max_length=120)
+    enabled: bool
+
+
+class TenantUserPermissionsResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "user_id": "7e4e28dc-5038-4025-8e4c-a64fd3b76156",
+                "email": "ops.user@example.com",
+                "role_name": "project_manager",
+                "base_permissions": ["project_read", "project_write", "intake_read"],
+                "effective_permissions": ["project_read", "project_write", "intake_read", "billing_read"],
+                "overrides": [
+                    {"permission": "billing_read", "enabled": True},
+                    {"permission": "intake_write", "enabled": False},
+                ],
+            }
+        }
+    )
+
+    user_id: str
+    email: str
+    role_name: str
+    base_permissions: list[str]
+    effective_permissions: list[str]
+    overrides: list[UserPermissionOverrideItem]
+
+
+class UpdateTenantUserPermissionsRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "overrides": [
+                    {"permission": "billing_read", "enabled": True},
+                    {"permission": "intake_write", "enabled": False},
+                ]
+            }
+        }
+    )
+
+    overrides: list[UserPermissionOverrideItem] = Field(default_factory=list)
+
+
 class MeResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -335,14 +389,81 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class AdminTenantServiceSummaryItem(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
+                "tenant_name": "Acme Civil",
+                "users": 12,
+                "projects": 8,
+                "tickets": 152,
+                "intake_items": 247,
+                "extractions": 91,
+                "pending_reviews": 11,
+            }
+        }
+    )
+
+    tenant_id: str
+    tenant_name: str
+    users: int
+    projects: int
+    tickets: int
+    intake_items: int
+    extractions: int
+    pending_reviews: int
+
+
+class AdminTenantServiceSummaryResponse(BaseModel):
+    items: list[AdminTenantServiceSummaryItem]
+
+
+class AdminServiceInsightsResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenants": 4,
+                "users": 18,
+                "projects": 12,
+                "tickets": 235,
+                "intake_items": 420,
+                "intake_needs_review": 16,
+                "extractions_pending_review": 9,
+                "extractions_review_submitted": 5,
+                "unresolved_extraction_issues": 14,
+                "integration_events_pending": 7,
+                "integration_events_failed": 2,
+                "opportunities": [
+                    "Reduce intake review backlog by resolving pending intake items.",
+                    "Address failed integration events to improve downstream reliability.",
+                ],
+            }
+        }
+    )
+
+    tenants: int
+    users: int
+    projects: int
+    tickets: int
+    intake_items: int
+    intake_needs_review: int
+    extractions_pending_review: int
+    extractions_review_submitted: int
+    unresolved_extraction_issues: int
+    integration_events_pending: int
+    integration_events_failed: int
+    opportunities: list[str]
+
+
 class OnboardingRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "company_name": "Acme Civil",
-                "company_type": "General Contractor",
+                "company_types": ["General Contractor", "Earthwork / Site Development"],
                 "language": "en",
-                "modules": ["Projects", "Intake"],
+                "modules": ["Projects", "Intake", "Payroll"],
                 "invite_emails": ["pm@example.com"],
                 "first_project_name": "Downtown Site Prep",
             }
@@ -350,10 +471,10 @@ class OnboardingRequest(BaseModel):
     )
 
     company_name: str = Field(min_length=2, max_length=200)
-    company_type: str
+    company_types: list[str] = Field(default_factory=list)
     language: str = Field(default="en", pattern="^(en|es)$")
-    modules: list[str] = []
-    invite_emails: list[EmailStr] = []
+    modules: list[str] = Field(default_factory=list)
+    invite_emails: list[EmailStr] = Field(default_factory=list)
     first_project_name: str = Field(min_length=2, max_length=255)
 
 

@@ -16,7 +16,7 @@ def complete_onboarding(client: TestClient, token: str, company_name: str, first
         headers={"Authorization": f"Bearer {token}"},
         json={
             "company_name": company_name,
-            "company_type": "General Contractor",
+            "company_types": ["General Contractor"],
             "language": "en",
             "modules": ["Projects"],
             "invite_emails": [],

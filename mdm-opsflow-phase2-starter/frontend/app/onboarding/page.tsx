@@ -29,7 +29,7 @@ export default function OnboardingPage() {
   const [stepIndex, setStepIndex] = useState(0);
   const [accountConfirmed, setAccountConfirmed] = useState(false);
   const [companyName, setCompanyName] = useState("");
-  const [companyType, setCompanyType] = useState(COMPANY_TYPES[0]);
+  const [companyTypes, setCompanyTypes] = useState<string[]>([COMPANY_TYPES[0]]);
   const [language, setLanguage] = useState<"en" | "es">("en");
   const [modules, setModules] = useState<string[]>(["Projects", "Budget", "Safety"]);
   const [invites, setInvites] = useState("");
@@ -75,7 +75,7 @@ export default function OnboardingPage() {
       return t(locale, "onboarding.validation.companyName");
     }
 
-    if (stepIndex === 2 && !companyType) {
+    if (stepIndex === 2 && companyTypes.length === 0) {
       return t(locale, "onboarding.validation.companyType");
     }
 
@@ -142,7 +142,7 @@ export default function OnboardingPage() {
       },
       body: JSON.stringify({
         company_name: companyName,
-        company_type: companyType,
+        company_types: companyTypes,
         language,
         modules,
         invite_emails: invites.split(",").map((x) => x.trim()).filter(Boolean),
@@ -209,11 +209,25 @@ export default function OnboardingPage() {
         ) : null}
 
         {stepIndex === 2 ? (
-          <select value={companyType} onChange={(e) => setCompanyType(e.target.value)}>
+          <div className="wizard-module-grid">
             {COMPANY_TYPES.map((item) => (
-              <option key={item}>{item}</option>
+              <label key={item} className="wizard-check">
+                <input
+                  type="checkbox"
+                  checked={companyTypes.includes(item)}
+                  onChange={() => {
+                    setCompanyTypes((prev) => {
+                      if (prev.includes(item)) {
+                        return prev.filter((entry) => entry !== item);
+                      }
+                      return [...prev, item];
+                    });
+                  }}
+                />
+                <span>{item}</span>
+              </label>
             ))}
-          </select>
+          </div>
         ) : null}
 
         {stepIndex === 3 ? (
@@ -265,7 +279,7 @@ export default function OnboardingPage() {
               <strong>{t(locale, "onboarding.companyName")}:</strong> {companyName}
             </p>
             <p>
-              <strong>{t(locale, "onboarding.companyType")}:</strong> {companyType}
+              <strong>{t(locale, "onboarding.companyType")}:</strong> {companyTypes.join(", ")}
             </p>
             <p>
               <strong>{t(locale, "onboarding.language")}:</strong> {language}

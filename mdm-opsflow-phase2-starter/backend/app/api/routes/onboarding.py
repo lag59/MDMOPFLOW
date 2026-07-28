@@ -55,7 +55,8 @@ def complete_onboarding(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if payload.company_type not in COMPANY_TYPES:
+    invalid_company_types = [item for item in payload.company_types if item not in COMPANY_TYPES]
+    if invalid_company_types:
         raise HTTPException(status_code=400, detail="Invalid company type")
 
     has_membership = db.scalar(select(TenantMembership).where(TenantMembership.user_id == current_user.id))
@@ -64,7 +65,7 @@ def complete_onboarding(
 
     tenant = Tenant(
         name=payload.company_name,
-        company_type=payload.company_type,
+        company_type=",".join(payload.company_types),
         preferred_language=payload.language,
         selected_modules=",".join(payload.modules),
     )
