@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, auth, ai_assignment, billing, health, intake, onboarding, projects, tenant_users, tickets, extractions
+from app.api.routes import admin, auth, ai_assignment, billing, core_platform, daily_field_reports, health, intake, onboarding, projects, tenant_users, tickets, extractions
 from app.core.config import settings
 
 from app.db import SessionLocal
@@ -91,6 +91,10 @@ openapi_tags = [
         "description": "Ticket CRUD endpoints plus bridge creation from approved intake items.",
     },
     {
+        "name": "Daily Field Reports",
+        "description": "Mobile-friendly daily field report creation, submission, review, and approval workflow.",
+    },
+    {
         "name": "Billing & Invoices",
         "description": "Invoice generation and billing calculation endpoints.",
     },
@@ -119,10 +123,12 @@ app.include_router(health.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(onboarding.router)
+app.include_router(core_platform.router)
 app.include_router(projects.router)
 app.include_router(intake.router)
 app.include_router(tenant_users.router)
 app.include_router(tickets.router)
+app.include_router(daily_field_reports.router)
 app.include_router(billing.router)
 app.include_router(ai_assignment.router)
 app.include_router(extractions.router)

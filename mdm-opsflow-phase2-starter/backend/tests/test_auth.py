@@ -1,5 +1,8 @@
 from fastapi.testclient import TestClient
 
+from app.db import SessionLocal
+from app.models import User
+
 
 def test_auth_register_login_me_refresh_logout(client: TestClient):
     payload = {
@@ -48,6 +51,21 @@ def test_auth_register_login_me_refresh_logout(client: TestClient):
 
     refresh_after_logout = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_after_logout.status_code == 401
+
+
+def test_super_admin_login_recovers_when_seed_user_is_missing(client: TestClient):
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == "founder@mdmopsflow.com").first()
+        if user:
+            db.delete(user)
+            db.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert response.status_code == 200
+    assert response.json()["platform_role"] == "platform_super_admin"
 
 
 def test_platform_admin_is_seeded_and_protected(client: TestClient):

@@ -57,6 +57,26 @@ def _sanitize_filename(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", candidate)
 
 
+def _build_stored_filename(original_filename: str, mime_type: str) -> str:
+    safe_name = _sanitize_filename(original_filename)
+    suffix = Path(safe_name).suffix.lower()
+
+    if not suffix:
+        mime_suffix_map = {
+            "application/pdf": ".pdf",
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+            "image/webp": ".webp",
+            "text/plain": ".txt",
+            "text/csv": ".csv",
+        }
+        suffix = mime_suffix_map.get(mime_type, "")
+
+    return f"{uuid4().hex[:16]}{suffix}"
+
+
 def _extract_pdf_text(payload: bytes) -> str:
     try:
         with fitz.open(stream=payload, filetype="pdf") as document:
@@ -98,13 +118,35 @@ def _extract_image_text(payload: bytes) -> str:
         return ""
 
 
+def _looks_like_text_payload(payload: bytes) -> bool:
+    if not payload:
+        return False
+    try:
+        decoded = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+
+    if not decoded.strip():
+        return False
+
+    printable_chars = sum(1 for char in decoded if char.isprintable() or char in {"\n", "\r", "\t"})
+    return printable_chars / len(decoded) >= 0.9
+
+
 def _extract_text(payload: bytes, mime_type: str) -> str:
     if mime_type.startswith("text/"):
         return payload.decode("utf-8", errors="replace").strip()
     if mime_type == "application/pdf":
         return _extract_pdf_text(payload)
     if mime_type.startswith("image/"):
-        return _extract_image_text(payload)
+        extracted = _extract_image_text(payload)
+        if extracted:
+            return extracted
+        if _looks_like_text_payload(payload):
+            return payload.decode("utf-8", errors="replace").strip()
+        return ""
+    if _looks_like_text_payload(payload):
+        return payload.decode("utf-8", errors="replace").strip()
     return ""
 
 
@@ -123,8 +165,7 @@ def process_intake_upload(
     tenant_path = root / tenant_id / date_path
     tenant_path.mkdir(parents=True, exist_ok=True)
 
-    safe_name = _sanitize_filename(original_filename)
-    stored_filename = f"{uuid4().hex[:12]}_{safe_name}"
+    stored_filename = _build_stored_filename(original_filename, mime_type)
     absolute_file_path = tenant_path / stored_filename
     absolute_file_path.write_bytes(payload)
 
@@ -143,8 +184,8 @@ def process_intake_upload(
         file_path = str(absolute_file_path)
 
     return ProcessedIntakePayload(
-        filename=safe_name,
-        original_filename=original_filename or safe_name,
+        filename=stored_filename,
+        original_filename=original_filename or stored_filename,
         file_path=file_path,
         mime_type=mime_type or "application/octet-stream",
         file_size_bytes=len(payload),

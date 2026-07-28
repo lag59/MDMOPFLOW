@@ -105,6 +105,37 @@ def test_ticket_upload_extract_invoice_style_text_extracts_ticket_fallback_and_m
     assert item["created_ticket_id"] is not None
 
 
+def test_ticket_upload_extract_auto_create_ticket_persists_source_document_path(client: TestClient) -> None:
+    headers = _auth_headers(client, "upload3b@example.com")
+
+    response = client.post(
+        "/api/tickets/upload-extract?create_tickets=true",
+        headers=headers,
+        files=[
+            (
+                "files",
+                (
+                    "photo_ticket.jpg",
+                    b"Ticket # TCK-1101\nDriver: Alex\nTruck: Unit 42\nMaterial: Dirt\nNet weight: 18000 lbs",
+                    "image/jpeg",
+                ),
+            )
+        ],
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["created_ticket_id"] is not None
+
+    list_response = client.get("/api/tickets", headers=headers)
+    assert list_response.status_code == 200
+    tickets = list_response.json()
+    assert len(tickets) == 1
+    assert tickets[0]["source_document_path"].startswith("backend/storage/intake/")
+    assert "photo_ticket.jpg" not in tickets[0]["source_document_path"]
+
+
 def test_ticket_upload_extract_invoice_filename_fallback_generates_ticket_reference(client: TestClient) -> None:
     headers = _auth_headers(client, "upload4@example.com")
 

@@ -76,6 +76,93 @@ class User(Base):
     )
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    contact_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    email: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    phone: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    address: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role_title: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    email: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    phone: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    department: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="active", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class Equipment(Base):
+    __tablename__ = "equipment"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    equipment_type: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    capacity_tons: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="available", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class Truck(Base):
+    __tablename__ = "trucks"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    unit_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    truck_type: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    capacity_tons: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="available", nullable=False)
+    assigned_driver: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class Material(Base):
+    __tablename__ = "materials"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    unit_of_measure: Mapped[str] = mapped_column(String(80), default="ton", nullable=False)
+    density_tons_per_cubic_yard: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class Role(Base):
     __tablename__ = "roles"
 
@@ -156,6 +243,45 @@ class AuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(120), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(120), nullable=False)
     details: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class DailyFieldReport(Base):
+    __tablename__ = "daily_field_reports"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=False)
+    report_number: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    report_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    company_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    reporting_supervisor: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    shift_start_time: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    shift_end_time: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
+    weather: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    work_performed: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    work_planned_for_tomorrow: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    crew_members: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    equipment_used: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    deliveries: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    visitors: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    delays: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    photos: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    production_quantities: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    safety_observations: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    prepared_by: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    electronic_signature: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    submitted_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -300,6 +426,7 @@ class Ticket(Base):
     revenue: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
     notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    source_document_path: Mapped[str] = mapped_column(String(1024), default="", nullable=False)
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

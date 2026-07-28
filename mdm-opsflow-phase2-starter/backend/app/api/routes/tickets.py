@@ -351,6 +351,7 @@ async def upload_extract_tickets(
                         volume_yards=create_values.get("volume_yards"),
                         status="draft",
                         notes="Auto-created from ticket file extraction.",
+                        source_document_path=processed.file_path,
                         created_by=context.user.id,
                     )
                     db.add(ticket)

@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import Role, Tenant, TenantMembership, User
+from app.models import PlatformRole, Role, Tenant, TenantMembership, User
 from app.schemas import AuthLoginRequest, AuthRegisterRequest, AuthResponse, MeMembership, MeResponse, MeUpdateRequest, RefreshRequest, TokenPair
 from app.security import create_token, hash_password, verify_password
 
@@ -15,6 +16,33 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 ACCESS_TOKEN_MINUTES = 30
 REFRESH_TOKEN_MINUTES = 60 * 24 * 14
+
+
+def _ensure_super_admin_identity(db: Session, email: str, password: str) -> User | None:
+    normalized_email = email.lower()
+    if normalized_email != settings.SUPER_ADMIN_EMAIL.lower() or password != settings.SUPER_ADMIN_PASSWORD:
+        return None
+
+    user = db.scalar(select(User).where(User.email == normalized_email))
+    if user is None:
+        user = User(
+            email=normalized_email,
+            password_hash=hash_password(password),
+            display_name=settings.FOUNDER_DISPLAY_NAME,
+            title=settings.FOUNDER_TITLE,
+            platform_role=PlatformRole.PLATFORM_SUPER_ADMIN,
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
+    else:
+        user.password_hash = hash_password(password)
+        user.display_name = settings.FOUNDER_DISPLAY_NAME
+        user.title = settings.FOUNDER_TITLE
+        user.platform_role = PlatformRole.PLATFORM_SUPER_ADMIN
+        user.is_active = True
+
+    return user
 
 
 def _make_auth_response(user: User, tenant_id: str | None) -> AuthResponse:
@@ -88,7 +116,10 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     },
 )
 def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    user = _ensure_super_admin_identity(db, payload.email, payload.password)
+    if user is None:
+        user = db.scalar(select(User).where(User.email == payload.email.lower()))
+
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
