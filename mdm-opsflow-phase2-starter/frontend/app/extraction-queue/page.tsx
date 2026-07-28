@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import AppShell from '@/components/AppShell';
 import { getAccessToken, getTenantId } from '@/lib/auth';
 import { getApiBaseUrl } from '@/lib/i18n';
 import ExtractionReview from '@/components/ExtractionReview';
@@ -18,12 +19,25 @@ interface ExtractionListItem {
 }
 
 export default function ExtractionQueuePage() {
-  const router = useRouter();
   const [extractions, setExtractions] = useState<ExtractionListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('review_pending');
+
+  const queueMetrics = useMemo(() => {
+    const total = extractions.length;
+    const pending = extractions.filter((item) => item.status === 'review_pending').length;
+    const submitted = extractions.filter((item) => item.status === 'review_submitted').length;
+    const flaggedIssues = extractions.filter((item) => item.issue_count > 0).length;
+
+    return {
+      total,
+      pending,
+      submitted,
+      flaggedIssues,
+    };
+  }, [extractions]);
 
   const fetchExtractions = async () => {
     try {
@@ -102,43 +116,76 @@ export default function ExtractionQueuePage() {
   if (selectedId) {
     const selected = extractions.find((e) => e.id === selectedId);
     return (
-      <div>
-        <div className="bg-white border-b px-6 py-4 flex items-center gap-4">
-          <button
-            onClick={() => setSelectedId(null)}
-            className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-          >
-            ← Back to Queue
-          </button>
-          <h1 className="text-2xl font-bold">
-            {selected?.status === 'review_submitted' ? 'Approve Extraction' : 'Review Extraction'}
-          </h1>
-          {selected && (
-            <StatusBadge status={selected.status} />
-          )}
+      <AppShell titleKey="intake.title">
+        <div className="card">
+          <div className="section-header">
+            <div>
+              <h3>{selected?.status === 'review_submitted' ? 'Approve extraction' : 'Review extraction'}</h3>
+              <p className="muted">Process extraction details and move this item through approval.</p>
+            </div>
+            <button onClick={() => setSelectedId(null)}>Back to queue</button>
+          </div>
+          {selected ? <StatusBadge status={selected.status} /> : null}
         </div>
-        <ExtractionReview 
+
+        <ExtractionReview
           extractionId={selectedId}
           onReviewSubmitted={() => {
             setSelectedId(null);
             fetchExtractions();
           }}
         />
-      </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">📥 Extraction Queue</h1>
-          <p className="text-gray-600">Review and approve document extractions</p>
+    <AppShell titleKey="intake.title">
+      <div className="card">
+        <span className="auth-eyebrow">Extraction module</span>
+        <h2>Extraction queue</h2>
+        <p className="muted">Review extracted documents, resolve quality issues, and move approved records downstream.</p>
+        <div className="top-actions" style={{ marginTop: '1rem', flexWrap: 'wrap' }}>
+          <Link className="link-button" href="/intake">
+            Intake
+          </Link>
+          <Link className="link-button" href="/tickets">
+            Tickets
+          </Link>
+          <Link className="link-button" href="/modules">
+            Back to modules
+          </Link>
         </div>
+      </div>
 
-        {/* Filter Bar */}
-        <div className="mb-6 bg-white rounded-lg shadow p-4 flex items-center gap-4">
+      <div className="grid">
+        <div className="card">
+          <span className="auth-eyebrow">Total</span>
+          <div className="metric">{queueMetrics.total}</div>
+          <div className="metric-note">Extractions in the current filtered window</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Pending review</span>
+          <div className="metric">{queueMetrics.pending}</div>
+          <div className="metric-note">Items waiting for reviewer action</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Submitted</span>
+          <div className="metric">{queueMetrics.submitted}</div>
+          <div className="metric-note">Items waiting for approver decision</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Flagged</span>
+          <div className="metric">{queueMetrics.flaggedIssues}</div>
+          <div className="metric-note">Items with one or more validation issues</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Queue controls</h3>
+        </div>
+        <div className="replay-action-row" style={{ marginBottom: '1rem' }}>
           <label className="font-semibold text-gray-700">Filter by status:</label>
           <select
             value={statusFilter}
@@ -151,26 +198,23 @@ export default function ExtractionQueuePage() {
             <option value="distributed">Distributed</option>
             <option value="rejected">Rejected</option>
           </select>
-          <div className="ml-auto text-sm text-gray-600">
+          <div className="text-sm text-gray-600">
             Total: {extractions.length} extractions
           </div>
         </div>
 
-        {/* Error State */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
             Error: {error}
           </div>
         )}
 
-        {/* Loading State */}
         {loading && (
           <div className="text-center py-12">
             <p className="text-gray-600">Loading extractions...</p>
           </div>
         )}
 
-        {/* Empty State */}
         {!loading && extractions.length === 0 && (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <p className="text-gray-500 text-lg">No extractions found</p>
@@ -178,7 +222,6 @@ export default function ExtractionQueuePage() {
           </div>
         )}
 
-        {/* Extractions Table */}
         {!loading && extractions.length > 0 && (
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <table className="w-full">
@@ -255,6 +298,6 @@ export default function ExtractionQueuePage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

@@ -244,6 +244,20 @@ export default function IntakePage() {
   const [draftTicketMessage, setDraftTicketMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
 
+  const intakeMetrics = useMemo(() => {
+    const totalTokens = items.length;
+    const activeTokens = items.filter((item) => !item.revoked_at && !item.consumed_at).length;
+    const alertsTriggered = alerts?.active_tokens_older_than_threshold_exceeded ? 1 : 0;
+    const reviewReady = auditEntries.filter((entry) => entry.action !== "all").length;
+
+    return {
+      totalTokens,
+      activeTokens,
+      alertsTriggered,
+      reviewReady,
+    };
+  }, [items, alerts, auditEntries]);
+
   useEffect(() => {
     setLocale(getLocale());
 
@@ -566,6 +580,46 @@ export default function IntakePage() {
 
   return (
     <AppShell titleKey="intake.title">
+      <div className="card">
+        <span className="auth-eyebrow">Intake module</span>
+        <h2>{t(locale, "intake.title")}</h2>
+        <p className="muted">Review uploads, token activity, and OCR-driven work in one queue before pushing data into downstream workflows.</p>
+        <div className="top-actions" style={{ marginTop: "1rem", flexWrap: "wrap" }}>
+          <a className="link-button" href="/extraction-queue">
+            Extraction queue
+          </a>
+          <a className="link-button" href="/tickets">
+            Tickets
+          </a>
+          <a className="link-button" href="/modules">
+            Back to modules
+          </a>
+        </div>
+      </div>
+
+      <div className="grid">
+        <div className="card">
+          <span className="auth-eyebrow">Tokens</span>
+          <div className="metric">{intakeMetrics.totalTokens}</div>
+          <div className="metric-note">Replay tokens in the current queue</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Active</span>
+          <div className="metric">{intakeMetrics.activeTokens}</div>
+          <div className="metric-note">Tokens currently available to consume</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Alerts</span>
+          <div className="metric">{intakeMetrics.alertsTriggered}</div>
+          <div className="metric-note">Threshold warnings in the current window</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Review signals</span>
+          <div className="metric">{intakeMetrics.reviewReady}</div>
+          <div className="metric-note">Audit entries currently loaded for review</div>
+        </div>
+      </div>
+
       <div className="card">
         <h3>Replay token operations</h3>
         <p>

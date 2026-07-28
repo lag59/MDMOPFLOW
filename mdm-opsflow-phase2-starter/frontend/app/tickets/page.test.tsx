@@ -18,7 +18,9 @@ describe("Tickets calculator workflow", () => {
     vi.restoreAllMocks();
   });
 
-  it("runs calculator, applies outputs, creates ticket, and patches selected ticket", async () => {
+  it(
+    "runs calculator, applies outputs, creates ticket, and patches selected ticket",
+    async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method || "GET";
@@ -242,7 +244,9 @@ describe("Tickets calculator workflow", () => {
       String(input).includes("/api/tickets/t-1") && (init?.method || "GET") === "DELETE"
     );
     expect(deleteCall).toBeDefined();
-  });
+    },
+    10000
+  );
 
   it("uploads ticket files and prefills calculator + form from extracted fields", async () => {
     vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {

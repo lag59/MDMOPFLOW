@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getAccessToken, getTenantId } from "@/lib/auth";
@@ -33,6 +33,20 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [profitability, setProfitability] = useState<Map<string, ProjectProfitability>>(new Map());
   const [loading, setLoading] = useState(true);
+
+  const summary = useMemo(() => {
+    const totalProjects = projects.length;
+    const activeProjects = projects.filter((project) => project.status === "active").length;
+    const atRiskProjects = Array.from(profitability.values()).filter((item) => item.cost_overrun || item.revenue_shortfall).length;
+    const totalRevenue = Array.from(profitability.values()).reduce((acc, item) => acc + Number(item.actual_revenue || 0), 0);
+
+    return {
+      totalProjects,
+      activeProjects,
+      atRiskProjects,
+      totalRevenue,
+    };
+  }, [projects, profitability]);
 
   useEffect(() => {
     setLocale(getLocale());
@@ -97,12 +111,63 @@ export default function ProjectsPage() {
 
   return (
     <AppShell titleKey="projects.title">
-      <div className="section-header">
-        <h3>{t(locale, "projects.title")}</h3>
-        <Link className="link-button" href="/projects/new">
-          {t(locale, "projects.new")}
-        </Link>
+      <div className="card">
+        <span className="auth-eyebrow">Project module</span>
+        <h2>{t(locale, "projects.title")}</h2>
+        <p className="muted">Track project setup, budget context, profitability, and ticket flow from one place.</p>
+        <div className="top-actions" style={{ marginTop: "1rem", flexWrap: "wrap" }}>
+          <Link className="link-button" href="/projects/new">
+            {t(locale, "projects.new")}
+          </Link>
+          <Link className="link-button" href="/ticket-manager">
+            Ticket manager
+          </Link>
+          <Link className="link-button" href="/modules">
+            Back to modules
+          </Link>
+        </div>
       </div>
+
+      <div className="grid">
+        <div className="card">
+          <span className="auth-eyebrow">Portfolio</span>
+          <div className="metric">{summary.totalProjects}</div>
+          <div className="metric-note">Projects in the tenant portfolio</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Active work</span>
+          <div className="metric">{summary.activeProjects}</div>
+          <div className="metric-note">Projects currently marked active</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">At risk</span>
+          <div className="metric">{summary.atRiskProjects}</div>
+          <div className="metric-note">Projects with profitability warnings</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Revenue tracked</span>
+          <div className="metric">
+            {new Intl.NumberFormat("en-US", {
+              style: "currency",
+              currency: "USD",
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }).format(summary.totalRevenue)}
+          </div>
+          <div className="metric-note">Aggregated from project profitability records</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <div>
+            <h3>Project workspace</h3>
+            <p className="muted">Open a project, inspect profitability, or jump to its ticket view.</p>
+          </div>
+          <Link className="link-button" href="/projects/new">
+            {t(locale, "projects.new")}
+          </Link>
+        </div>
 
       {loading ? (
         <div className="p-4 text-slate-600">Loading projects...</div>
@@ -180,8 +245,10 @@ export default function ProjectsPage() {
               </Link>
             );
           })}
+          {projects.length === 0 ? <p className="p-4 text-slate-600">No projects yet. Create one to begin.</p> : null}
         </div>
       )}
+      </div>
     </AppShell>
   );
 }

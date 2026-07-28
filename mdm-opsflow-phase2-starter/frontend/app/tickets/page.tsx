@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import TicketCalculatorPanel from "@/components/TicketCalculatorPanel";
@@ -94,6 +94,20 @@ export default function TicketsPage() {
     numberOfLoads?: string;
   } | null>(null);
   const previewCardRef = useRef<HTMLDivElement | null>(null);
+
+  const ticketMetrics = useMemo(() => {
+    const totalTickets = tickets.length;
+    const draftTickets = tickets.filter((ticket) => ticket.status === "draft").length;
+    const assignedTickets = tickets.filter((ticket) => ticket.status !== "draft").length;
+    const uploadedItems = uploadItems.length;
+
+    return {
+      totalTickets,
+      draftTickets,
+      assignedTickets,
+      uploadedItems,
+    };
+  }, [tickets, uploadItems]);
 
   const potentialDuplicates = ticketNumber.trim()
     ? tickets
@@ -389,6 +403,46 @@ export default function TicketsPage() {
 
   return (
     <AppShell titleKey="tickets.title">
+      <div className="card">
+        <span className="auth-eyebrow">Ticket module</span>
+        <h2>Tickets</h2>
+        <p className="muted">Upload source files, extract fields, run the calculator, and keep ticket values standardized.</p>
+        <div className="top-actions" style={{ marginTop: "1rem", flexWrap: "wrap" }}>
+          <a className="link-button" href="/ticket-manager">
+            Ticket manager
+          </a>
+          <a className="link-button" href="/projects">
+            Projects
+          </a>
+          <a className="link-button" href="/modules">
+            Back to modules
+          </a>
+        </div>
+      </div>
+
+      <div className="grid">
+        <div className="card">
+          <span className="auth-eyebrow">Inventory</span>
+          <div className="metric">{ticketMetrics.totalTickets}</div>
+          <div className="metric-note">Tickets currently loaded in the workspace</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Drafts</span>
+          <div className="metric">{ticketMetrics.draftTickets}</div>
+          <div className="metric-note">Tickets ready for calculation or project assignment</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Assigned</span>
+          <div className="metric">{ticketMetrics.assignedTickets}</div>
+          <div className="metric-note">Tickets already tied to a project</div>
+        </div>
+        <div className="card">
+          <span className="auth-eyebrow">Uploads</span>
+          <div className="metric">{ticketMetrics.uploadedItems}</div>
+          <div className="metric-note">Files extracted in the current session</div>
+        </div>
+      </div>
+
       <div className="card">
         <div className="section-header">
           <h3>Bulk ticket upload (PDF/JPG/PNG/TXT)</h3>
