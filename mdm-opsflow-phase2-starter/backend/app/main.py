@@ -63,7 +63,7 @@ openapi_tags = [
     },
     {
         "name": "Tenant Users",
-        "description": "Tenant membership listing and assignment endpoints.",
+        "description": "Tenant membership listing/assignment plus per-user function-toggle endpoints.",
     },
     {
         "name": "Platform Administration",
