@@ -35,6 +35,7 @@ export default function OnboardingPage() {
   const [invites, setInvites] = useState("");
   const [firstProject, setFirstProject] = useState("First Launch Project");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"info" | "error">("info");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const steps: Step[] = useMemo(
@@ -104,6 +105,7 @@ export default function OnboardingPage() {
   function goNext(): void {
     const error = validateCurrentStep();
     setMessage(error);
+    setMessageTone(error ? "error" : "info");
     if (error) {
       return;
     }
@@ -113,6 +115,7 @@ export default function OnboardingPage() {
 
   function goBack(): void {
     setMessage("");
+    setMessageTone("info");
     setStepIndex((prev) => Math.max(prev - 1, 0));
   }
 
@@ -128,6 +131,7 @@ export default function OnboardingPage() {
   async function submit(): Promise<void> {
     const error = validateCurrentStep();
     setMessage(error);
+    setMessageTone(error ? "error" : "info");
     if (error) {
       return;
     }
@@ -152,6 +156,7 @@ export default function OnboardingPage() {
 
     if (!response.ok) {
       setMessage(t(locale, "common.onboardingFailed"));
+      setMessageTone("error");
       setIsSubmitting(false);
       return;
     }
@@ -307,7 +312,7 @@ export default function OnboardingPage() {
         )}
       </div>
 
-      {message ? <p>{message}</p> : null}
+      {message ? <div className={messageTone === "error" ? "card danger-card" : "card"}>{message}</div> : null}
     </AppShell>
   );
 }

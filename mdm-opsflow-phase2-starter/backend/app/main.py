@@ -1,7 +1,12 @@
 from contextlib import asynccontextmanager
+import asyncio
+import logging
 import time
+from collections import defaultdict, deque
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
@@ -11,6 +16,14 @@ from app.core.config import settings
 from app.db import SessionLocal
 from app.models import PlatformRole, User
 from app.security import hash_password
+
+
+logger = logging.getLogger(__name__)
+rate_limit_lock = asyncio.Lock()
+rate_limit_windows: dict[str, deque[float]] = defaultdict(deque)
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
 @asynccontextmanager
@@ -113,6 +126,93 @@ app.include_router(tickets.router)
 app.include_router(billing.router)
 app.include_router(ai_assignment.router)
 app.include_router(extractions.router)
+
+
+_RATE_LIMIT_EXEMPT_PATHS = {
+    "/",
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+}
+
+
+def _rate_limit_key(request: Request) -> str:
+    client_host = request.client.host if request.client else "unknown"
+    return f"{client_host}:{request.method}:{request.url.path}"
+
+
+def _get_retry_after_header(request_timestamp: float, window_seconds: int) -> str:
+    retry_after = max(1, int(window_seconds - request_timestamp))
+    return str(retry_after)
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or uuid4().hex
+    start_time = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        logger.exception(
+            "request_failed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "elapsed_ms": elapsed_ms,
+            },
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "request_id": request_id},
+        )
+
+    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time-Ms"] = str(elapsed_ms)
+    logger.info(
+        "request_completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "elapsed_ms": elapsed_ms,
+        },
+    )
+    return response
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.method == "OPTIONS" or request.url.path in _RATE_LIMIT_EXEMPT_PATHS:
+        return await call_next(request)
+
+    window_seconds = max(1, settings.RATE_LIMIT_WINDOW_SECONDS)
+    max_requests = max(1, settings.RATE_LIMIT_REQUESTS_PER_WINDOW)
+    now = time.monotonic()
+    key = _rate_limit_key(request)
+
+    async with rate_limit_lock:
+        window = rate_limit_windows[key]
+        cutoff = now - window_seconds
+        while window and window[0] <= cutoff:
+            window.popleft()
+
+        if len(window) >= max_requests:
+            retry_after = _get_retry_after_header(now - window[0], window_seconds)
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests"},
+            )
+            response.headers["Retry-After"] = retry_after
+            return response
+
+        window.append(now)
+
+    return await call_next(request)
 
 
 @app.get(

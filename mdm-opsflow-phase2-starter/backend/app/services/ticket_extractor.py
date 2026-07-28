@@ -2,6 +2,8 @@
 
 import re
 
+from app.services.llm_client import summarize_ticket_preview
+
 
 TICKET_NUMBER_PATTERN = re.compile(r"(?:ticket|ticket\s*#|ticket\s*number)\s*[:#-]?\s*([A-Za-z0-9-]{3,})", re.IGNORECASE)
 INVOICE_NUMBER_PATTERN = re.compile(
@@ -428,4 +430,13 @@ def extract_ticket_preview(raw_text: str, *, original_filename: str = "") -> tup
         summary_parts.append(f"Material {entities['material']}")
 
     summary = "; ".join(summary_parts)
+
+    llm_summary = summarize_ticket_preview(
+        raw_text,
+        entities=entities,
+        original_filename=original_filename,
+    )
+    if llm_summary:
+        summary = llm_summary
+
     return entities, summary, confidence

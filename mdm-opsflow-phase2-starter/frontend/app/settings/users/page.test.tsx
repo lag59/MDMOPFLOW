@@ -22,6 +22,20 @@ describe("User settings assignment flow", () => {
     const fetchMock = vi
       .spyOn(global, "fetch")
       .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [{ tenant_id: "tenant-1", tenant_name: "Acme Civil" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(JSON.stringify([]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -60,7 +74,7 @@ describe("User settings assignment flow", () => {
     render(<UserSettingsPage />);
 
     await user.type(screen.getByPlaceholderText("User email"), "member@acme.com");
-    await user.selectOptions(screen.getByRole("combobox"), "project_manager");
+    await user.selectOptions(screen.getByLabelText("Role"), "project_manager");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -68,19 +82,35 @@ describe("User settings assignment flow", () => {
       expect(screen.getByText("Member User (member@acme.com)")).toBeInTheDocument();
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    const assignCall = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+
+    expect(assignCall?.[1]).toMatchObject({
       method: "POST",
       headers: expect.objectContaining({
         "Content-Type": "application/json",
         "X-Tenant-ID": "tenant-1",
       }),
     });
-    expect(String((fetchMock.mock.calls[1][1] as RequestInit).body)).toContain('"role_name":"project_manager"');
+    expect(String((assignCall?.[1] as RequestInit | undefined)?.body)).toContain('"role_name":"project_manager"');
   });
 
   it("shows localized error when backend returns user not found", async () => {
     vi.spyOn(global, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [{ tenant_id: "tenant-1", tenant_name: "Acme Civil" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
       .mockResolvedValueOnce(
         new Response(JSON.stringify([]), {
           status: 200,
@@ -102,6 +132,73 @@ describe("User settings assignment flow", () => {
 
     await waitFor(() => {
       expect(screen.getByText("User not found.")).toBeInTheDocument();
+    });
+  });
+
+  it("lets a super-admin pick a tenant before loading members", async () => {
+    window.localStorage.removeItem("opsflow_tenant_id");
+
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [
+              { tenant_id: "tenant-a", tenant_name: "Acme Civil" },
+              { tenant_id: "tenant-b", tenant_name: "North Ridge" },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+
+    const user = userEvent.setup();
+    render(<UserSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("You are managing users and function access for the selected tenant.")).toBeInTheDocument();
+    });
+
+    expect(fetchMock.mock.calls.some(([, init]) => {
+      return init?.headers instanceof Headers
+        ? init.headers.get("X-Tenant-ID") === "tenant-a"
+        : (init?.headers as Record<string, string> | undefined)?.["X-Tenant-ID"] === "tenant-a";
+    })).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText("Tenant"), "tenant-b");
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([, init]) => {
+          return init?.headers instanceof Headers
+            ? init.headers.get("X-Tenant-ID") === "tenant-b"
+            : (init?.headers as Record<string, string> | undefined)?.["X-Tenant-ID"] === "tenant-b";
+        })
+      ).toBe(true);
     });
   });
 });

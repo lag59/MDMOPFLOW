@@ -57,4 +57,28 @@ describe("Onboarding wizard", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByPlaceholderText("Company name")).toBeInTheDocument();
   });
+
+  it("shows a failure banner when onboarding completion is rejected", async () => {
+    vi.spyOn(global, "fetch").mockResolvedValue(new Response("server error", { status: 500 }));
+
+    const user = userEvent.setup();
+    render(<OnboardingPage />);
+
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(screen.getByPlaceholderText("Company name"), "Acme Civil");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByLabelText("General Contractor"));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(screen.getByPlaceholderText("Invite emails (comma separated)"), "ops@example.com");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.type(screen.getByPlaceholderText("First project name"), "Central Yard");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Open dashboard" }));
+
+    expect(await screen.findByText("Onboarding failed")).toBeInTheDocument();
+    expect(screen.getByText("Onboarding failed").closest("div")).toHaveClass("danger-card");
+  });
 });

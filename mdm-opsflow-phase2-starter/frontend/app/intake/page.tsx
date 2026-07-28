@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import TicketCalculatorPanel from "@/components/TicketCalculatorPanel";
 import { getAccessToken } from "@/lib/auth";
+import { getLocale, t } from "@/lib/i18n";
 import {
   ReplayTokenApiError,
   ReplayTokenAuditEntry,
@@ -200,6 +201,7 @@ function resolveAuditWindowPresetRange(
 }
 
 export default function IntakePage() {
+  const [locale, setLocale] = useState<"en" | "es">("en");
   const [items, setItems] = useState<ReplayTokenState[]>([]);
   const [sort, setSort] = useState<SortValue>("-issued_at");
   const [limit, setLimit] = useState<number>(10);
@@ -243,6 +245,8 @@ export default function IntakePage() {
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
+    setLocale(getLocale());
+
     const token = getAccessToken();
     if (!token) {
       window.location.href = "/login";
@@ -825,7 +829,7 @@ export default function IntakePage() {
           <h3>Audit trail</h3>
           <div className="replay-action-row">
             <button onClick={() => void resetAuditFilters()} disabled={auditLoading || auditExportBusy}>
-              Reset audit filters
+              {t(locale, "intake.resetAuditFilters")}
             </button>
             <button onClick={() => void refreshAudit()} disabled={auditLoading}>
               {auditLoading ? "Refreshing..." : "Refresh audit"}

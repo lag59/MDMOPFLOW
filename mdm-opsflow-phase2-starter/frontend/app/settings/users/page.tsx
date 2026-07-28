@@ -30,6 +30,11 @@ type TenantUserPermissions = {
   overrides: UserPermissionOverride[];
 };
 
+type TenantOption = {
+  tenant_id: string;
+  tenant_name: string;
+};
+
 const ROLE_OPTIONS = [
   "owner",
   "executive",
@@ -62,6 +67,8 @@ export default function UserSettingsPage() {
   const locale = getLocale();
   const [memberships, setMemberships] = useState<UserMembership[]>([]);
   const [permissionCatalog, setPermissionCatalog] = useState<string[]>([]);
+  const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState(() => getTenantId());
   const [selectedUser, setSelectedUser] = useState<UserMembership | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
   const [basePermissions, setBasePermissions] = useState<Set<string>>(new Set());
@@ -78,12 +85,43 @@ export default function UserSettingsPage() {
       .join(" ");
   }
 
+  function resolveTenantHeader(): string {
+    return selectedTenantId || getTenantId();
+  }
+
+  async function loadTenantOptions(): Promise<void> {
+    const response = await fetch(`${getApiBaseUrl()}/api/admin/tenant-service-summary`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      setTenantOptions([]);
+      return;
+    }
+
+    const payload = (await response.json()) as { items: TenantOption[] };
+    setTenantOptions(payload.items);
+
+    if (!selectedTenantId && payload.items.length > 0) {
+      setSelectedTenantId(payload.items[0].tenant_id);
+    }
+  }
+
   async function loadMembers(): Promise<void> {
     setLoadError("");
+    const tenantId = resolveTenantHeader();
+    if (!tenantId) {
+      setMemberships([]);
+      setLoadError("Select a tenant to manage team members and function access.");
+      return;
+    }
+
     const response = await fetch(`${getApiBaseUrl()}/api/tenant-users`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
-        "X-Tenant-ID": getTenantId(),
+        "X-Tenant-ID": tenantId,
       },
     });
     if (!response.ok) {
@@ -107,7 +145,7 @@ export default function UserSettingsPage() {
     const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/permissions/catalog`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
-        "X-Tenant-ID": getTenantId(),
+        "X-Tenant-ID": resolveTenantHeader(),
       },
     });
     if (!response.ok) {
@@ -138,7 +176,7 @@ export default function UserSettingsPage() {
     const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/${userId}/permissions`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
-        "X-Tenant-ID": getTenantId(),
+        "X-Tenant-ID": resolveTenantHeader(),
       },
     });
     if (!response.ok) {
@@ -152,9 +190,19 @@ export default function UserSettingsPage() {
   }
 
   useEffect(() => {
-    loadMembers();
-    loadPermissionCatalog();
+    void loadTenantOptions();
   }, []);
+
+  useEffect(() => {
+    if (!selectedTenantId) {
+      setMemberships([]);
+      setPermissionCatalog([]);
+      return;
+    }
+
+    void loadMembers();
+    void loadPermissionCatalog();
+  }, [selectedTenantId]);
 
   async function assignUser(): Promise<void> {
     setMessage("");
@@ -168,7 +216,7 @@ export default function UserSettingsPage() {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${getAccessToken()}`,
-        "X-Tenant-ID": getTenantId(),
+        "X-Tenant-ID": resolveTenantHeader(),
       },
       body: JSON.stringify({ email: email.trim().toLowerCase(), role_name: roleName }),
     });
@@ -199,7 +247,7 @@ export default function UserSettingsPage() {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${getAccessToken()}`,
-        "X-Tenant-ID": getTenantId(),
+        "X-Tenant-ID": resolveTenantHeader(),
       },
       body: JSON.stringify({ overrides }),
     });
@@ -228,6 +276,39 @@ export default function UserSettingsPage() {
     <AppShell titleKey="settings.users">
       <div className="card form-grid">
         <div className="section-header">
+          <h3>Tenant Context</h3>
+        </div>
+        <label>
+          Tenant
+          <select
+            value={selectedTenantId}
+            onChange={(event) => {
+              const nextTenantId = event.target.value;
+              setSelectedTenantId(nextTenantId);
+              setSelectedUser(null);
+              setToggleMessage("");
+              setLoadError("");
+              setPermissionCatalog([]);
+              setMemberships([]);
+            }}
+          >
+            <option value="">Select a tenant</option>
+            {tenantOptions.map((tenant) => (
+              <option key={tenant.tenant_id} value={tenant.tenant_id}>
+                {tenant.tenant_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">
+          {selectedTenantId
+            ? "You are managing users and function access for the selected tenant."
+            : "Select a tenant to manage users and service functions."}
+        </p>
+      </div>
+
+      <div className="card form-grid">
+        <div className="section-header">
           <h3>Assign User</h3>
         </div>
         <input
@@ -235,17 +316,23 @@ export default function UserSettingsPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <select
-          value={roleName}
-          onChange={(e) => setRoleName(e.target.value)}
-        >
-          {ROLE_OPTIONS.map((role) => (
-            <option key={role} value={role}>
-              {t(locale, `settings.usersPage.roles.${role}`)}
-            </option>
-          ))}
-        </select>
-        <button onClick={assignUser}>{t(locale, "common.save")}</button>
+        <label>
+          Role
+          <select
+            value={roleName}
+            onChange={(e) => setRoleName(e.target.value)}
+            disabled={!selectedTenantId}
+          >
+            {ROLE_OPTIONS.map((role) => (
+              <option key={role} value={role}>
+                {t(locale, `settings.usersPage.roles.${role}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button onClick={assignUser} disabled={!selectedTenantId}>
+          {t(locale, "common.save")}
+        </button>
         {message ? <p>{message}</p> : null}
       </div>
 

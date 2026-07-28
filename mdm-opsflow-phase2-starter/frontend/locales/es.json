@@ -107,6 +107,7 @@
   },
   "intake": {
     "title": "Centro de ingreso",
+    "resetAuditFilters": "Restablecer filtros de auditoria",
     "newItem": "Nuevo elemento",
     "heroTitle": "De carga a revision en una sola cola",
     "heroSubtitle": "Carga archivos mixtos, ejecuta OCR + IA y mueve elementos por revision con claridad.",

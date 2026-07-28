@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     ENVIRONMENT:str="development"
     SECRET_KEY:str="change-me"
     DATABASE_URL:str="sqlite:///./mdm_opsflow.db"
+    RATE_LIMIT_REQUESTS_PER_WINDOW:int=300
+    RATE_LIMIT_WINDOW_SECONDS:int=60
     ALLOWED_ORIGINS:str=(
         "http://localhost:3000,"
         "https://sincere-quietude-production-e3c9.up.railway.app,"

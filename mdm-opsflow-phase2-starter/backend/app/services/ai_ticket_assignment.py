@@ -2,13 +2,18 @@
 AI-powered ticket assignment service.
 
 This service automatically assigns tickets to projects based on location matching.
-It uses fuzzy string matching to handle variations in address formatting and location names.
+It uses fuzzy string matching by default and can optionally use an OpenAI model
+to rank or confirm the best project when an API key is configured.
 """
 
 import difflib
+import json
 from typing import Optional
+
 from sqlalchemy.orm import Session
-from app.models import Ticket, Project
+
+from app.models import Project, Ticket
+from app.services.llm_client import OpenAILLMClient
 
 
 class TicketLocationMatcher:
@@ -168,6 +173,83 @@ class AITicketAssignment:
     """Main service for AI-powered ticket assignment."""
 
     @staticmethod
+    def _rank_candidate_projects(ticket_destination: str, projects: list[Project]) -> list[tuple[Project, float]]:
+        ranked: list[tuple[Project, float]] = []
+        for project in projects:
+            if not project.address:
+                continue
+
+            score = TicketLocationMatcher.calculate_location_similarity(ticket_destination, project.address)
+            ranked.append((project, score))
+
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        return ranked
+
+    @staticmethod
+    def _select_project_with_llm(
+        ticket_destination: str,
+        projects: list[Project],
+    ) -> Optional[tuple[Project, float, str]]:
+        """Ask the configured LLM to choose the best project from a shortlist."""
+        client = OpenAILLMClient()
+        if not client.available or not ticket_destination or not projects:
+            return None
+
+        project_payload = [
+            {
+                "project_id": project.id,
+                "project_name": project.project_name,
+                "project_number": project.project_number,
+                "address": project.address,
+                "customer": project.customer,
+            }
+            for project in projects
+        ]
+
+        system_prompt = (
+            "You are helping select the best construction project for a ticket destination. "
+            "Return JSON only with keys project_id, confidence, and reason. "
+            "project_id must be one of the provided projects. confidence must be a number between 0 and 1."
+        )
+        user_prompt = json.dumps(
+            {
+                "ticket_destination": ticket_destination,
+                "projects": project_payload,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+
+        try:
+            response = client.generate_json(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.0,
+            )
+        except Exception:
+            return None
+
+        selected_project_id = str(response.get("project_id", "")).strip()
+        if not selected_project_id:
+            return None
+
+        project_lookup = {project.id: project for project in projects}
+        selected_project = project_lookup.get(selected_project_id)
+        if not selected_project:
+            return None
+
+        try:
+            confidence = float(response.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        if confidence < 0.0 or confidence > 1.0:
+            return None
+
+        reason = str(response.get("reason", "")).strip()
+        return selected_project, confidence, reason or "LLM selected best project"
+
+    @staticmethod
     def auto_assign_unassigned_tickets(
         db: Session,
         tenant_id: str,
@@ -222,17 +304,23 @@ class AITicketAssignment:
                 result["skipped_no_destination"] += 1
                 continue
             
-            # Find best matching project
-            match_result = TicketLocationMatcher.find_best_project_match(
-                ticket.destination,
-                active_projects,
-            )
-            
-            if not match_result:
+            ranked_projects = AITicketAssignment._rank_candidate_projects(ticket.destination, active_projects)
+            if not ranked_projects:
                 result["skipped_low_confidence"] += 1
                 continue
             
-            project, confidence = match_result
+            shortlist = [project for project, _score in ranked_projects[:5]]
+            llm_choice = AITicketAssignment._select_project_with_llm(ticket.destination, shortlist)
+
+            if llm_choice:
+                project, confidence, reason = llm_choice
+            else:
+                project, confidence = ranked_projects[0]
+                reason = f"Deterministic match: {ticket.destination} → {project.address}"
+
+            if not project:
+                result["skipped_low_confidence"] += 1
+                continue
             
             # Only assign if above threshold
             if confidence < confidence_threshold:
@@ -248,7 +336,7 @@ class AITicketAssignment:
                 "ticket_id": ticket.id,
                 "project_id": project.id,
                 "confidence": float(confidence),
-                "match_info": f"{ticket.destination} → {project.address}",
+                "match_info": reason,
             })
         
         # Commit all assignments
@@ -303,27 +391,39 @@ class AITicketAssignment:
             Project.status.in_(["active", "planning"]),
         ).all()
         
-        # Score all projects
+        ranked_projects = AITicketAssignment._rank_candidate_projects(ticket.destination, projects)
+        shortlist = [project for project, _score in ranked_projects[:5]]
+        llm_choice = AITicketAssignment._select_project_with_llm(ticket.destination, shortlist)
+
         scores = []
-        for project in projects:
-            if not project.address:
+        if llm_choice:
+            project, confidence, reason = llm_choice
+            scores.append({
+                "project_id": project.id,
+                "project_name": project.project_name,
+                "address": project.address,
+                "confidence": float(confidence),
+                "match_reason": reason,
+            })
+
+        for project, score in ranked_projects:
+            if score <= 0.5:
                 continue
-            
-            score = TicketLocationMatcher.calculate_location_similarity(
-                ticket.destination,
-                project.address,
-            )
-            
-            if score > 0.5:  # Include even lower confidence for suggestions
-                scores.append({
-                    "project_id": project.id,
-                    "project_name": project.project_name,
-                    "address": project.address,
-                    "confidence": float(score),
-                    "match_reason": f"Location match: {ticket.destination} similar to {project.address}",
-                })
-        
-        # Sort by confidence descending
-        scores.sort(key=lambda x: x["confidence"], reverse=True)
+
+            scores.append({
+                "project_id": project.id,
+                "project_name": project.project_name,
+                "address": project.address,
+                "confidence": float(score),
+                "match_reason": f"Location match: {ticket.destination} similar to {project.address}",
+            })
+
+        deduped: dict[str, dict] = {}
+        for item in scores:
+            project_id = item["project_id"]
+            if project_id not in deduped or item["confidence"] > deduped[project_id]["confidence"]:
+                deduped[project_id] = item
+
+        scores = sorted(deduped.values(), key=lambda x: x["confidence"], reverse=True)
         
         return scores[:top_n]

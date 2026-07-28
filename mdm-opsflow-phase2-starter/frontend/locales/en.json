@@ -107,6 +107,7 @@
   },
   "intake": {
     "title": "Intake Hub",
+    "resetAuditFilters": "Reset audit filters",
     "newItem": "New intake item",
     "heroTitle": "From upload to review, in one clear queue",
     "heroSubtitle": "Bring in mixed files, run OCR + AI, and move items through review with confidence.",
