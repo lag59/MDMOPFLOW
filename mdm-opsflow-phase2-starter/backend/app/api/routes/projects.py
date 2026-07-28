@@ -4,8 +4,16 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, get_request_context, require_permissions
-from app.models import AuditLog, Project
-from app.schemas import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.models import AuditLog, Project, Ticket
+from app.schemas import (
+    ProjectCreate,
+    ProjectResponse,
+    ProjectUpdate,
+    ProjectCostResponse,
+    ProjectProfitabilityResponse,
+    TicketResponse,
+)
+from app.services.project_costing import ProjectCostAggregation
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -197,3 +205,93 @@ def delete_project(
     db.delete(item)
     db.commit()
     return None
+
+
+@router.get(
+    "/{project_id}/costs",
+    response_model=ProjectCostResponse,
+    operation_id="projects_costs",
+    summary="Get project costs",
+    description="Returns aggregated costs from all approved/completed tickets in a project.",
+    responses={
+        200: {"description": "Project costs returned successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
+def get_project_costs(
+    project_id: str,
+    context: RequestContext = Depends(require_permissions("project_read")),
+    db: Session = Depends(get_db),
+):
+    # Verify project exists and is accessible
+    item = db.get(Project, project_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    costs = ProjectCostAggregation.get_project_costs(db, project_id)
+    return ProjectCostResponse(**costs)
+
+
+@router.get(
+    "/{project_id}/profitability",
+    response_model=ProjectProfitabilityResponse,
+    operation_id="projects_profitability",
+    summary="Get project profitability",
+    description="Returns profitability analysis comparing contract/budget vs actual ticket costs.",
+    responses={
+        200: {"description": "Project profitability returned successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
+def get_project_profitability(
+    project_id: str,
+    context: RequestContext = Depends(require_permissions("project_read")),
+    db: Session = Depends(get_db),
+):
+    # Verify project exists and is accessible
+    item = db.get(Project, project_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        profitability = ProjectCostAggregation.get_project_profitability(db, project_id)
+        return ProjectProfitabilityResponse(**profitability)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get(
+    "/{project_id}/tickets",
+    response_model=list[TicketResponse],
+    operation_id="projects_tickets",
+    summary="List project tickets",
+    description="Returns all tickets linked to a project.",
+    responses={
+        200: {"description": "Project tickets returned successfully."},
+        404: {"description": "Project not found in caller scope."},
+    },
+)
+def get_project_tickets(
+    project_id: str,
+    status_filter: str | None = None,
+    context: RequestContext = Depends(require_permissions("project_read")),
+    db: Session = Depends(get_db),
+):
+    # Verify project exists and is accessible
+    item = db.get(Project, project_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    query = select(Ticket).where(Ticket.project_id == project_id)
+
+    if status_filter:
+        query = query.where(Ticket.status == status_filter)
+
+    tickets = db.scalars(query).all()
+    return tickets

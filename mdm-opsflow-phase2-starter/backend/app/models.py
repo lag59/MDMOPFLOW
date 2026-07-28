@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -243,12 +243,28 @@ class IntegrationEvent(Base):
     )
 
 
+class MaterialDensityPreset(Base):
+    __tablename__ = "material_density_presets"
+    __table_args__ = (UniqueConstraint("tenant_id", "material_name", name="uq_material_density_presets_tenant_material"),)
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    material_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    density_tons_per_cubic_yard: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
     intake_item_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("intake_items.id"), nullable=True)
+    extraction_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("document_extractions.id"), nullable=True)
     project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
     ticket_number: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     truck: Mapped[str] = mapped_column(String(120), default="", nullable=False)
@@ -271,3 +287,146 @@ class Ticket(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+
+class DocumentExtraction(Base):
+    """
+    Represents OCR extraction results with AI interpretation and confidence scores.
+    Tracks the complete workflow from raw OCR to approved, distributed data.
+    """
+    __tablename__ = "document_extractions"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    intake_item_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("intake_items.id"), index=True, nullable=False)
+    
+    # Document classification
+    document_type: Mapped[str] = mapped_column(String(50), default="unknown", nullable=False)
+    document_type_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    is_multi_document: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    document_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    
+    # Hauling company
+    company_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    company_name_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    company_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    
+    # Document identifiers
+    ticket_number: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    ticket_number_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    invoice_number: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    invoice_number_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    job_number: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    job_number_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Dates and times
+    ticket_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_date_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    start_time_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    finish_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finish_time_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    total_hours_calculated: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    
+    # Customer/Project
+    customer_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    customer_name_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    customer_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    project_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    project_name_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    job_location: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    job_location_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Driver/Operator
+    driver_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    driver_name_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    driver_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    driver_signature_present: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    
+    # Truck/Trailer
+    truck_number: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    truck_number_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    truck_type: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    truck_type_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Material
+    material: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    material_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    material_category: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    origin: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    origin_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    destination: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    destination_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Quantities
+    load_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    load_count_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    weight_net_lbs: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    weight_net_lbs_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    tons: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    cubic_yards: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    cubic_yards_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Rates and totals
+    rate_per_ton: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    rate_per_load: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    invoice_total: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    invoice_total_confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    
+    # Processing workflow
+    status: Mapped[str] = mapped_column(String(30), default="uploaded", nullable=False, index=True)
+    
+    # Human review
+    reviewed_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    
+    # Approval
+    approved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    
+    # Distribution tracking
+    distributed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_created_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("tickets.id"), nullable=True)
+    
+    # OCR raw text
+    ocr_raw_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    extracted_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    
+    # Audit
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class ExtractionIssue(Base):
+    """
+    Tracks data quality issues, warnings, and flags during OCR/AI extraction.
+    """
+    __tablename__ = "extraction_issues"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    extraction_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("document_extractions.id"), index=True, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    
+    # Issue classification
+    issue_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    field_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), default="warning", nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Suggested correction
+    suggested_value: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    correction_source: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    
+    # Resolution
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolved_value: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    resolved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

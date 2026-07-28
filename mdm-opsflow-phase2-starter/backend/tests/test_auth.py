@@ -61,3 +61,50 @@ def test_platform_admin_is_seeded_and_protected(client: TestClient):
 
     denied = client.get("/api/admin/overview", headers={"Authorization": f"Bearer {user_token}"})
     assert denied.status_code == 403
+
+
+def test_super_admin_can_manage_user_access_and_reset_password(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    user_register = client.post(
+        "/api/auth/register",
+        json={"email": "managed-user@example.com", "password": "Pass12345!", "display_name": "Managed User"},
+    )
+    assert user_register.status_code == 201
+    user_id = user_register.json()["user_id"]
+
+    users_list = client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert users_list.status_code == 200
+    assert any(row["email"] == "managed-user@example.com" for row in users_list.json())
+
+    access_update = client.patch(
+        f"/api/admin/users/{user_id}/access",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"platform_role": "platform_super_admin", "is_active": True},
+    )
+    assert access_update.status_code == 200
+    assert access_update.json()["platform_role"] == "platform_super_admin"
+
+    password_reset = client.post(
+        f"/api/admin/users/{user_id}/reset-password",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"new_password": "ResetPass123!"},
+    )
+    assert password_reset.status_code == 200
+
+    old_login = client.post(
+        "/api/auth/login",
+        json={"email": "managed-user@example.com", "password": "Pass12345!"},
+    )
+    assert old_login.status_code == 401
+
+    new_login = client.post(
+        "/api/auth/login",
+        json={"email": "managed-user@example.com", "password": "ResetPass123!"},
+    )
+    assert new_login.status_code == 200

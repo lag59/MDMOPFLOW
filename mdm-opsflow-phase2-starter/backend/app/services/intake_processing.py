@@ -3,10 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import re
 from uuid import uuid4
+
+import fitz
+from PIL import Image
+
+try:
+    import pytesseract
+except Exception:  # pragma: no cover - optional dependency fallback for local environments
+    pytesseract = None
 
 from app.models import IntakeStatus
 from app.services.ticket_extractor import extract_ticket_preview
@@ -48,9 +57,54 @@ def _sanitize_filename(filename: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", candidate)
 
 
+def _extract_pdf_text(payload: bytes) -> str:
+    try:
+        with fitz.open(stream=payload, filetype="pdf") as document:
+            page_text: list[str] = []
+            for page in document:
+                extracted = page.get_text("text").strip()
+                if extracted:
+                    page_text.append(extracted)
+            text = "\n".join(page_text).strip()
+
+        # Scanned PDFs have no embedded text layer — fall back to OCR on rendered images
+        if not text and pytesseract is not None:
+            with fitz.open(stream=payload, filetype="pdf") as document:
+                ocr_pages: list[str] = []
+                for page in document:
+                    pix = page.get_pixmap(dpi=300)
+                    img_bytes = pix.tobytes("png")
+                    try:
+                        img = Image.open(BytesIO(img_bytes))
+                        page_ocr = pytesseract.image_to_string(img).strip()
+                        if page_ocr:
+                            ocr_pages.append(page_ocr)
+                    except Exception:
+                        pass
+            text = "\n\n".join(ocr_pages).strip()
+
+        return text
+    except Exception:
+        return ""
+
+
+def _extract_image_text(payload: bytes) -> str:
+    if pytesseract is None:
+        return ""
+    try:
+        with Image.open(BytesIO(payload)) as image:
+            return pytesseract.image_to_string(image).strip()
+    except Exception:
+        return ""
+
+
 def _extract_text(payload: bytes, mime_type: str) -> str:
     if mime_type.startswith("text/"):
         return payload.decode("utf-8", errors="replace").strip()
+    if mime_type == "application/pdf":
+        return _extract_pdf_text(payload)
+    if mime_type.startswith("image/"):
+        return _extract_image_text(payload)
     return ""
 
 
@@ -77,7 +131,7 @@ def process_intake_upload(
     content_hash = hashlib.sha256(payload).hexdigest()
     extracted_text = _extract_text(payload, mime_type)
 
-    entities, summary, confidence = extract_ticket_preview(extracted_text)
+    entities, summary, confidence = extract_ticket_preview(extracted_text, original_filename=original_filename)
     document_type = "ticket" if entities else "general"
 
     needs_review = bool(extracted_text) and confidence < 0.75

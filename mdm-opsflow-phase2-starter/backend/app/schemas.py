@@ -287,6 +287,54 @@ class AdminPermissionsPreviewResponse(BaseModel):
     items: list[AdminPermissionsPreviewItem]
 
 
+class AdminUserAccessItem(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "7e4e28dc-5038-4025-8e4c-a64fd3b76156",
+                "email": "ops.user@example.com",
+                "display_name": "Ops User",
+                "title": "Operations Manager",
+                "platform_role": "user",
+                "is_active": True,
+            }
+        }
+    )
+
+    id: str
+    email: str
+    display_name: str
+    title: str
+    platform_role: PlatformRole
+    is_active: bool
+
+
+class AdminUpdateUserAccessRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "platform_role": "platform_super_admin",
+                "is_active": True,
+            }
+        }
+    )
+
+    platform_role: PlatformRole | None = None
+    is_active: bool | None = None
+
+
+class AdminResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "new_password": "NewStrongPass123!",
+            }
+        }
+    )
+
+    new_password: str = Field(min_length=8)
+
+
 class OnboardingRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -304,8 +352,8 @@ class OnboardingRequest(BaseModel):
     company_name: str = Field(min_length=2, max_length=200)
     company_type: str
     language: str = Field(default="en", pattern="^(en|es)$")
-    modules: list[str] = Field(default_factory=list)
-    invite_emails: list[EmailStr] = Field(default_factory=list)
+    modules: list[str] = []
+    invite_emails: list[EmailStr] = []
     first_project_name: str = Field(min_length=2, max_length=255)
 
 
@@ -407,6 +455,155 @@ class ProjectResponse(ProjectBase):
     created_by: str
     created_at: datetime
     updated_at: datetime
+
+class ProjectCostResponse(BaseModel):
+    """Project cost aggregation from all tickets."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "total_tickets": 15,
+                "total_revenue": "45000.00",
+                "total_fuel_cost": "8500.00",
+                "total_net_tons": 450,
+                "total_cubic_yards": 900,
+                "avg_revenue_per_ton": "100.00",
+            }
+        }
+    )
+
+    total_tickets: int
+    total_revenue: Decimal
+    total_fuel_cost: Decimal
+    total_net_tons: Decimal
+    total_cubic_yards: Decimal
+    avg_revenue_per_ton: Decimal
+
+
+class ProjectProfitabilityResponse(BaseModel):
+    """Project profitability summary comparing contract/budget vs actual costs."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "project_id": "b9c8f6d7-6a9c-4ea5-b5fb-801d343bdb48",
+                "project_name": "Downtown Site Prep",
+                "status": "active",
+                "contract_amount": "50000.00",
+                "budgeted_cost": "10000.00",
+                "actual_cost": "8500.00",
+                "actual_revenue": "45000.00",
+                "contract_variance": "5000.00",
+                "budget_variance": "1500.00",
+                "gross_profit": "36500.00",
+                "profit_margin": 81.11,
+                "cost_overrun": False,
+                "revenue_shortfall": False,
+                "ticket_count": 15,
+                "total_tons": 450,
+                "total_cubic_yards": 900,
+            }
+        }
+    )
+
+    project_id: str | None = None
+    project_name: str | None = None
+    status: str | None = None
+    contract_amount: Decimal
+    budgeted_cost: Decimal
+    actual_cost: Decimal
+    actual_revenue: Decimal
+    contract_variance: Decimal
+    budget_variance: Decimal
+    gross_profit: Decimal
+    profit_margin: float
+    cost_overrun: bool
+    revenue_shortfall: bool
+    ticket_count: int
+    total_tons: Decimal
+    total_cubic_yards: Decimal
+
+
+class InvoiceLineItemResponse(BaseModel):
+    """Single line item on an invoice."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "ticket_id": "12345678-1234-5678-1234-567812345678",
+                "description": "Dirt - Unit 5 (Ticket #DRT-2026-001)",
+                "quantity": "450.00",
+                "unit": "tons",
+                "rate": "100.00",
+                "amount": "45000.00",
+                "rate_type": "per_ton",
+            }
+        }
+    )
+
+    ticket_id: str
+    description: str
+    quantity: Decimal
+    unit: str
+    rate: Decimal
+    amount: Decimal
+    rate_type: str
+
+
+class InvoiceGenerationRequest(BaseModel):
+    """Request to generate an invoice for a project."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "rate_per_ton": "100.00",
+                "rate_per_yard": None,
+                "rate_per_load": None,
+                "status_filter": "approved",
+            }
+        }
+    )
+
+    rate_per_ton: Decimal | None = None
+    rate_per_yard: Decimal | None = None
+    rate_per_load: Decimal | None = None
+    status_filter: str = Field(default="approved", min_length=2, max_length=30)
+
+
+class InvoiceResponse(BaseModel):
+    """Complete invoice with line items and totals."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "project_id": "b9c8f6d7-6a9c-4ea5-b5fb-801d343bdb48",
+                "line_items": [
+                    {
+                        "ticket_id": "12345678-1234-5678-1234-567812345678",
+                        "description": "Dirt - Unit 5 (Ticket #DRT-2026-001)",
+                        "quantity": "450.00",
+                        "unit": "tons",
+                        "rate": "100.00",
+                        "amount": "45000.00",
+                        "rate_type": "per_ton",
+                    }
+                ],
+                "subtotal": "45000.00",
+                "tax_rate": 0.0,
+                "tax_amount": "0.00",
+                "total": "45000.00",
+                "item_count": 1,
+            }
+        }
+    )
+
+    project_id: str
+    line_items: list[InvoiceLineItemResponse]
+    subtotal: Decimal
+    tax_rate: float
+    tax_amount: Decimal
+    total: Decimal
+    item_count: int
 
 
 class IntakeItemBase(BaseModel):
@@ -513,7 +710,7 @@ class IngestionBatchResponse(BaseModel):
 
 
 class IntakeBatchDetailResponse(IngestionBatchResponse):
-    items: list[IntakeItemResponse] = Field(default_factory=list)
+    items: list[IntakeItemResponse] = []
 
 
 class IntakeIntegrationEventResponse(BaseModel):
@@ -581,8 +778,8 @@ class IntakeReplayExportTokenBulkRevokeActiveResponse(BaseModel):
     skipped_consumed_count: int
     skipped_revoked_count: int
     skipped_expired_count: int
-    candidate_token_ids: list[str] = Field(default_factory=list)
-    revoked_token_ids: list[str] = Field(default_factory=list)
+    candidate_token_ids: list[str] = []
+    revoked_token_ids: list[str] = []
     revoked_at: datetime
 
 
@@ -602,7 +799,7 @@ class IntakeReplayExportTokenAuditEntryResponse(BaseModel):
 
 
 class IntakeReplayExportTokenAuditHistoryListResponse(BaseModel):
-    items: list[IntakeReplayExportTokenAuditEntryResponse] = Field(default_factory=list)
+    items: list[IntakeReplayExportTokenAuditEntryResponse] = []
     limit: int
     has_more: bool
     next_cursor_created_at: datetime | None = None
@@ -630,7 +827,7 @@ class IntakeReplayExportTokenAuditTrendBucketResponse(BaseModel):
 
 
 class IntakeReplayExportTokenAuditTrendResponse(BaseModel):
-    items: list[IntakeReplayExportTokenAuditTrendBucketResponse] = Field(default_factory=list)
+    items: list[IntakeReplayExportTokenAuditTrendBucketResponse] = []
     granularity: str
     window_start_created_at: datetime | None = None
     window_end_created_at: datetime | None = None
@@ -655,7 +852,7 @@ class IntakeReplayExportTokenStateResponse(BaseModel):
 
 
 class IntakeReplayExportTokenStateListResponse(BaseModel):
-    items: list[IntakeReplayExportTokenStateResponse] = Field(default_factory=list)
+    items: list[IntakeReplayExportTokenStateResponse] = []
     limit: int
     has_more: bool
     next_cursor_issued_at: datetime | None = None
@@ -684,7 +881,7 @@ class IntakeReplayExportTokenStateSummaryResponse(BaseModel):
     consumed_tokens: int
     revoked_tokens: int
     expired_tokens: int
-    actors: list[IntakeReplayExportTokenActorStateSummaryResponse] = Field(default_factory=list)
+    actors: list[IntakeReplayExportTokenActorStateSummaryResponse] = []
 
 
 class IntakeReplayExportTokenStateAlertsResponse(BaseModel):
@@ -838,7 +1035,383 @@ class TicketFromIntakeCreate(BaseModel):
     weight: Decimal | None = Field(default=None, description="Override for weight value.")
     volume_yards: Decimal | None = Field(default=None, description="Override for volume in cubic yards.")
     tons: Decimal | None = Field(default=None, description="Override for tons value.")
-    fuel_cost: Decimal | None = Field(default=None, description="Override for fuel cost.")
-    revenue: Decimal | None = Field(default=None, description="Override for revenue.")
-    status: str | None = Field(default=None, min_length=2, max_length=30)
-    notes: str | None = Field(default=None, description="Override notes for the created ticket.")
+
+
+class TicketQuantityCalculationRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "gross_weight_lbs": "54000",
+                "tare_weight_lbs": "32000",
+                "number_of_loads": 4,
+                "truck_type": "triaxle",
+                "material_density_tons_per_cubic_yard": "1.50",
+                "rate_per_ton": "12.50",
+            }
+        }
+    )
+
+    gross_weight_lbs: Decimal | None = Field(default=None, ge=0)
+    tare_weight_lbs: Decimal | None = Field(default=None, ge=0)
+    net_weight_lbs: Decimal | None = Field(default=None, ge=0)
+    material_name: str | None = Field(default=None, min_length=1, max_length=120)
+    number_of_loads: int | None = Field(default=None, ge=1)
+    truck_type: str | None = Field(default=None, max_length=40)  # tandem|triaxle|quad|quint
+    truck_capacity_tons: Decimal | None = Field(default=None, gt=0)
+    material_density_tons_per_cubic_yard: Decimal | None = Field(default=None, gt=0)
+    rate_per_ton: Decimal | None = Field(default=None, ge=0)
+    rate_per_cubic_yard: Decimal | None = Field(default=None, ge=0)
+    rate_per_load: Decimal | None = Field(default=None, ge=0)
+
+
+class TicketQuantityCalculationResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "net_weight_lbs": "22000.00",
+                "net_tons": "11.00",
+                "estimated_cubic_yards": "7.33",
+                "estimated_load_count": "4.00",
+                "tons_per_load": "2.75",
+                "cubic_yards_per_load": "1.83",
+                "cost_from_ton": "137.50",
+                "cost_from_cubic_yard": "131.94",
+                "cost_from_load": "260.00",
+                "selected_cost_method": "per_ton",
+                "selected_total_cost": "137.50",
+                "assumptions": [
+                    "net_weight_lbs derived from gross_weight_lbs - tare_weight_lbs"
+                ]
+            }
+        }
+    )
+
+    net_weight_lbs: Decimal | None = None
+    net_tons: Decimal | None = None
+    total_tons: Decimal | None = None          # tons across all loads
+    total_cubic_yards: Decimal | None = None   # volume across all loads
+    estimated_cubic_yards: Decimal | None = None
+    estimated_load_count: Decimal | None = None
+    tons_per_load: Decimal | None = None
+    cubic_yards_per_load: Decimal | None = None
+    cost_from_ton: Decimal | None = None
+    cost_from_cubic_yard: Decimal | None = None
+    cost_from_load: Decimal | None = None
+    selected_cost_method: str | None = None
+    selected_total_cost: Decimal | None = None
+    resolved_material_name: str | None = None
+    resolved_density_source: str | None = None
+    weight_method: str | None = None           # "actual" | "estimated"
+    resolved_truck_type: str | None = None
+    resolved_truck_capacity_tons: Decimal | None = None
+    assumptions: list[str] = []
+
+
+class MaterialDensityPresetUpsertRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "density_tons_per_cubic_yard": "1.45"
+            }
+        }
+    )
+
+    density_tons_per_cubic_yard: Decimal = Field(gt=0)
+
+
+class MaterialDensityPresetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    material_name: str
+    density_tons_per_cubic_yard: Decimal
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TicketCalculatorPrefillResponse(BaseModel):
+    material_name: str | None = None
+    gross_weight_lbs: str | None = None
+    tare_weight_lbs: str | None = None
+    net_weight_lbs: str | None = None
+    number_of_loads: int | None = None
+
+
+class TicketUploadExtractionItemResponse(BaseModel):
+    filename: str
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int
+    extracted_summary: str
+    extracted_text_preview: str | None = None
+    extraction_confidence: float = 0.0
+    review_required: bool = False
+    extracted_entities: dict[str, str] = Field(default_factory=dict)
+    calculator_prefill: TicketCalculatorPrefillResponse
+    created_ticket_id: str | None = None
+    duplicate_ticket_id: str | None = None
+
+
+class TicketUploadExtractionResponse(BaseModel):
+    items: list[TicketUploadExtractionItemResponse] = []
+
+
+# ============================================================================
+# OCR/AI Document Extraction Schemas
+# ============================================================================
+
+class DocumentExtractionIssueResponse(BaseModel):
+    """Issue detected in document extraction (low confidence, missing field, validation error)."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "issue-123",
+                "issue_type": "low_confidence",
+                "field_name": "destination",
+                "severity": "warning",
+                "message": "Destination address confidence is only 55%",
+                "suggested_value": "123 Main St, Portland OR",
+                "correction_source": "project_location",
+                "resolved": False,
+            }
+        },
+    )
+
+    id: str
+    issue_type: str
+    field_name: str
+    severity: str
+    message: str
+    suggested_value: str | None = None
+    correction_source: str | None = None
+    resolved: bool
+    resolved_value: str | None = None
+
+
+class DocumentExtractionResponse(BaseModel):
+    """Complete document extraction with all extracted fields and confidence scores."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "extraction-123",
+                "intake_item_id": "item-123",
+                "document_type": "ticket",
+                "document_type_confidence": 0.95,
+                "status": "review_pending",
+                "company_name": "Acme Hauling",
+                "company_name_confidence": 0.88,
+                "ticket_number": "TCK-2026-001",
+                "ticket_number_confidence": 0.92,
+                "destination": "456 Oak Ave, Portland OR",
+                "destination_confidence": 0.72,
+                "material": "Topsoil",
+                "material_confidence": 0.85,
+                "tons": "12.50",
+                "invoice_total": "450.00",
+                "review_notes": "",
+                "created_at": "2026-07-27T10:30:00Z",
+            }
+        },
+    )
+
+    id: str
+    tenant_id: str
+    intake_item_id: str
+    document_type: str
+    document_type_confidence: float
+    status: str
+    company_name: str
+    company_name_confidence: float
+    ticket_number: str
+    ticket_number_confidence: float
+    destination: str
+    destination_confidence: float
+    material: str
+    material_confidence: float
+    tons: Decimal | None = None
+    invoice_total: Decimal | None = None
+    review_notes: str
+    created_at: datetime
+    created_by: str
+
+
+class ExtractionReviewRequest(BaseModel):
+    """Request to review and correct extracted fields."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "review_notes": "Verified against original document. Minor correction to destination.",
+                "corrections": {
+                    "destination": "456 Oak Avenue, Portland OR 97214",
+                    "tons": "12.75",
+                },
+            }
+        }
+    )
+
+    review_notes: str = Field(default="", max_length=2000)
+    corrections: dict[str, str] = Field(default_factory=dict, description="Field name → corrected value")
+
+
+class ExtractionApprovalRequest(BaseModel):
+    """Request to approve or reject extraction for distribution."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "approve": True,
+                "approval_notes": "All issues resolved. Ready for distribution.",
+                "rejection_reason": None,
+            }
+        }
+    )
+
+    approve: bool = Field(description="True to approve, False to reject")
+    approval_notes: str = Field(default="", max_length=2000)
+    rejection_reason: str | None = Field(default=None, max_length=2000)
+
+
+class ExtractionApprovalResponse(BaseModel):
+    """Response after approval with distribution results."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "extraction_id": "extraction-123",
+                "status": "distributed",
+                "ticket_created_id": "ticket-456",
+                "distributed_at": "2026-07-27T10:45:00Z",
+                "distribution_summary": {
+                    "ticket_created": True,
+                    "project_updated": True,
+                    "vendor_created": False,
+                    "dispatch_updated": False,
+                },
+            }
+        }
+    )
+
+    extraction_id: str
+    status: str
+    ticket_created_id: str | None = None
+    distributed_at: datetime | None = None
+    distribution_summary: dict[str, bool] = Field(default_factory=dict)
+
+
+class ExtractionListItemResponse(BaseModel):
+    """Extraction item in list view."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "extraction-123",
+                "status": "review_pending",
+                "document_type": "ticket",
+                "company_name": "Acme Hauling",
+                "ticket_number": "TCK-2026-001",
+                "issue_count": 2,
+                "avg_confidence": 0.81,
+                "created_at": "2026-07-27T10:30:00Z",
+            }
+        },
+    )
+
+    id: str
+    status: str
+    document_type: str
+    company_name: str
+    ticket_number: str
+    issue_count: int = 0
+    avg_confidence: float = 0.0
+    created_at: datetime
+
+
+class ExtractionListResponse(BaseModel):
+    """List of pending extractions."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": "extraction-123",
+                        "status": "review_pending",
+                        "document_type": "ticket",
+                        "company_name": "Acme Hauling",
+                        "ticket_number": "TCK-2026-001",
+                        "issue_count": 2,
+                        "avg_confidence": 0.81,
+                        "created_at": "2026-07-27T10:30:00Z",
+                    }
+                ],
+                "total": 1,
+                "limit": 50,
+                "offset": 0,
+            }
+        }
+    )
+
+    items: list[ExtractionListItemResponse] = []
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+
+
+class ExtractionTriggerResponse(BaseModel):
+    """Response after triggering OCR extraction for an intake item."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "extraction_id": "extraction-123",
+                "intake_item_id": "intake-456",
+                "status": "review_pending",
+                "document_type": "ticket",
+                "issue_count": 2,
+                "fields_extracted": 9,
+                "is_new": True,
+            }
+        }
+    )
+
+    extraction_id: str
+    intake_item_id: str
+    status: str
+    document_type: str
+    issue_count: int = 0
+    fields_extracted: int = 0
+    is_new: bool = True
+
+
+class ExtractionDetailResponse(BaseModel):
+    """Complete extraction detail with all issues."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "extraction": {"id": "extraction-123"},
+                "issues": [
+                    {
+                        "id": "issue-1",
+                        "issue_type": "low_confidence",
+                        "field_name": "destination",
+                        "severity": "warning",
+                        "message": "Destination address confidence is only 55%",
+                        "suggested_value": "123 Main St, Portland OR",
+                        "resolved": False,
+                    }
+                ],
+            }
+        }
+    )
+
+    extraction: DocumentExtractionResponse
+    issues: list[DocumentExtractionIssueResponse] = []

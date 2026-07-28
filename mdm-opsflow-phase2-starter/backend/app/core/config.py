@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_MINUTES:int=30
     REFRESH_TOKEN_MINUTES:int=20160
     INTAKE_REPLAY_EXPORT_TOKEN_MINUTES:int=5
-    SUPER_ADMIN_EMAIL:str="founder@mdmopsflow.com"
+    SUPER_ADMIN_EMAIL:str="lag59@mdmopflow.com"
     SUPER_ADMIN_PASSWORD:str="ChangeMe123!"
-    FOUNDER_DISPLAY_NAME:str="Libia A. Gaviria, RN, BSN"
-    FOUNDER_TITLE:str="Founder & CEO"
+    FOUNDER_DISPLAY_NAME:str="lag59"
+    FOUNDER_TITLE:str="Platform Super Admin"
     model_config=SettingsConfigDict(env_file=".env")
 
 

@@ -6,11 +6,15 @@ from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AuditLog, PlatformRole, Project, Role, Tenant, TenantMembership, User
 from app.rbac import resolve_permissions
+from app.security import hash_password
 from app.schemas import (
     AdminAuditLogEntry,
     AdminOverviewResponse,
     AdminPermissionsPreviewResponse,
+    AdminResetPasswordRequest,
     AdminTenantUser,
+    AdminUpdateUserAccessRequest,
+    AdminUserAccessItem,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["Platform Administration"])
@@ -149,3 +153,146 @@ def permissions_preview(
             )
 
     return {"items": items}
+
+
+@router.get(
+    "/users",
+    response_model=list[AdminUserAccessItem],
+    operation_id="admin_users_list",
+    summary="List platform users",
+    description="Returns platform users with access control fields for super-admin management.",
+    responses={200: {"description": "Users returned successfully."}, 403: {"description": "Super-admin required."}},
+)
+def list_users(current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    _ = current_user
+    users = db.scalars(select(User).order_by(User.created_at.desc())).all()
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "display_name": user.display_name,
+            "title": user.title,
+            "platform_role": user.platform_role,
+            "is_active": user.is_active,
+        }
+        for user in users
+    ]
+
+
+@router.patch(
+    "/users/{user_id}/access",
+    response_model=AdminUserAccessItem,
+    operation_id="admin_user_access_update",
+    summary="Update platform user access",
+    description="Updates platform role and active status for a user.",
+    responses={
+        200: {"description": "User access updated successfully."},
+        403: {"description": "Super-admin required."},
+        404: {"description": "User not found."},
+    },
+)
+def update_user_access(
+    user_id: str,
+    payload: AdminUpdateUserAccessRequest,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent accidental lockout by blocking self-demotion/deactivation.
+    if user.id == current_user.id:
+        if payload.platform_role and payload.platform_role != PlatformRole.PLATFORM_SUPER_ADMIN:
+            raise HTTPException(status_code=400, detail="Cannot remove your own super-admin access")
+        if payload.is_active is False:
+            raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+
+    changed_fields: list[str] = []
+    if payload.platform_role is not None and user.platform_role != payload.platform_role:
+        user.platform_role = payload.platform_role
+        changed_fields.append(f"platform_role={payload.platform_role.value}")
+
+    if payload.is_active is not None and user.is_active != payload.is_active:
+        user.is_active = payload.is_active
+        changed_fields.append(f"is_active={payload.is_active}")
+
+    if changed_fields:
+        memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == user.id)).all()
+        tenant_id_for_audit = memberships[0].tenant_id if memberships else None
+        if tenant_id_for_audit:
+            db.add(
+                AuditLog(
+                    tenant_id=tenant_id_for_audit,
+                    actor_user_id=current_user.id,
+                    action="admin_update_user_access",
+                    resource_type="user",
+                    resource_id=user.id,
+                    details=f"{user.email}: {', '.join(changed_fields)}",
+                    created_by=current_user.id,
+                )
+            )
+
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "title": user.title,
+        "platform_role": user.platform_role,
+        "is_active": user.is_active,
+    }
+
+
+@router.post(
+    "/users/{user_id}/reset-password",
+    response_model=AdminUserAccessItem,
+    operation_id="admin_user_password_reset",
+    summary="Reset user password",
+    description="Resets a user's password as a platform super-admin operation.",
+    responses={
+        200: {"description": "Password reset successfully."},
+        403: {"description": "Super-admin required."},
+        404: {"description": "User not found."},
+    },
+)
+def reset_user_password(
+    user_id: str,
+    payload: AdminResetPasswordRequest,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.refresh_token_hash = None
+    user.refresh_token_expires_at = None
+
+    memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == user.id)).all()
+    tenant_id_for_audit = memberships[0].tenant_id if memberships else None
+    if tenant_id_for_audit:
+        db.add(
+            AuditLog(
+                tenant_id=tenant_id_for_audit,
+                actor_user_id=current_user.id,
+                action="admin_reset_password",
+                resource_type="user",
+                resource_id=user.id,
+                details=f"Password reset for {user.email}",
+                created_by=current_user.id,
+            )
+        )
+
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "title": user.title,
+        "platform_role": user.platform_role,
+        "is_active": user.is_active,
+    }

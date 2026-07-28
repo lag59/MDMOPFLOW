@@ -4,11 +4,12 @@ import csv
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 import json
+from pathlib import Path
 import re
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -51,9 +52,40 @@ from app.schemas import (
 from app.security import TokenError, create_token, decode_token
 from app.core.config import settings
 from app.services.intake_processing import process_intake_upload
+from app.services.ocr_extraction_service import OCRExtractionService
 
 
 router = APIRouter(prefix="/api/intake", tags=["Intake Hub"])
+MAX_INTEGRATION_EVENT_RETRIES = 3
+REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP = 100
+REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS = (
+    "issue_replay_history_export_token",
+    "consume_replay_history_export_token",
+    "revoke_replay_history_export_token",
+)
+_TOKEN_ISSUE_DETAILS_PATTERN = re.compile(r"event_id=(.*?); output=(.*?); limit=(\d+)$")
+
+
+def _run_extraction_background(item_id: str, tenant_id: str, user_id: str) -> None:
+    """Background task: create DocumentExtraction from an IntakeItem after upload.
+
+    Opens its own short-lived DB session so it doesn't share state with the
+    upload request session.
+    """
+    from app.db import SessionLocal
+    from uuid import UUID
+
+    db = SessionLocal()
+    try:
+        service = OCRExtractionService(db, user_id, tenant_id)
+        service.trigger_extraction_for_intake(UUID(item_id))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        # Non-fatal — operator can manually trigger via POST /api/extractions/intake/{id}/extract
+        print(f"[extraction-bg] Failed to auto-extract {item_id}: {exc}")
+    finally:
+        db.close()
 MAX_INTEGRATION_EVENT_RETRIES = 3
 REPLAY_EXPORT_TOKEN_AUDIT_LIMIT_CAP = 100
 REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS = (
@@ -193,6 +225,7 @@ async def upload_intake_files(
     file: UploadFile = File(...),
     context: RequestContext = Depends(require_permissions("intake_write")),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     tenant_id = _tenant_id_from_context(context)
     payload = await file.read()
@@ -327,7 +360,81 @@ async def upload_intake_files(
 
     db.commit()
     db.refresh(item)
+
+    # Auto-trigger OCR extraction as a background task after successful upload.
+    # Skipped for duplicates (already extracted from the original).
+    if processed.extracted_text and not is_duplicate:
+        background_tasks.add_task(
+            _run_extraction_background,
+            item_id=item.id,
+            tenant_id=tenant_id,
+            user_id=context.user.id,
+        )
+
     return item
+
+
+@router.get(
+    "/items/{item_id}/file",
+    operation_id="intake_get_file",
+    summary="Download intake item file",
+)
+def get_intake_file(
+    item_id: str,
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    """Serve the uploaded file for an intake item with tenant isolation."""
+    tenant_id = _tenant_id_from_context(context)
+
+    # Load the intake item with tenant isolation
+    item = db.scalars(
+        select(IntakeItem)
+        .where(IntakeItem.id == item_id)
+        .where(IntakeItem.tenant_id == tenant_id)
+    ).first()
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Intake item not found",
+        )
+
+    # Construct the file path from the stored file_path
+    # file_path is relative to repo root, e.g., "backend/storage/intake/tenant_id/2026/07/27/uuid_filename"
+    try:
+        # Get repo root (same as in intake_processing.py)
+        repo_root = Path(__file__).resolve().parents[4]
+        file_path = repo_root / item.file_path
+        
+        # Verify the file exists
+        if not file_path.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found on disk",
+            )
+        
+        # Verify the file is within the intake storage directory (security check)
+        intake_root = repo_root / "backend" / "storage" / "intake" / tenant_id
+        if not file_path.is_relative_to(intake_root):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied",
+            )
+        
+        # Return the file with the original filename and MIME type
+        return FileResponse(
+            path=file_path,
+            media_type=item.mime_type,
+            filename=item.original_filename,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error serving file: {str(e)}",
+        )
 
 
 @router.post(

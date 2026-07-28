@@ -28,7 +28,11 @@ async def lifespan(_: FastAPI):
                         platform_role=PlatformRole.PLATFORM_SUPER_ADMIN,
                     )
                     db.add(founder)
-                    db.commit()
+                else:
+                    founder.display_name = settings.FOUNDER_DISPLAY_NAME
+                    founder.title = settings.FOUNDER_TITLE
+                    founder.platform_role = PlatformRole.PLATFORM_SUPER_ADMIN
+                db.commit()
             break
         except OperationalError:
             time.sleep(1)
