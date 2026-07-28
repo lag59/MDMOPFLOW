@@ -16,6 +16,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "modules": "Modules",
     "intake": "Intake Hub",
     "extractionQueue": "Extraction Queue",
     "tickets": "Tickets",
@@ -81,6 +82,10 @@
     "pendingReviews": "Pending Reviews",
     "welcome": "Welcome to MDM OpsFlow",
     "subtitle": "The AI Operating System for Construction"
+  },
+  "modules": {
+    "title": "Modules",
+    "subtitle": "See every available module grouped by role and workflow."
   },
   "projects": {
     "title": "Projects",

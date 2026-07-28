@@ -16,6 +16,7 @@
   },
   "nav": {
     "dashboard": "Panel principal",
+    "modules": "Modulos",
     "intake": "Centro de ingreso",
     "extractionQueue": "Cola de extraccion",
     "tickets": "Tickets",
@@ -81,6 +82,10 @@
     "pendingReviews": "Revisiones pendientes",
     "welcome": "Bienvenido a MDM OpsFlow",
     "subtitle": "El sistema operativo con IA para construccion"
+  },
+  "modules": {
+    "title": "Modulos",
+    "subtitle": "Ve todos los modulos disponibles agrupados por rol y flujo."
   },
   "projects": {
     "title": "Proyectos",

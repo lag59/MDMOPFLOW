@@ -26,6 +26,7 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
     () => ({
       appName: t(locale, "common.appName"),
       dashboard: t(locale, "nav.dashboard"),
+      modules: t(locale, "nav.modules"),
       intake: t(locale, "nav.intake"),      extractionQueue: t(locale, "nav.extractionQueue"),      tickets: t(locale, "nav.tickets"),
       projects: t(locale, "nav.projects"),
       onboarding: t(locale, "nav.onboarding"),
@@ -47,6 +48,7 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
         <p className="brand-subtitle">The AI Operating System for Construction</p>
         <nav className="nav">
           <Link className={currentPath === "/dashboard" ? "is-active" : ""} href="/dashboard">{labels.dashboard}</Link>
+          <Link className={currentPath === "/modules" ? "is-active" : ""} href="/modules">{labels.modules}</Link>
           <Link className={currentPath.startsWith("/intake") ? "is-active" : ""} href="/intake">{labels.intake}</Link>
           <Link className={currentPath.startsWith("/extraction-queue") ? "is-active" : ""} href="/extraction-queue">{labels.extractionQueue}</Link>
           <Link className={currentPath.startsWith("/tickets") ? "is-active" : ""} href="/tickets">{labels.tickets}</Link>
