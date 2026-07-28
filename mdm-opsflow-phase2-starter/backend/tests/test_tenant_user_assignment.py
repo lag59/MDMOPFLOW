@@ -30,6 +30,38 @@ def test_tenant_admin_can_assign_registered_user_to_tenant(client: TestClient):
     assert member["email"] in emails
 
 
+def test_registered_user_is_hidden_until_assigned_to_tenant(client: TestClient):
+    owner = register_user(client, "owner-hidden@acme.com", "Pass12345!", "Owner Hidden")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Hidden", "Hidden Project")
+    tenant_id = onboarding["tenant_id"]
+
+    griffin = register_user(client, "griffin@mdmopflow.com", "Pass12345!", "Griffin")
+
+    before_assign = client.get(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert before_assign.status_code == 200
+    before_emails = [item["email"] for item in before_assign.json()]
+    assert griffin["email"] not in before_emails
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"email": griffin["email"], "role_name": "owner"},
+    )
+    assert assign.status_code == 201
+
+    after_assign = client.get(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert after_assign.status_code == 200
+    after_emails = [item["email"] for item in after_assign.json()]
+    assert griffin["email"] in after_emails
+
+
 def test_assigning_standard_role_auto_provisions_missing_tenant_role(client: TestClient):
     owner = register_user(client, "owner2@acme.com", "Pass12345!", "Owner")
     owner_token = owner["tokens"]["access_token"]
