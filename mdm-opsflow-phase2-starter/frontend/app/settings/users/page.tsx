@@ -95,7 +95,7 @@ export default function UserSettingsPage() {
       } else if (response.status === 403) {
         setLoadError("You do not have permission to manage users for this tenant.");
       } else {
-        setLoadError("Could not load team members.");
+        setLoadError(`Could not load team members (HTTP ${response.status}).`);
       }
       return;
     }
@@ -112,9 +112,21 @@ export default function UserSettingsPage() {
     });
     if (!response.ok) {
       setPermissionCatalog([]);
-      if (!loadError) {
-        setLoadError("Could not load service function catalog.");
+      let nextError = "Could not load service function catalog.";
+      if (response.status === 401) {
+        nextError = "Your session expired. Please log in again.";
+      } else if (response.status === 400) {
+        nextError = "Tenant context is missing. Complete onboarding or select a tenant before managing services.";
+      } else if (response.status === 403) {
+        nextError = "You do not have permission to manage service functions for this tenant.";
+      } else if (response.status === 404) {
+        nextError = "Service function catalog is unavailable on the backend right now (HTTP 404). Please redeploy the backend service and try again.";
+      } else {
+        nextError = `Could not load service function catalog (HTTP ${response.status}).`;
       }
+
+      // Preserve a clearer prior error (for example auth/tenant error from member load).
+      setLoadError((previous) => previous || nextError);
       return;
     }
     const data = (await response.json()) as string[];
