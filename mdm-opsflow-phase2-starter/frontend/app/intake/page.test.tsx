@@ -797,8 +797,17 @@ describe("Intake replay token observability page", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
-      expect(openSpy).toHaveBeenCalledWith("/api/intake/events/replay-history/export/download?token=signed-token", "_self");
+      expect(openSpy).toHaveBeenCalledWith("http://localhost:8080/api/intake/events/replay-history/export/download?token=signed-token", "_self");
     });
+
+    const exportTokenCall = fetchMock.mock.calls.find(([input, init]) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+      return url.includes("/export-token?") && method === "POST";
+    });
+
+    expect(exportTokenCall).toBeDefined();
+    expect(String(exportTokenCall?.[0])).toContain("tenant_id=tenant-1");
   });
 
   it("applies audit filters when refreshing audit history", async () => {

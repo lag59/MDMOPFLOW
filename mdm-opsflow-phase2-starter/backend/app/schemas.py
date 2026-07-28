@@ -173,7 +173,7 @@ class UpdateTenantUserPermissionsRequest(BaseModel):
         }
     )
 
-    overrides: list[UserPermissionOverrideItem] = Field(default_factory=list)
+    overrides: list[UserPermissionOverrideItem] = Field(default_factory=list) # type: ignore
 
 
 class MeResponse(BaseModel):

@@ -50,3 +50,10 @@ Latest delivered increment:
 
 ## Sprint 3
 Budgets, cost codes, analytics, mobile capture, notifications, offline queue.
+
+Latest delivered increment:
+- Sprint 3 kickoff: added ticket quantity calculation API `POST /api/tickets/quantity-calculation` to compute gross/tare/net-driven tons, density-based cubic yards, load-count/per-load metrics, and projected costs (`per_ton`, `per_cubic_yard`, `per_load`) with focused backend tests.
+- Added tenant-scoped material density presets (`GET/PUT/DELETE /api/tickets/material-density-presets/{material_name}`), preset-aware calculator resolution by material, Intake ticket-calculator panel + draft ticket save flow, and a new Tickets workspace page that applies selected calculator outputs into ticket create/update payloads.
+- Added focused frontend coverage for the new Tickets calculator-create-update flow in `frontend/app/tickets/page.test.tsx` and dashboard material-intelligence card to surface top ticket materials plus density-preset coverage.
+- Added bulk ticket upload extraction flow (`POST /api/tickets/upload-extract`) with optional draft-ticket auto-create, plus Tickets UI controls to upload PDF/JPG/PNG/TXT files and load extracted values directly into calculator inputs and ticket form fields.
+- Added extraction-confidence and review-required metadata to upload responses, plus high/medium/low confidence badges in the Tickets bulk-upload table to surface likely manual-review candidates.

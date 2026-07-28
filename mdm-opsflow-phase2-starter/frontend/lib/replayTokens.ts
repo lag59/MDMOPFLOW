@@ -326,6 +326,10 @@ export async function createReplayTokenAuditExportToken(params?: {
   limit?: number;
 }): Promise<ReplayTokenAuditExportToken> {
   const query = new URLSearchParams();
+  const tenantId = getTenantId();
+  if (tenantId) {
+    query.set("tenant_id", tenantId);
+  }
   if (params?.startCreatedAt) {
     query.set("start_created_at", params.startCreatedAt);
   }
@@ -348,7 +352,15 @@ export async function createReplayTokenAuditExportToken(params?: {
   });
   await throwIfNotOk(response, "Unable to create replay token audit export link");
 
-  return (await response.json()) as ReplayTokenAuditExportToken;
+  const payload = (await response.json()) as ReplayTokenAuditExportToken;
+  const normalizedDownloadUrl = payload.download_url.startsWith("http")
+    ? payload.download_url
+    : `${getApiBaseUrl()}${payload.download_url}`;
+
+  return {
+    ...payload,
+    download_url: normalizedDownloadUrl,
+  };
 }
 
 export async function bulkRevokeActiveReplayTokens(params: {

@@ -1,10 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import AuditLog, PlatformRole, Project, Role, Tenant, TenantMembership, User
+from app.models import (
+    AuditLog,
+    DocumentExtraction,
+    ExtractionIssue,
+    IntakeItem,
+    IntegrationEvent,
+    PlatformRole,
+    Project,
+    Role,
+    Tenant,
+    TenantMembership,
+    Ticket,
+    User,
+)
 from app.rbac import resolve_permissions
 from app.security import hash_password
 from app.schemas import (
@@ -12,6 +25,9 @@ from app.schemas import (
     AdminOverviewResponse,
     AdminPermissionsPreviewResponse,
     AdminResetPasswordRequest,
+    AdminServiceInsightsResponse,
+    AdminTenantServiceSummaryItem,
+    AdminTenantServiceSummaryResponse,
     AdminTenantUser,
     AdminUpdateUserAccessRequest,
     AdminUserAccessItem,
@@ -296,3 +312,111 @@ def reset_user_password(
         "platform_role": user.platform_role,
         "is_active": user.is_active,
     }
+
+
+@router.get(
+    "/tenant-service-summary",
+    response_model=AdminTenantServiceSummaryResponse,
+    operation_id="admin_tenant_service_summary",
+    summary="Get tenant service summary",
+    description="Returns per-tenant usage summaries across core platform services.",
+    responses={200: {"description": "Tenant service summary returned successfully."}, 403: {"description": "Super-admin required."}},
+)
+def tenant_service_summary(current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    _ = current_user
+    tenants = db.scalars(select(Tenant).order_by(Tenant.name.asc())).all()
+    items: list[AdminTenantServiceSummaryItem] = []
+
+    for tenant in tenants:
+        users_count = db.scalar(select(func.count()).select_from(TenantMembership).where(TenantMembership.tenant_id == tenant.id)) or 0
+        projects_count = db.scalar(select(func.count()).select_from(Project).where(Project.tenant_id == tenant.id)) or 0
+        tickets_count = db.scalar(select(func.count()).select_from(Ticket).where(Ticket.tenant_id == tenant.id)) or 0
+        intake_count = db.scalar(select(func.count()).select_from(IntakeItem).where(IntakeItem.tenant_id == tenant.id)) or 0
+        extraction_count = db.scalar(select(func.count()).select_from(DocumentExtraction).where(DocumentExtraction.tenant_id == tenant.id)) or 0
+        pending_reviews = db.scalar(
+            select(func.count()).select_from(DocumentExtraction).where(
+                DocumentExtraction.tenant_id == tenant.id,
+                DocumentExtraction.status.in_(["review_pending", "review_submitted"]),
+            )
+        ) or 0
+
+        items.append(
+            AdminTenantServiceSummaryItem(
+                tenant_id=tenant.id,
+                tenant_name=tenant.name,
+                users=users_count,
+                projects=projects_count,
+                tickets=tickets_count,
+                intake_items=intake_count,
+                extractions=extraction_count,
+                pending_reviews=pending_reviews,
+            )
+        )
+
+    return AdminTenantServiceSummaryResponse(items=items)
+
+
+@router.get(
+    "/service-insights",
+    response_model=AdminServiceInsightsResponse,
+    operation_id="admin_service_insights",
+    summary="Get platform service insights",
+    description="Returns platform-wide service KPIs and improvement opportunities for super-admin users.",
+    responses={200: {"description": "Service insights returned successfully."}, 403: {"description": "Super-admin required."}},
+)
+def service_insights(current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    _ = current_user
+
+    tenants = db.scalar(select(func.count()).select_from(Tenant)) or 0
+    users = db.scalar(select(func.count()).select_from(User)) or 0
+    projects = db.scalar(select(func.count()).select_from(Project)) or 0
+    tickets = db.scalar(select(func.count()).select_from(Ticket)) or 0
+    intake_items = db.scalar(select(func.count()).select_from(IntakeItem)) or 0
+    intake_needs_review = db.scalar(select(func.count()).select_from(IntakeItem).where(IntakeItem.needs_review.is_(True))) or 0
+
+    extractions_pending_review = db.scalar(
+        select(func.count()).select_from(DocumentExtraction).where(DocumentExtraction.status == "review_pending")
+    ) or 0
+    extractions_review_submitted = db.scalar(
+        select(func.count()).select_from(DocumentExtraction).where(DocumentExtraction.status == "review_submitted")
+    ) or 0
+
+    unresolved_extraction_issues = db.scalar(
+        select(func.count()).select_from(ExtractionIssue).where(ExtractionIssue.resolved.is_(False))
+    ) or 0
+
+    integration_events_pending = db.scalar(
+        select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status == "pending")
+    ) or 0
+    integration_events_failed = db.scalar(
+        select(func.count()).select_from(IntegrationEvent).where(IntegrationEvent.status.in_(["failed", "dead_lettered"]))
+    ) or 0
+
+    opportunities: list[str] = []
+    if intake_needs_review > 0:
+        opportunities.append("Reduce intake review backlog by resolving pending intake items.")
+    if extractions_pending_review + extractions_review_submitted > 0:
+        opportunities.append("Speed up extraction approvals to unblock downstream ticket and billing workflows.")
+    if unresolved_extraction_issues > 0:
+        opportunities.append("Address unresolved extraction issues to improve data quality and automation confidence.")
+    if integration_events_failed > 0:
+        opportunities.append("Resolve failed/dead-letter integration events to improve service reliability.")
+    if integration_events_pending > 25:
+        opportunities.append("Investigate integration queue throughput; pending events are accumulating.")
+    if not opportunities:
+        opportunities.append("No major platform bottlenecks detected right now.")
+
+    return AdminServiceInsightsResponse(
+        tenants=tenants,
+        users=users,
+        projects=projects,
+        tickets=tickets,
+        intake_items=intake_items,
+        intake_needs_review=intake_needs_review,
+        extractions_pending_review=extractions_pending_review,
+        extractions_review_submitted=extractions_review_submitted,
+        unresolved_extraction_issues=unresolved_extraction_issues,
+        integration_events_pending=integration_events_pending,
+        integration_events_failed=integration_events_failed,
+        opportunities=opportunities,
+    )

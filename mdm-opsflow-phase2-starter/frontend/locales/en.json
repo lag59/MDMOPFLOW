@@ -17,6 +17,8 @@
   "nav": {
     "dashboard": "Dashboard",
     "intake": "Intake Hub",
+    "extractionQueue": "Extraction Queue",
+    "tickets": "Tickets",
     "projects": "Projects",
     "onboarding": "Onboarding",
     "company": "Company Settings",
@@ -99,6 +101,9 @@
       "projectName": "Project name must be at least 2 characters.",
       "projectNumber": "Project number is required."
     }
+  },
+  "tickets": {
+    "title": "Tickets"
   },
   "intake": {
     "title": "Intake Hub",

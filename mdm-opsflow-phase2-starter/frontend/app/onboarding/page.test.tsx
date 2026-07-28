@@ -44,7 +44,15 @@ describe("Onboarding wizard", () => {
 
     await user.type(companyNameInput, "Acme Civil");
     await user.click(screen.getByRole("button", { name: "Next" }));
+
+    const companyTypeOption = screen.getByLabelText("General Contractor");
+    await user.click(companyTypeOption);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
     expect(screen.getByRole("combobox")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByLabelText("General Contractor")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByPlaceholderText("Company name")).toBeInTheDocument();

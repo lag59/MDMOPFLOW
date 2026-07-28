@@ -26,7 +26,7 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
     () => ({
       appName: t(locale, "common.appName"),
       dashboard: t(locale, "nav.dashboard"),
-      intake: t(locale, "nav.intake"),
+      intake: t(locale, "nav.intake"),      extractionQueue: t(locale, "nav.extractionQueue"),      tickets: t(locale, "nav.tickets"),
       projects: t(locale, "nav.projects"),
       onboarding: t(locale, "nav.onboarding"),
       company: t(locale, "nav.company"),
@@ -48,6 +48,8 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
         <nav className="nav">
           <Link className={currentPath === "/dashboard" ? "is-active" : ""} href="/dashboard">{labels.dashboard}</Link>
           <Link className={currentPath.startsWith("/intake") ? "is-active" : ""} href="/intake">{labels.intake}</Link>
+          <Link className={currentPath.startsWith("/extraction-queue") ? "is-active" : ""} href="/extraction-queue">{labels.extractionQueue}</Link>
+          <Link className={currentPath.startsWith("/tickets") ? "is-active" : ""} href="/tickets">{labels.tickets}</Link>
           <Link className={currentPath.startsWith("/projects") ? "is-active" : ""} href="/projects">{labels.projects}</Link>
           <Link className={currentPath === "/onboarding" ? "is-active" : ""} href="/onboarding">{labels.onboarding}</Link>
           <Link className={currentPath === "/settings/company" ? "is-active" : ""} href="/settings/company">{labels.company}</Link>

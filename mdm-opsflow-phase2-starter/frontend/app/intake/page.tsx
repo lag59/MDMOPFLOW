@@ -4,6 +4,7 @@ import React from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
+import TicketCalculatorPanel from "@/components/TicketCalculatorPanel";
 import { getAccessToken } from "@/lib/auth";
 import {
   ReplayTokenApiError,
@@ -21,6 +22,7 @@ import {
   fetchReplayTokenStateAlerts,
   fetchReplayTokenStateEnvelope,
 } from "@/lib/replayTokens";
+import { TicketApiError, createTicket } from "@/lib/tickets";
 
 type SortValue = "-issued_at" | "+issued_at";
 type ReplayTokenAuditAction =
@@ -230,6 +232,14 @@ export default function IntakePage() {
   const [auditTokenId, setAuditTokenId] = useState<string>("");
   const [auditStartCreatedAt, setAuditStartCreatedAt] = useState<string>("");
   const [auditEndCreatedAt, setAuditEndCreatedAt] = useState<string>("");
+  const [draftTicketNumber, setDraftTicketNumber] = useState<string>("");
+  const [draftMaterial, setDraftMaterial] = useState<string>("");
+  const [draftWeight, setDraftWeight] = useState<string>("");
+  const [draftTons, setDraftTons] = useState<string>("");
+  const [draftVolumeYards, setDraftVolumeYards] = useState<string>("");
+  const [draftRevenue, setDraftRevenue] = useState<string>("");
+  const [draftTicketBusy, setDraftTicketBusy] = useState(false);
+  const [draftTicketMessage, setDraftTicketMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
 
   useEffect(() => {
@@ -519,6 +529,37 @@ export default function IntakePage() {
     }
   }
 
+  async function saveDraftTicketFromCalculation(): Promise<void> {
+    if (!draftTicketNumber.trim()) {
+      setDraftTicketMessage("Ticket number is required before saving.");
+      return;
+    }
+
+    setDraftTicketBusy(true);
+    setDraftTicketMessage("");
+    try {
+      await createTicket({
+        ticket_number: draftTicketNumber.trim(),
+        material: draftMaterial.trim(),
+        weight: draftWeight.trim() || null,
+        tons: draftTons.trim() || null,
+        volume_yards: draftVolumeYards.trim() || null,
+        revenue: draftRevenue.trim() || null,
+        status: "draft",
+        notes: "Created from Intake calculator panel",
+      });
+      setDraftTicketMessage("Draft ticket saved with selected calculation outputs.");
+    } catch (err) {
+      if (err instanceof TicketApiError) {
+        setDraftTicketMessage(err.detail);
+      } else {
+        setDraftTicketMessage("Unable to save draft ticket from calculator outputs.");
+      }
+    } finally {
+      setDraftTicketBusy(false);
+    }
+  }
+
   return (
     <AppShell titleKey="intake.title">
       <div className="card">
@@ -527,6 +568,58 @@ export default function IntakePage() {
           This view uses the envelope and alerts APIs to monitor replay-export token health, paging, and
           stale active-token thresholds.
         </p>
+      </div>
+
+      <TicketCalculatorPanel
+        title="Ticket calculator (intake review)"
+        onApply={(payload) => {
+          setDraftMaterial(payload.material);
+          setDraftWeight(payload.weight);
+          setDraftTons(payload.tons);
+          setDraftVolumeYards(payload.volumeYards);
+          setDraftRevenue(payload.selectedTotalCost);
+        }}
+      />
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Draft ticket from calculator</h3>
+          <button onClick={() => void saveDraftTicketFromCalculation()} disabled={draftTicketBusy}>
+            {draftTicketBusy ? "Saving..." : "Save draft ticket"}
+          </button>
+        </div>
+        <div className="form-grid replay-controls-grid">
+          <label>
+            Ticket number
+            <input
+              type="text"
+              value={draftTicketNumber}
+              onChange={(e) => setDraftTicketNumber(e.target.value)}
+              placeholder="TCK-1001"
+            />
+          </label>
+          <label>
+            Material
+            <input type="text" value={draftMaterial} onChange={(e) => setDraftMaterial(e.target.value)} />
+          </label>
+          <label>
+            Net weight (lbs)
+            <input type="text" value={draftWeight} onChange={(e) => setDraftWeight(e.target.value)} />
+          </label>
+          <label>
+            Tons
+            <input type="text" value={draftTons} onChange={(e) => setDraftTons(e.target.value)} />
+          </label>
+          <label>
+            Cubic yards
+            <input type="text" value={draftVolumeYards} onChange={(e) => setDraftVolumeYards(e.target.value)} />
+          </label>
+          <label>
+            Revenue
+            <input type="text" value={draftRevenue} onChange={(e) => setDraftRevenue(e.target.value)} />
+          </label>
+        </div>
+        {draftTicketMessage ? <p className="metric-note">{draftTicketMessage}</p> : null}
       </div>
 
       <div className="grid">

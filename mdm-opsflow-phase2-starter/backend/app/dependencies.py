@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PlatformRole, Role, Tenant, TenantMembership, User
+from app.models import PlatformRole, Role, Tenant, TenantMembership, User, UserPermissionOverride
 from app.rbac import resolve_permissions
 from app.security import TokenError, decode_token
 
@@ -66,6 +66,17 @@ def get_request_context(
     assert membership is not None
     role = db.get(Role, membership.role_id)
     permissions = resolve_permissions(role.name, role.permissions) if role else set()
+    overrides = db.scalars(
+        select(UserPermissionOverride).where(
+            UserPermissionOverride.tenant_id == membership.tenant_id,
+            UserPermissionOverride.user_id == current_user.id,
+        )
+    ).all()
+    for override in overrides:
+        if override.enabled:
+            permissions.add(override.permission)
+        else:
+            permissions.discard(override.permission)
     return RequestContext(current_user, membership, permissions, membership.tenant_id)
 
 

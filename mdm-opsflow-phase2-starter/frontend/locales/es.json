@@ -17,6 +17,8 @@
   "nav": {
     "dashboard": "Panel principal",
     "intake": "Centro de ingreso",
+    "extractionQueue": "Cola de extraccion",
+    "tickets": "Tickets",
     "projects": "Proyectos",
     "onboarding": "Implementacion",
     "company": "Configuracion de empresa",
@@ -99,6 +101,9 @@
       "projectName": "El nombre del proyecto debe tener al menos 2 caracteres.",
       "projectNumber": "El numero del proyecto es obligatorio."
     }
+  },
+  "tickets": {
+    "title": "Tickets"
   },
   "intake": {
     "title": "Centro de ingreso",

@@ -21,22 +21,40 @@ type AdminUser = {
   is_active: boolean;
 };
 
+type ServiceInsights = {
+  tickets: number;
+  intake_items: number;
+  intake_needs_review: number;
+  extractions_pending_review: number;
+  extractions_review_submitted: number;
+  unresolved_extraction_issues: number;
+  integration_events_pending: number;
+  integration_events_failed: number;
+  opportunities: string[];
+};
+
 export default function PlatformAdminPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
   const [authorized, setAuthorized] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [insights, setInsights] = useState<ServiceInsights | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [message, setMessage] = useState("");
   const [resetPasswords, setResetPasswords] = useState<Record<string, string>>({});
 
   async function loadAdminData(token: string): Promise<void> {
-    const [overviewResponse, usersResponse] = await Promise.all([
+    const [overviewResponse, usersResponse, insightsResponse] = await Promise.all([
       fetch(`${getApiBaseUrl()}/api/admin/overview`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       }),
       fetch(`${getApiBaseUrl()}/api/admin/users`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }),
+      fetch(`${getApiBaseUrl()}/api/admin/service-insights`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -51,6 +69,11 @@ export default function PlatformAdminPage() {
     if (usersResponse.ok) {
       const data = await usersResponse.json();
       setUsers(data);
+    }
+
+    if (insightsResponse.ok) {
+      const data = await insightsResponse.json();
+      setInsights(data);
     }
   }
 
@@ -201,6 +224,45 @@ export default function PlatformAdminPage() {
                     <button onClick={() => resetPassword(user.id)}>Reset Password</button>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Service Insights</h3>
+            <p className="muted">Platform-wide operational data to guide improvements.</p>
+            <div className="grid">
+              <div className="card">
+                Tickets
+                <div className="metric">{insights?.tickets ?? 0}</div>
+              </div>
+              <div className="card">
+                Intake Items
+                <div className="metric">{insights?.intake_items ?? 0}</div>
+              </div>
+              <div className="card">
+                Intake Needs Review
+                <div className="metric">{insights?.intake_needs_review ?? 0}</div>
+              </div>
+              <div className="card">
+                Pending Extractions
+                <div className="metric">{(insights?.extractions_pending_review ?? 0) + (insights?.extractions_review_submitted ?? 0)}</div>
+              </div>
+              <div className="card">
+                Unresolved Extraction Issues
+                <div className="metric">{insights?.unresolved_extraction_issues ?? 0}</div>
+              </div>
+              <div className="card">
+                Failed Integration Events
+                <div className="metric">{insights?.integration_events_failed ?? 0}</div>
+              </div>
+            </div>
+            <div className="section-header" style={{ marginTop: 16 }}>
+              <h3>Improvement Opportunities</h3>
+            </div>
+            <div className="list">
+              {(insights?.opportunities ?? []).map((opportunity) => (
+                <div className="list-item" key={opportunity}>{opportunity}</div>
               ))}
             </div>
           </div>

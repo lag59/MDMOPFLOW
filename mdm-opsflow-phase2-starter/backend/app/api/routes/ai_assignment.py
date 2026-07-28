@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import get_current_user, require_permissions
-from app.models import User, Ticket
+from app.dependencies import RequestContext, require_permissions
+from app.models import Ticket
 from app.schemas import TicketResponse
 from app.services.ai_ticket_assignment import AITicketAssignment
 
@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api/ai", tags=["AI & Automation"])
 @router.post("/tickets/auto-assign")
 def auto_assign_tickets(
     confidence_threshold: float = Query(0.75, ge=0.5, le=1.0),
+    context: RequestContext = Depends(require_permissions("ai_assignment_write")),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Automatically assign unassigned tickets to projects based on location matching.
@@ -32,8 +32,7 @@ def auto_assign_tickets(
     
     Returns assignment statistics and details.
     """
-    # Verify tenant context from current_user
-    tenant_id = getattr(current_user, "tenant_id", None)
+    tenant_id = context.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
     
@@ -51,8 +50,8 @@ def auto_assign_tickets(
 def get_project_suggestions(
     ticket_id: str,
     top_n: int = Query(5, ge=1, le=20),
+    context: RequestContext = Depends(require_permissions("ai_assignment_read")),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """
     Get ranked project suggestions for a ticket based on location matching.
@@ -68,8 +67,7 @@ def get_project_suggestions(
     
     Returns list of suggested projects with confidence scores and match reasons.
     """
-    # Verify tenant context
-    tenant_id = getattr(current_user, "tenant_id", None)
+    tenant_id = context.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
     
@@ -97,8 +95,8 @@ def get_project_suggestions(
 def assign_ticket_to_project(
     ticket_id: str,
     project_id: str,
+    context: RequestContext = Depends(require_permissions("ai_assignment_write")),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> TicketResponse:
     """
     Assign a ticket to a specific project.
@@ -112,8 +110,7 @@ def assign_ticket_to_project(
     
     Returns the updated ticket.
     """
-    # Verify tenant context
-    tenant_id = getattr(current_user, "tenant_id", None)
+    tenant_id = context.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant context required")
     

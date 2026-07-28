@@ -6,6 +6,7 @@ import AppShell from "@/components/AppShell";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 import { ReplayTokenStateAlerts, fetchReplayTokenStateAlerts } from "@/lib/replayTokens";
+import { MaterialDensityPreset, Ticket, listMaterialDensityPresets, listTickets } from "@/lib/tickets";
 
 type Project = {
   id: string;
@@ -17,6 +18,8 @@ export default function DashboardPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
   const [projects, setProjects] = useState<Project[]>([]);
   const [alerts, setAlerts] = useState<ReplayTokenStateAlerts | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [densityPresets, setDensityPresets] = useState<MaterialDensityPreset[]>([]);
 
   useEffect(() => {
     setLocale(getLocale());
@@ -43,12 +46,48 @@ export default function DashboardPage() {
       .catch(() => {
         setAlerts(null);
       });
+
+    listTickets()
+      .then((data) => setTickets(data))
+      .catch(() => {
+        setTickets([]);
+      });
+
+    listMaterialDensityPresets()
+      .then((data) => setDensityPresets(data))
+      .catch(() => {
+        setDensityPresets([]);
+      });
   }, []);
 
   const consumedRevokedRatio =
     alerts?.consumed_to_revoked_ratio === null || alerts?.consumed_to_revoked_ratio === undefined
       ? "n/a"
       : alerts.consumed_to_revoked_ratio.toFixed(2);
+
+  const materialCounts = tickets.reduce<Record<string, number>>((acc, ticket) => {
+    const material = ticket.material.trim();
+    if (!material) {
+      return acc;
+    }
+    acc[material] = (acc[material] || 0) + 1;
+    return acc;
+  }, {});
+
+  const topMaterials = Object.entries(materialCounts)
+    .sort((a, b) => {
+      if (b[1] !== a[1]) {
+        return b[1] - a[1];
+      }
+      return a[0].localeCompare(b[0]);
+    })
+    .slice(0, 3);
+
+  const normalizedPresetMap = new Map(
+    densityPresets.map((preset) => [preset.material_name.trim().toLowerCase(), preset.density_tons_per_cubic_yard])
+  );
+  const distinctMaterialCount = Object.keys(materialCounts).length;
+  const effectivePresetCount = Object.keys(materialCounts).filter((name) => normalizedPresetMap.has(name.toLowerCase())).length;
 
   return (
     <AppShell titleKey="dashboard.title">
@@ -76,6 +115,23 @@ export default function DashboardPage() {
           {t(locale, "dashboard.pendingReviews")}
           <div className="metric">{alerts?.active_tokens_older_than_threshold ?? "-"}</div>
           <div className="metric-note">Active tokens older than 60 minutes</div>
+        </div>
+        <div className="card">
+          Material intelligence
+          <div className="metric">{effectivePresetCount}/{distinctMaterialCount}</div>
+          <div className="metric-note">materials currently covered by density presets</div>
+          {topMaterials.length === 0 ? (
+            <div className="metric-note">No ticket materials yet.</div>
+          ) : (
+            topMaterials.map(([material, count]) => {
+              const density = normalizedPresetMap.get(material.toLowerCase()) || "n/a";
+              return (
+                <div className="metric-note" key={material}>
+                  {material}: {count} ticket(s) | density {density}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
