@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import RequestContext, get_request_context, require_permissions
 from app.models import AuditLog, MembershipStatus, Role, TenantMembership, User
+from app.rbac import ROLE_PERMISSIONS, permissions_csv_for_role
 from app.schemas import AssignTenantUserRequest, TenantUserSummary
 
 router = APIRouter(prefix="/api/tenant-users", tags=["Tenant Users"])
@@ -95,7 +96,16 @@ def assign_tenant_user(
         )
     )
     if not role:
-        raise HTTPException(status_code=404, detail="Role not found for tenant")
+        if payload.role_name not in ROLE_PERMISSIONS:
+            raise HTTPException(status_code=404, detail="Role not found for tenant")
+        role = Role(
+            tenant_id=tenant_id,
+            name=payload.role_name,
+            permissions=permissions_csv_for_role(payload.role_name),
+            created_by=context.user.id,
+        )
+        db.add(role)
+        db.flush()
 
     existing = db.scalar(
         select(TenantMembership).where(
