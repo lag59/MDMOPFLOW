@@ -16,6 +16,20 @@ type UserMembership = {
   status: string;
 };
 
+type UserPermissionOverride = {
+  permission: string;
+  enabled: boolean;
+};
+
+type TenantUserPermissions = {
+  user_id: string;
+  email: string;
+  role_name: string;
+  base_permissions: string[];
+  effective_permissions: string[];
+  overrides: UserPermissionOverride[];
+};
+
 const ROLE_OPTIONS = [
   "owner",
   "executive",
@@ -47,11 +61,25 @@ function mapAssignmentError(locale: "en" | "es", detail: string | undefined): st
 export default function UserSettingsPage() {
   const locale = getLocale();
   const [memberships, setMemberships] = useState<UserMembership[]>([]);
+  const [permissionCatalog, setPermissionCatalog] = useState<string[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserMembership | null>(null);
+  const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
+  const [basePermissions, setBasePermissions] = useState<Set<string>>(new Set());
   const [email, setEmail] = useState("");
   const [roleName, setRoleName] = useState("owner");
   const [message, setMessage] = useState("");
+  const [toggleMessage, setToggleMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+
+  function formatPermissionLabel(permission: string): string {
+    return permission
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
 
   async function loadMembers(): Promise<void> {
+    setLoadError("");
     const response = await fetch(`${getApiBaseUrl()}/api/tenant-users`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
@@ -60,14 +88,60 @@ export default function UserSettingsPage() {
     });
     if (!response.ok) {
       setMemberships([]);
+      if (response.status === 401) {
+        setLoadError("Your session expired. Please log in again.");
+      } else if (response.status === 400) {
+        setLoadError("Tenant context is missing. Complete onboarding or select a tenant before managing services.");
+      } else if (response.status === 403) {
+        setLoadError("You do not have permission to manage users for this tenant.");
+      } else {
+        setLoadError("Could not load team members.");
+      }
       return;
     }
     const data = await response.json();
     setMemberships(data);
   }
 
+  async function loadPermissionCatalog(): Promise<void> {
+    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/permissions/catalog`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": getTenantId(),
+      },
+    });
+    if (!response.ok) {
+      setPermissionCatalog([]);
+      if (!loadError) {
+        setLoadError("Could not load service function catalog.");
+      }
+      return;
+    }
+    const data = (await response.json()) as string[];
+    setPermissionCatalog(data);
+  }
+
+  async function loadUserPermissions(userId: string): Promise<void> {
+    setToggleMessage("");
+    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/${userId}/permissions`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": getTenantId(),
+      },
+    });
+    if (!response.ok) {
+      setToggleMessage("Could not load function toggles for this user.");
+      return;
+    }
+
+    const data = (await response.json()) as TenantUserPermissions;
+    setSelectedPermissions(new Set(data.effective_permissions));
+    setBasePermissions(new Set(data.base_permissions));
+  }
+
   useEffect(() => {
     loadMembers();
+    loadPermissionCatalog();
   }, []);
 
   async function assignUser(): Promise<void> {
@@ -98,6 +172,46 @@ export default function UserSettingsPage() {
     await loadMembers();
   }
 
+  async function savePermissionOverrides(): Promise<void> {
+    if (!selectedUser) {
+      return;
+    }
+
+    const overrides = permissionCatalog.map((permission) => ({
+      permission,
+      enabled: selectedPermissions.has(permission),
+    }));
+
+    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/${selectedUser.user_id}/permissions`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": getTenantId(),
+      },
+      body: JSON.stringify({ overrides }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      setToggleMessage(payload?.detail ?? "Failed to update function toggles.");
+      return;
+    }
+
+    setToggleMessage("Function toggles updated.");
+    await loadUserPermissions(selectedUser.user_id);
+  }
+
+  function togglePermission(permission: string): void {
+    const next = new Set(selectedPermissions);
+    if (next.has(permission)) {
+      next.delete(permission);
+    } else {
+      next.add(permission);
+    }
+    setSelectedPermissions(next);
+  }
+
   return (
     <AppShell titleKey="settings.users">
       <div className="card form-grid">
@@ -126,15 +240,62 @@ export default function UserSettingsPage() {
       <div className="section-header">
         <h3>Team Members</h3>
       </div>
+      <div className="card" style={{ marginBottom: "12px" }}>
+        <p className="muted">
+          To turn services on/off (Payroll, Tickets, Intake, Dispatch, etc.), click <strong>Manage Functions</strong>
+          next to a team member, then check/uncheck permissions and click <strong>Save Function Access</strong>.
+        </p>
+        {loadError ? <p>{loadError}</p> : null}
+      </div>
       <div className="list">
         {memberships.map((membership) => (
           <div className="list-item" key={`${membership.user_id}-${membership.role_name}`}>
             <strong>{membership.display_name} ({membership.email})</strong>
             <span className="muted">{membership.role_name}</span>
             <span className={`status-pill status-${membership.status}`}>{membership.status}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedUser(membership);
+                void loadUserPermissions(membership.user_id);
+              }}
+            >
+              Manage Functions
+            </button>
           </div>
         ))}
       </div>
+
+      {selectedUser ? (
+        <div className="card" style={{ marginTop: "16px" }}>
+          <div className="section-header">
+            <h3>
+              Function Access: {selectedUser.display_name} ({selectedUser.email})
+            </h3>
+          </div>
+          <div className="list">
+            {permissionCatalog.map((permission) => {
+              const checked = selectedPermissions.has(permission);
+              const isRoleDefault = basePermissions.has(permission);
+              return (
+                <label key={permission} className="list-item" style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => togglePermission(permission)}
+                  />
+                  <span style={{ flex: 1 }}>{formatPermissionLabel(permission)}</span>
+                  <span className="muted">{isRoleDefault ? "role default" : "override"}</span>
+                </label>
+              );
+            })}
+          </div>
+          <button type="button" onClick={savePermissionOverrides} style={{ marginTop: "12px" }}>
+            Save Function Access
+          </button>
+          {toggleMessage ? <p>{toggleMessage}</p> : null}
+        </div>
+      ) : null}
     </AppShell>
   );
 }
