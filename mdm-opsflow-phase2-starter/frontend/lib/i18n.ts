@@ -6,6 +6,25 @@ export type Locale = "en" | "es";
 const dictionaries = { en, es } as const;
 const PRODUCTION_API_URL = "https://mdmopflow-production-cd89.up.railway.app";
 
+function isPrivateIpv4(host: string): boolean {
+  const parts = host.split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) {
+    return false;
+  }
+
+  const [a, b] = parts.map((value) => Number.parseInt(value, 10));
+  if (a === 10) {
+    return true;
+  }
+  if (a === 172 && b >= 16 && b <= 31) {
+    return true;
+  }
+  if (a === 192 && b === 168) {
+    return true;
+  }
+  return false;
+}
+
 export function getLocale(): Locale {
   if (typeof window === "undefined") {
     return "en";
@@ -40,12 +59,25 @@ export function getApiBaseUrl(): string {
 
   if (typeof window !== "undefined") {
     const host = window.location.hostname.toLowerCase();
-    if (host === "localhost" || host === "127.0.0.1") {
-      return "http://localhost:8080";
+    const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+    const isLocalNetworkHost =
+      localHosts.has(host) || host.endsWith(".local") || isPrivateIpv4(host);
+
+    if (isLocalNetworkHost) {
+      return `${window.location.protocol}//${window.location.hostname}:8080`;
     }
 
-    // Any non-local browser host should call the deployed backend when env is unset.
-    return PRODUCTION_API_URL;
+    if (
+      host === "www.mdmopflow.com" ||
+      host === "mdmopflow.com" ||
+      host.endsWith(".up.railway.app")
+    ) {
+      return PRODUCTION_API_URL;
+    }
+
+    if (window.location.protocol === "http:") {
+      return `${window.location.protocol}//${window.location.hostname}:8080`;
+    }
   }
 
   return PRODUCTION_API_URL;
