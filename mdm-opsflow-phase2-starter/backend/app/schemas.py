@@ -506,6 +506,160 @@ class OnboardingResponse(BaseModel):
     project_id: str
 
 
+class CustomerBase(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    contact_name: str = ""
+    email: str = ""
+    phone: str = ""
+    address: str = ""
+    notes: str = ""
+
+
+class CustomerCreate(CustomerBase):
+    pass
+
+
+class CustomerUpdate(BaseModel):
+    name: str | None = None
+    contact_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    notes: str | None = None
+
+
+class CustomerResponse(CustomerBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmployeeBase(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    role_title: str = ""
+    email: str = ""
+    phone: str = ""
+    department: str = ""
+    status: str = "active"
+
+
+class EmployeeCreate(EmployeeBase):
+    pass
+
+
+class EmployeeUpdate(BaseModel):
+    name: str | None = None
+    role_title: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    department: str | None = None
+    status: str | None = None
+
+
+class EmployeeResponse(EmployeeBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EquipmentBase(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    equipment_type: str = ""
+    capacity_tons: Decimal | None = None
+    status: str = "available"
+    notes: str = ""
+
+
+class EquipmentCreate(EquipmentBase):
+    pass
+
+
+class EquipmentUpdate(BaseModel):
+    name: str | None = None
+    equipment_type: str | None = None
+    capacity_tons: Decimal | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
+class EquipmentResponse(EquipmentBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class TruckBase(BaseModel):
+    unit_number: str = Field(min_length=2, max_length=120)
+    truck_type: str = ""
+    capacity_tons: Decimal | None = None
+    status: str = "available"
+    assigned_driver: str = ""
+    notes: str = ""
+
+
+class TruckCreate(TruckBase):
+    pass
+
+
+class TruckUpdate(BaseModel):
+    unit_number: str | None = None
+    truck_type: str | None = None
+    capacity_tons: Decimal | None = None
+    status: str | None = None
+    assigned_driver: str | None = None
+    notes: str | None = None
+
+
+class TruckResponse(TruckBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MaterialBase(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    unit_of_measure: str = "ton"
+    density_tons_per_cubic_yard: Decimal | None = None
+    description: str = ""
+
+
+class MaterialCreate(MaterialBase):
+    pass
+
+
+class MaterialUpdate(BaseModel):
+    name: str | None = None
+    unit_of_measure: str | None = None
+    density_tons_per_cubic_yard: Decimal | None = None
+    description: str | None = None
+
+
+class MaterialResponse(MaterialBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProjectBase(BaseModel):
     project_name: str = Field(min_length=2, max_length=255)
     project_number: str = Field(min_length=1, max_length=80)
@@ -590,6 +744,95 @@ class ProjectResponse(ProjectBase):
     created_by: str
     created_at: datetime
     updated_at: datetime
+
+class DailyFieldReportBase(BaseModel):
+    project_id: str
+    report_date: datetime
+    company_name: str = ""
+    reporting_supervisor: str = ""
+    shift_start_time: str = ""
+    shift_end_time: str = ""
+    weather: dict[str, object] | None = None
+    crew_members: list[dict[str, object]] = Field(default_factory=list)
+    equipment_used: list[dict[str, object]] = Field(default_factory=list)
+    deliveries: list[dict[str, object]] = Field(default_factory=list)
+    visitors: list[dict[str, object]] = Field(default_factory=list)
+    delays: list[dict[str, object]] = Field(default_factory=list)
+    photos: list[dict[str, object]] = Field(default_factory=list)
+    production_quantities: list[dict[str, object]] = Field(default_factory=list)
+    safety_observations: list[dict[str, object]] = Field(default_factory=list)
+    work_performed: str = ""
+    work_planned_for_tomorrow: str = ""
+    prepared_by: str = ""
+    electronic_signature: str = ""
+    status: str = "draft"
+
+
+class DailyFieldReportCreate(DailyFieldReportBase):
+    pass
+
+
+class DailyFieldReportUpdate(BaseModel):
+    project_id: str | None = None
+    report_date: datetime | None = None
+    company_name: str | None = None
+    reporting_supervisor: str | None = None
+    shift_start_time: str | None = None
+    shift_end_time: str | None = None
+    weather: dict[str, object] | None = None
+    crew_members: list[dict[str, object]] | None = None
+    equipment_used: list[dict[str, object]] | None = None
+    deliveries: list[dict[str, object]] | None = None
+    visitors: list[dict[str, object]] | None = None
+    delays: list[dict[str, object]] | None = None
+    photos: list[dict[str, object]] | None = None
+    production_quantities: list[dict[str, object]] | None = None
+    safety_observations: list[dict[str, object]] | None = None
+    work_performed: str | None = None
+    work_planned_for_tomorrow: str | None = None
+    prepared_by: str | None = None
+    electronic_signature: str | None = None
+    status: str | None = None
+
+
+class DailyFieldReportResponse(DailyFieldReportBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    report_number: str
+    submitted_by: str | None = None
+    submitted_at: datetime | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AIWorkflowRouteRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=8000)
+    company_name: str | None = None
+    reporting_supervisor: str | None = None
+    work_performed: str | None = None
+    work_planned_for_tomorrow: str | None = None
+    material_name: str | None = None
+    project_id: str | None = None
+    report_date: datetime | None = None
+
+
+class AIWorkflowRouteResponse(BaseModel):
+    routed: bool
+    customer_created: bool
+    material_created: bool
+    report_created: bool
+    customer_name: str | None = None
+    material_name: str | None = None
+    report_number: str | None = None
+    message: str
+
 
 class ProjectCostResponse(BaseModel):
     """Project cost aggregation from all tickets."""
@@ -1054,6 +1297,7 @@ class TicketBase(BaseModel):
     revenue: Decimal | None = None
     status: str = Field(default="draft", min_length=2, max_length=30)
     notes: str = ""
+    source_document_path: str = ""
 
 
 class TicketCreate(TicketBase):

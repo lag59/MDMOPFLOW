@@ -8,10 +8,28 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
 from app.models import Ticket
-from app.schemas import TicketResponse
+from app.schemas import AIWorkflowRouteRequest, AIWorkflowRouteResponse, TicketResponse
+from app.services.ai_routing import route_input_to_workflows
 from app.services.ai_ticket_assignment import AITicketAssignment
 
 router = APIRouter(prefix="/api/ai", tags=["AI & Automation"])
+
+
+@router.post("/workflow/route", response_model=AIWorkflowRouteResponse, summary="Route a single note into customer, material, and report workflows")
+def route_workflow_input(
+    payload: AIWorkflowRouteRequest,
+    context: RequestContext = Depends(require_permissions("project_write")),
+    db: Session = Depends(get_db),
+) -> AIWorkflowRouteResponse:
+    tenant_id = context.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="Tenant context required")
+    return route_input_to_workflows(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=context.user.id,
+        payload=payload,
+    )
 
 
 @router.post("/tickets/auto-assign")
