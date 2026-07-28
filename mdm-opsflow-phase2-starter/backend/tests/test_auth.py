@@ -28,6 +28,15 @@ def test_auth_register_login_me_refresh_logout(client: TestClient):
     assert me_response.status_code == 200
     assert me_response.json()["email"] == payload["email"]
 
+    update_me_response = client.patch(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"display_name": "Updated Auth User", "title": "PM"},
+    )
+    assert update_me_response.status_code == 200
+    assert update_me_response.json()["display_name"] == "Updated Auth User"
+    assert update_me_response.json()["title"] == "PM"
+
     refresh_response = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_response.status_code == 200
     refreshed = refresh_response.json()

@@ -12,6 +12,8 @@ export function saveSession(data: SessionData): void {
   window.localStorage.setItem("opsflow_refresh_token", data.refreshToken);
   if (data.tenantId) {
     window.localStorage.setItem("opsflow_tenant_id", data.tenantId);
+  } else {
+    window.localStorage.removeItem("opsflow_tenant_id");
   }
 }
 

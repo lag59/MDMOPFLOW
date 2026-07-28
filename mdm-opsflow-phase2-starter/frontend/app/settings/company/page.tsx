@@ -8,7 +8,10 @@ import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 export default function CompanySettingsPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
-  const [me, setMe] = useState<{ display_name: string; title: string } | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setLocale(getLocale());
@@ -19,8 +22,46 @@ export default function CompanySettingsPage() {
       },
     })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setMe(data));
+      .then((data) => {
+        setDisplayName(data?.display_name ?? "");
+        setTitle(data?.title ?? "");
+      });
   }, []);
+
+  async function saveProfile(): Promise<void> {
+    setMessage("");
+
+    if (displayName.trim().length < 2) {
+      setMessage("Display name must be at least 2 characters.");
+      return;
+    }
+
+    setIsSaving(true);
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/me`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": getTenantId(),
+      },
+      body: JSON.stringify({
+        display_name: displayName.trim(),
+        title: title.trim(),
+      }),
+    });
+
+    if (!response.ok) {
+      setMessage("Unable to save company profile.");
+      setIsSaving(false);
+      return;
+    }
+
+    const payload = await response.json();
+    setDisplayName(payload.display_name ?? "");
+    setTitle(payload.title ?? "");
+    setMessage("Company profile updated.");
+    setIsSaving(false);
+  }
 
   return (
     <AppShell titleKey="settings.company">
@@ -29,17 +70,20 @@ export default function CompanySettingsPage() {
         <div className="info-grid">
           <div className="info-item">
             <strong>Primary Contact</strong>
-            <span>{me ? me.display_name : "-"}</span>
+            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
           </div>
           <div className="info-item">
             <strong>Title</strong>
-            <span>{me ? me.title : "-"}</span>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} />
           </div>
         </div>
       </div>
       <div className="top-actions">
-        <button>{t(locale, "common.save")}</button>
+        <button onClick={saveProfile} disabled={isSaving}>
+          {isSaving ? `${t(locale, "common.save")}...` : t(locale, "common.save")}
+        </button>
       </div>
+      {message ? <p>{message}</p> : null}
     </AppShell>
   );
 }

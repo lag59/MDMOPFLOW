@@ -204,6 +204,20 @@ class MeResponse(BaseModel):
     memberships: list[MeMembership]
 
 
+class MeUpdateRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "display_name": "Ops User",
+                "title": "Operations Manager",
+            }
+        }
+    )
+
+    display_name: str = Field(min_length=2, max_length=255)
+    title: str = Field(max_length=120, default="")
+
+
 class AssignTenantUserRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

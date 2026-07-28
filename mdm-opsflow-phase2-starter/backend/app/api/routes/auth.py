@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import Role, Tenant, TenantMembership, User
-from app.schemas import AuthLoginRequest, AuthRegisterRequest, AuthResponse, MeMembership, MeResponse, RefreshRequest, TokenPair
+from app.schemas import AuthLoginRequest, AuthRegisterRequest, AuthResponse, MeMembership, MeResponse, MeUpdateRequest, RefreshRequest, TokenPair
 from app.security import create_token, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -140,6 +140,29 @@ def me(current_user: User = Depends(get_current_user), db: Session = Depends(get
         platform_role=current_user.platform_role,
         memberships=membership_data,
     )
+
+
+@router.patch(
+    "/me",
+    response_model=MeResponse,
+    operation_id="auth_me_update",
+    summary="Update current user profile",
+    description="Updates display name and title for the current authenticated user.",
+    responses={
+        200: {"description": "Current user profile updated successfully."},
+        401: {"description": "Authentication required."},
+    },
+)
+def update_me(
+    payload: MeUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.display_name = payload.display_name.strip()
+    current_user.title = payload.title.strip()
+    db.commit()
+    db.refresh(current_user)
+    return me(current_user=current_user, db=db)
 
 
 @router.post(
