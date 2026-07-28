@@ -15,6 +15,64 @@ AI-first bilingual construction operating system starter.
 docker compose up --build
 ```
 
+## Railway Deployment (Monorepo)
+
+This repository contains three deployable services with different root folders. If Railway is pointed at the wrong root directory, it will build the wrong image and fail health checks.
+
+### Service 1: Backend API (FastAPI)
+
+- Root directory: `backend`
+- Railway config: `backend/railway.toml`
+- Dockerfile: `backend/Dockerfile`
+- Health check: `/health`
+- Start command: `sh /app/start.sh`
+
+Required environment variables:
+
+- `DATABASE_URL`
+- `SECRET_KEY`
+- `SUPER_ADMIN_EMAIL`
+- `SUPER_ADMIN_PASSWORD`
+- `ALLOWED_ORIGINS`
+- `OPENAI_API_KEY` (optional, required for OCR/AI enrichment)
+
+Expected runtime:
+
+- Binds to `${PORT}` via `uvicorn` in `backend/start.sh`
+
+### Service 2: Frontend App (Next.js)
+
+- Root directory: `frontend`
+- Railway config: `frontend/railway.toml`
+- Dockerfile: `frontend/Dockerfile`
+- Health check: `/`
+
+Required environment variables:
+
+- `NEXT_PUBLIC_API_URL` (must point to the Backend Railway URL)
+
+Expected runtime:
+
+- Binds to `${PORT}` via `npm run start`
+
+### Service 3: Streamlit (Optional)
+
+- Root directory: repository root
+- Railway config: `railway.toml`
+- Dockerfile: `Dockerfile`
+- Health check: `/`
+
+Use this only if you are deploying the Streamlit dashboard. It is separate from the main Next.js frontend.
+
+### Common Railway Failure Pattern
+
+If deployment fails immediately or health checks never pass:
+
+1. Verify each Railway service points to the correct root directory.
+2. Verify that service-specific environment variables are set.
+3. Confirm frontend `NEXT_PUBLIC_API_URL` targets the backend deployment URL (not localhost).
+4. Confirm backend health endpoint returns 200 at `/health`.
+
 ## Streamlit
 ```powershell
 & .\.venv311\Scripts\python.exe -m streamlit run streamlit_app.py
