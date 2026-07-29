@@ -164,6 +164,9 @@ def test_daily_field_reports_support_sections_and_pdf_export(client: TestClient)
     pdf_response = client.get(f"/api/daily-field-reports/{payload['id']}/pdf", headers=headers)
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert b"Labor Hours Total" in pdf_response.content
+    assert b"Machine Hours Total" in pdf_response.content
+    assert b"Material Used Total" in pdf_response.content
 
 
 def test_daily_field_reports_block_duplicate_reports_for_same_shift(client: TestClient) -> None:

@@ -94,6 +94,44 @@ def _deserialize_json_list(value: object) -> list[dict[str, object]]:
     return [{"value": value}]
 
 
+def _as_float(value: object) -> float:
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if not text:
+            return 0.0
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _compute_rollups(item: DailyFieldReport) -> tuple[float, float, float, float]:
+    crew_members = _deserialize_json_list(item.crew_members)
+    equipment_used = _deserialize_json_list(item.equipment_used)
+    deliveries = _deserialize_json_list(item.deliveries)
+
+    labor_hours = 0.0
+    for row in crew_members:
+        count = _as_float(row.get("count", row.get("headcount", 0)))
+        hours = _as_float(row.get("hours", row.get("regular_hours", 0)))
+        labor_hours += count * hours
+
+    machine_hours = 0.0
+    fuel_gallons = 0.0
+    for row in equipment_used:
+        machine_hours += _as_float(row.get("hours", row.get("operating_hours", 0)))
+        fuel_gallons += _as_float(row.get("fuel_gallons", 0))
+
+    material_used = 0.0
+    for row in deliveries:
+        material_used += _as_float(row.get("used_qty", row.get("quantity", 0)))
+
+    return labor_hours, machine_hours, material_used, fuel_gallons
+
+
 SECTION_FIELDS = ("crew_members", "equipment_used", "deliveries", "visitors", "delays", "photos", "production_quantities", "safety_observations")
 
 
@@ -105,6 +143,7 @@ def _prepare_report_for_response(item: DailyFieldReport) -> DailyFieldReport:
 
 
 def _build_pdf_bytes(item: DailyFieldReport) -> bytes:
+    labor_hours, machine_hours, material_used, fuel_gallons = _compute_rollups(item)
     text = "\n".join(
         [
             f"Daily Field Report: {item.report_number}",
@@ -112,6 +151,10 @@ def _build_pdf_bytes(item: DailyFieldReport) -> bytes:
             f"Date: {item.report_date.strftime('%Y-%m-%d')}",
             f"Supervisor: {item.reporting_supervisor}",
             f"Status: {item.status}",
+            f"Labor Hours Total: {labor_hours:.2f}",
+            f"Machine Hours Total: {machine_hours:.2f}",
+            f"Material Used Total: {material_used:.2f}",
+            f"Fuel Gallons Total: {fuel_gallons:.2f}",
         ]
     )
     escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

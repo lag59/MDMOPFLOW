@@ -135,16 +135,17 @@ export const MODULE_ROUTE_MAP: Record<string, ModuleRouteConfig> = {
     focusAreas: ["Active jobs", "Project status", "Profitability", "Assigned ticket flow"],
   },
   Schedule: {
-    href: "/projects",
+    href: "/daily-production",
     status: "bridge",
-    helperText: "Use project timeline and ticket activity",
-    primaryActionLabel: "Open Schedule View",
+    helperText: "Foreman/superintendent daily production workflow",
+    primaryActionLabel: "Open Daily Production Form",
     actionLinks: [
-      { label: "Open active projects", href: "/projects" },
+      { label: "Open daily production form", href: "/daily-production" },
+      { label: "Open mechanic/material queue", href: "/daily-production/queue" },
       { label: "Review project tickets", href: "/tickets" },
-      { label: "Open project assignment", href: "/ticket-manager" },
+      { label: "Open dispatch assignment", href: "/ticket-manager" },
     ],
-    focusAreas: ["Active schedule", "Project workload", "Ticket throughput", "Execution blockers"],
+    focusAreas: ["Labor hours", "Machine hours", "Material usage", "Queue-ready issue reporting"],
   },
   RFIs: {
     href: "/projects",
