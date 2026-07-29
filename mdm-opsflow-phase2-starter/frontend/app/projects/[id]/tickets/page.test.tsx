@@ -9,7 +9,7 @@ vi.mock("@/components/AppShell", () => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: unknown }) => <a href={href}>{children}</a>,
+  default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
 vi.mock("next/navigation", () => ({

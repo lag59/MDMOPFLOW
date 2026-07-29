@@ -6,7 +6,7 @@ import React, { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { getLocale, t } from "@/lib/i18n";
 import { MODULE_ROUTE_MAP, buildModuleDetailHref, getVisibleWorkspacesForRole } from "@/lib/modules";
-import { canAccessModuleRole, getCurrentRoleAccess } from "@/lib/roleAccess";
+import { getCurrentRoleAccess } from "@/lib/roleAccess";
 import { type RoleKey } from "@/lib/roles";
 
 export default function ModulesPage() {
@@ -57,17 +57,12 @@ export default function ModulesPage() {
               {workspace.modules.map((module) => (
                 <li key={module} className="rounded-lg border border-slate-200 p-3">
                   {MODULE_ROUTE_MAP[module] ? (() => {
-                    const hasAccess = canAccessModuleRole({ roleKey: activeRole, isSuperAdmin }, workspace.key);
                     return (
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between gap-2">
-                        {hasAccess ? (
-                          <Link href={buildModuleDetailHref(workspace.key, module)} className="font-semibold text-blue-700 hover:text-blue-900 hover:underline">
-                            {module}
-                          </Link>
-                        ) : (
-                          <span className="font-semibold text-slate-500">{module}</span>
-                        )}
+                        <Link href={buildModuleDetailHref(workspace.key, module)} className="font-semibold text-blue-700 hover:text-blue-900 hover:underline">
+                          {module}
+                        </Link>
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${
                             MODULE_ROUTE_MAP[module].status === "live"
@@ -79,7 +74,7 @@ export default function ModulesPage() {
                         </span>
                       </div>
                       <p className="text-sm text-slate-600">{MODULE_ROUTE_MAP[module].helperText}</p>
-                      {!hasAccess ? (
+                      {workspace.key !== activeRole && !isSuperAdmin ? (
                         <p className="text-xs text-slate-500">Switch to this role to open this module workspace.</p>
                       ) : null}
                     </div>

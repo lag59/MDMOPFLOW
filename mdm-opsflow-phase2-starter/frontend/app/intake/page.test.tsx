@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import IntakePage from "./page";
 
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: unknown }) => <a href={href}>{children}</a>,
+  default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
 describe("Intake replay token observability page", () => {

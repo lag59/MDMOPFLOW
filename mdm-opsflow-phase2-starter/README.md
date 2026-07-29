@@ -3,6 +3,7 @@
 AI-first bilingual construction operating system starter.
 
 ## Included
+
 - FastAPI backend
 - Next.js frontend
 - Flutter mobile scaffold
@@ -11,6 +12,7 @@ AI-first bilingual construction operating system starter.
 - Docker Compose
 
 ## Run
+
 ```bash
 docker compose up --build
 ```
@@ -90,6 +92,7 @@ If deployment fails immediately or health checks never pass:
 4. Confirm backend health endpoint returns 200 at `/health`.
 
 ## Streamlit
+
 ```powershell
 & .\.venv311\Scripts\python.exe -m streamlit run streamlit_app.py
 ```
@@ -97,6 +100,7 @@ If deployment fails immediately or health checks never pass:
 The Streamlit app is a separate operational dashboard that talks to the FastAPI backend at `http://localhost:8080` by default.
 
 ## OpenAPI OperationId Snapshot
+
 ```powershell
 & .\.venv311\Scripts\python.exe .\backend\scripts\generate_openapi_operationid_snapshot.py
 ```
@@ -104,6 +108,7 @@ The Streamlit app is a separate operational dashboard that talks to the FastAPI 
 This regenerates `docs/openapi-operationid-snapshot.md` from the current FastAPI app metadata.
 
 ## Fast Guardrails
+
 ```powershell
 & .\.venv311\Scripts\python.exe .\backend\scripts\run_fast_guardrails.py
 ```
@@ -128,7 +133,6 @@ Set-Location .\backend
 
 Current expected baseline:
 
-
 In CI, use artifact `backend-fast-guardrails-output` to inspect fast-guardrail failures quickly.
 
 Optional fail-closed canary check (intentionally injects a known bad fragment into a temporary in-memory workflow and restores `streamlit_app.py` automatically):
@@ -136,6 +140,7 @@ Optional fail-closed canary check (intentionally injects a known bad fragment in
 ```powershell
 & .\.venv311\Scripts\python.exe .\backend\scripts\verify_streamlit_guardrail_canary.py
 ```
+
 ## PR Checklist
 
 Before opening or updating a PR, run:
@@ -216,22 +221,25 @@ When a Streamlit guardrail fails, use this quick flow:
 & .\.venv311\Scripts\python.exe .\backend\scripts\run_fast_guardrails.py
 ```
 
-2. If CI failed, download artifact `backend-fast-guardrails-output` and inspect the first failing test.
+1. If CI failed, download artifact `backend-fast-guardrails-output` and inspect the first failing test.
 
-3. Map common failures to fixes:
-- Header prefix/import order tests failing: restore the canonical top block in [streamlit_app.py](streamlit_app.py) so `from __future__ import annotations` stays first and `import streamlit as st  # pyright: ignore[reportMissingImports]` remains in the expected position.
-- Partial/fragment import failures (`import stream`, `from stream import ...`): remove the fragment and restore the canonical Streamlit import line.
-- Bare token failures (lone `n`): remove stray top-level tokens introduced by merge/conflict or copy-paste.
-- ASCII/header integrity failures: replace lookalike Unicode characters in the header block with plain ASCII.
+1. Map common failures to fixes:
 
-4. Re-run the fast suite, then commit.
+   - Header prefix/import order tests failing: restore the canonical top block in [streamlit_app.py](streamlit_app.py) so `from __future__ import annotations` stays first and `import streamlit as st  # pyright: ignore[reportMissingImports]` remains in the expected position.
+   - Partial/fragment import failures (`import stream`, `from stream import ...`): remove the fragment and restore the canonical Streamlit import line.
+   - Bare token failures (lone `n`): remove stray top-level tokens introduced by merge/conflict or copy-paste.
+   - ASCII/header integrity failures: replace lookalike Unicode characters in the header block with plain ASCII.
+
+1. Re-run the fast suite, then commit.
 
 ## OCR And AI Setup
+
 1. Create a root `.env` file from `.env.example`.
 2. Paste your OpenAI key into `OPENAI_API_KEY` in that file.
 3. Restart the stack with `docker compose up --build`.
 
 If `OPENAI_API_KEY` is not set, uploads still work, but OCR and AI summarization for scanned files and images will stay limited.
 
-Backend: http://localhost:8080/docs
-Frontend: http://localhost:3000
+Backend: <http://localhost:8080/docs>
+
+Frontend: <http://localhost:3000>
