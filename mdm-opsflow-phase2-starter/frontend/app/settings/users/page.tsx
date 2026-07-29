@@ -4,7 +4,7 @@ import React from "react";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { getAccessToken, getTenantId } from "@/lib/auth";
+import { getAccessToken, getTenantId, refreshSession } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 type UserMembership = {
@@ -89,8 +89,29 @@ export default function UserSettingsPage() {
     return selectedTenantId || getTenantId();
   }
 
+  async function fetchWithSessionRetry(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+    const firstAttempt = await fetch(input, init);
+    if (firstAttempt.status !== 401) {
+      return firstAttempt;
+    }
+
+    const refreshed = await refreshSession(getApiBaseUrl());
+    if (!refreshed) {
+      return firstAttempt;
+    }
+
+    const retryHeaders: Record<string, string> = {
+      ...(init.headers as Record<string, string>),
+      Authorization: `Bearer ${getAccessToken()}`,
+    };
+    return fetch(input, {
+      ...init,
+      headers: retryHeaders,
+    });
+  }
+
   async function loadTenantOptions(): Promise<void> {
-    const response = await fetch(`${getApiBaseUrl()}/api/admin/tenant-service-summary`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/admin/tenant-service-summary`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
       },
@@ -118,7 +139,7 @@ export default function UserSettingsPage() {
       return;
     }
 
-    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
         "X-Tenant-ID": tenantId,
@@ -142,7 +163,7 @@ export default function UserSettingsPage() {
   }
 
   async function loadPermissionCatalog(): Promise<void> {
-    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/permissions/catalog`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/permissions/catalog`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
         "X-Tenant-ID": resolveTenantHeader(),
@@ -173,7 +194,7 @@ export default function UserSettingsPage() {
 
   async function loadUserPermissions(userId: string): Promise<void> {
     setToggleMessage("");
-    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/${userId}/permissions`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/${userId}/permissions`, {
       headers: {
         Authorization: `Bearer ${getAccessToken()}`,
         "X-Tenant-ID": resolveTenantHeader(),
@@ -211,7 +232,7 @@ export default function UserSettingsPage() {
       return;
     }
 
-    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -242,7 +263,7 @@ export default function UserSettingsPage() {
       enabled: selectedPermissions.has(permission),
     }));
 
-    const response = await fetch(`${getApiBaseUrl()}/api/tenant-users/${selectedUser.user_id}/permissions`, {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/${selectedUser.user_id}/permissions`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -255,11 +276,15 @@ export default function UserSettingsPage() {
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
       setToggleMessage(payload?.detail ?? "Failed to update function toggles.");
+      if (response.status === 401) {
+        setToggleMessage("Your session expired. Please log in again.");
+        window.location.href = "/login";
+      }
       return;
     }
 
-    setToggleMessage("Function toggles updated.");
     await loadUserPermissions(selectedUser.user_id);
+    setToggleMessage("Function toggles updated.");
   }
 
   function togglePermission(permission: string): void {

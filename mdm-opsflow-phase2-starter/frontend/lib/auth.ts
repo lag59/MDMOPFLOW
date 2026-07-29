@@ -33,9 +33,49 @@ export function getAccessToken(): string {
   return window.localStorage.getItem("opsflow_access_token") || "";
 }
 
+export function getRefreshToken(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem("opsflow_refresh_token") || "";
+}
+
 export function getTenantId(): string {
   if (typeof window === "undefined") {
     return "";
   }
   return window.localStorage.getItem("opsflow_tenant_id") || "";
+}
+
+export async function refreshSession(apiBaseUrl: string): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    clearSession();
+    return false;
+  }
+
+  const response = await fetch(`${apiBaseUrl}/api/auth/refresh`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) {
+    clearSession();
+    return false;
+  }
+
+  const payload = (await response.json()) as {
+    access_token: string;
+    refresh_token: string;
+  };
+
+  saveSession({
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    tenantId: getTenantId() || null,
+  });
+  return true;
 }

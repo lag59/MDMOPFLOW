@@ -14,6 +14,7 @@ describe("User settings assignment flow", () => {
     window.localStorage.clear();
     window.localStorage.setItem("opsflow_locale", "en");
     window.localStorage.setItem("opsflow_access_token", "token");
+    window.localStorage.setItem("opsflow_refresh_token", "refresh-token");
     window.localStorage.setItem("opsflow_tenant_id", "tenant-1");
     vi.restoreAllMocks();
   });
@@ -200,5 +201,124 @@ describe("User settings assignment flow", () => {
         })
       ).toBe(true);
     });
+  });
+
+  it("refreshes session and retries when saving function access returns 401", async () => {
+    let putAttempts = 0;
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      if (url.endsWith("/api/admin/tenant-service-summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ items: [{ tenant_id: "tenant-1", tenant_name: "Acme Civil" }] }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                user_id: "u1",
+                email: "member@acme.com",
+                display_name: "Member User",
+                title: "",
+                role_name: "project_manager",
+                status: "active",
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users/permissions/catalog")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(["project_read", "project_write"]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users/u1/permissions") && method === "GET") {
+        const effectivePermissions = putAttempts > 0 ? ["project_read", "project_write"] : ["project_read"];
+        const overrides = putAttempts > 0 ? [{ permission: "project_write", enabled: true }] : [];
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              user_id: "u1",
+              email: "member@acme.com",
+              role_name: "project_manager",
+              base_permissions: ["project_read"],
+              effective_permissions: effectivePermissions,
+              overrides,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users/u1/permissions") && method === "PUT") {
+        putAttempts += 1;
+        if (putAttempts === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ detail: "Invalid authentication" }), {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              user_id: "u1",
+              email: "member@acme.com",
+              role_name: "project_manager",
+              base_permissions: ["project_read"],
+              effective_permissions: ["project_read", "project_write"],
+              overrides: [{ permission: "project_write", enabled: true }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/auth/refresh") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              access_token: "new-access-token",
+              refresh_token: "new-refresh-token",
+              token_type: "bearer",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const user = userEvent.setup();
+    render(<UserSettingsPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Functions" }));
+    const checkboxes = await screen.findAllByRole("checkbox");
+    await user.click(checkboxes[1]);
+    await user.click(screen.getByRole("button", { name: "Save Function Access" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Function toggles updated.")).toBeInTheDocument();
+    });
+
+    const refreshCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/api/auth/refresh"));
+    expect(refreshCall).toBeTruthy();
+    expect(window.localStorage.getItem("opsflow_access_token")).toBe("new-access-token");
+    expect(window.localStorage.getItem("opsflow_refresh_token")).toBe("new-refresh-token");
   });
 });
