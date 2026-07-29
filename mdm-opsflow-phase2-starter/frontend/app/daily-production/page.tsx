@@ -38,6 +38,41 @@ type MaterialLine = {
   needQty: number;
 };
 
+type VisitorLine = {
+  id: string;
+  name: string;
+  company: string;
+  role: string;
+  reason: string;
+};
+
+type DelayLine = {
+  id: string;
+  category: string;
+  description: string;
+  durationHours: number;
+};
+
+type PhotoLine = {
+  id: string;
+  description: string;
+  classification: string;
+};
+
+type ProductionLine = {
+  id: string;
+  bidItem: string;
+  quantity: number;
+  unit: string;
+};
+
+type SafetyLine = {
+  id: string;
+  observationType: string;
+  description: string;
+  severity: string;
+};
+
 type DailyFieldReportResponse = {
   id: string;
   report_number: string;
@@ -62,6 +97,12 @@ const defaultEquipment: EquipmentLine[] = [
 const defaultMaterials: MaterialLine[] = [
   { id: "mat-1", material: "Aggregate Base", usedQty: 120, unit: "tons", needQty: 50 },
 ];
+
+const defaultVisitors: VisitorLine[] = [];
+const defaultDelays: DelayLine[] = [];
+const defaultPhotos: PhotoLine[] = [];
+const defaultProduction: ProductionLine[] = [];
+const defaultSafety: SafetyLine[] = [];
 
 function isoDateToday(): string {
   return new Date().toISOString().slice(0, 10);
@@ -90,6 +131,11 @@ export default function DailyProductionPage() {
   const [crewLines, setCrewLines] = useState<CrewLine[]>(defaultCrew);
   const [equipmentLines, setEquipmentLines] = useState<EquipmentLine[]>(defaultEquipment);
   const [materialLines, setMaterialLines] = useState<MaterialLine[]>(defaultMaterials);
+  const [visitorLines, setVisitorLines] = useState<VisitorLine[]>(defaultVisitors);
+  const [delayLines, setDelayLines] = useState<DelayLine[]>(defaultDelays);
+  const [photoLines, setPhotoLines] = useState<PhotoLine[]>(defaultPhotos);
+  const [productionLines, setProductionLines] = useState<ProductionLine[]>(defaultProduction);
+  const [safetyLines, setSafetyLines] = useState<SafetyLine[]>(defaultSafety);
 
   const [createMechanicTicket, setCreateMechanicTicket] = useState(true);
   const [createMaterialTicket, setCreateMaterialTicket] = useState(true);
@@ -167,6 +213,46 @@ export default function DailyProductionPage() {
 
   const updateMaterial = (id: string, patch: Partial<MaterialLine>) => {
     setMaterialLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateVisitor = (id: string, patch: Partial<VisitorLine>) => {
+    setVisitorLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateDelay = (id: string, patch: Partial<DelayLine>) => {
+    setDelayLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updatePhoto = (id: string, patch: Partial<PhotoLine>) => {
+    setPhotoLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateProduction = (id: string, patch: Partial<ProductionLine>) => {
+    setProductionLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateSafety = (id: string, patch: Partial<SafetyLine>) => {
+    setSafetyLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const addVisitor = () => {
+    setVisitorLines((prev) => [...prev, { id: `visitor-${Date.now()}`, name: "", company: "", role: "", reason: "" }]);
+  };
+
+  const addDelay = () => {
+    setDelayLines((prev) => [...prev, { id: `delay-${Date.now()}`, category: "", description: "", durationHours: 0 }]);
+  };
+
+  const addPhoto = () => {
+    setPhotoLines((prev) => [...prev, { id: `photo-${Date.now()}`, description: "", classification: "progress" }]);
+  };
+
+  const addProduction = () => {
+    setProductionLines((prev) => [...prev, { id: `production-${Date.now()}`, bidItem: "", quantity: 0, unit: "cubic_yards" }]);
+  };
+
+  const addSafetyObservation = () => {
+    setSafetyLines((prev) => [...prev, { id: `safety-${Date.now()}`, observationType: "", description: "", severity: "medium" }]);
   };
 
   const aiRouteNote = useMemo(() => {
@@ -259,8 +345,11 @@ export default function DailyProductionPage() {
         crew_members: crewLines.map((line) => ({ role: line.role, count: line.count, hours: line.hours })),
         equipment_used: equipmentLines.map((line) => ({ machine: line.machine, hours: line.hours, fuel_gallons: line.fuelGallons, issue: line.issue })),
         deliveries: materialLines.map((line) => ({ material: line.material, used_qty: line.usedQty, unit: line.unit, need_qty: line.needQty })),
-        production_quantities: materialLines.map((line) => ({ material: line.material, quantity: line.usedQty, unit: line.unit })),
-        safety_observations: machineIssues.map((line) => ({ machine: line.machine, issue: line.issue })),
+        visitors: visitorLines.map((line) => ({ name: line.name, company: line.company, role: line.role, reason: line.reason })),
+        delays: delayLines.map((line) => ({ category: line.category, description: line.description, duration_hours: line.durationHours })),
+        photos: photoLines.map((line) => ({ description: line.description, classification: line.classification })),
+        production_quantities: productionLines.map((line) => ({ bid_item: line.bidItem, quantity_completed_today: line.quantity, unit_of_measure: line.unit })),
+        safety_observations: safetyLines.map((line) => ({ observation_type: line.observationType, description: line.description, severity: line.severity })),
         work_performed: workPerformed,
         work_planned_for_tomorrow: workTomorrow,
         prepared_by: preparedBy || reportingSupervisor,
@@ -490,6 +579,106 @@ export default function DailyProductionPage() {
               ))}
             </div>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Visitors</h2>
+          <div className="mt-3 space-y-2">
+            {visitorLines.map((line) => (
+              <div key={line.id} className="grid gap-2 rounded border border-slate-200 p-2 md:grid-cols-4">
+                <label className="text-xs font-medium text-slate-700">Visitor name
+                  <input value={line.name} onChange={(event) => updateVisitor(line.id, { name: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Visitor company
+                  <input value={line.company} onChange={(event) => updateVisitor(line.id, { company: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Role
+                  <input value={line.role} onChange={(event) => updateVisitor(line.id, { role: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Reason
+                  <input value={line.reason} onChange={(event) => updateVisitor(line.id, { reason: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addVisitor} className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Add visitor</button>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Delays</h2>
+          <div className="mt-3 space-y-2">
+            {delayLines.map((line) => (
+              <div key={line.id} className="grid gap-2 rounded border border-slate-200 p-2 md:grid-cols-3">
+                <label className="text-xs font-medium text-slate-700">Delay category
+                  <input value={line.category} onChange={(event) => updateDelay(line.id, { category: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Delay description
+                  <input value={line.description} onChange={(event) => updateDelay(line.id, { description: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Duration (hrs)
+                  <input type="number" value={line.durationHours} onChange={(event) => updateDelay(line.id, { durationHours: Number(event.target.value || 0) })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addDelay} className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Add delay</button>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Photos</h2>
+          <div className="mt-3 space-y-2">
+            {photoLines.map((line) => (
+              <div key={line.id} className="grid gap-2 rounded border border-slate-200 p-2 md:grid-cols-2">
+                <label className="text-xs font-medium text-slate-700">Photo description
+                  <input value={line.description} onChange={(event) => updatePhoto(line.id, { description: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Classification
+                  <input value={line.classification} onChange={(event) => updatePhoto(line.id, { classification: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addPhoto} className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Add photo</button>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Production quantities</h2>
+          <div className="mt-3 space-y-2">
+            {productionLines.map((line) => (
+              <div key={line.id} className="grid gap-2 rounded border border-slate-200 p-2 md:grid-cols-3">
+                <label className="text-xs font-medium text-slate-700">Bid item
+                  <input value={line.bidItem} onChange={(event) => updateProduction(line.id, { bidItem: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Quantity
+                  <input type="number" value={line.quantity} onChange={(event) => updateProduction(line.id, { quantity: Number(event.target.value || 0) })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Unit
+                  <input value={line.unit} onChange={(event) => updateProduction(line.id, { unit: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addProduction} className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Add production</button>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Safety observations</h2>
+          <div className="mt-3 space-y-2">
+            {safetyLines.map((line) => (
+              <div key={line.id} className="grid gap-2 rounded border border-slate-200 p-2 md:grid-cols-3">
+                <label className="text-xs font-medium text-slate-700">Safety observation type
+                  <input value={line.observationType} onChange={(event) => updateSafety(line.id, { observationType: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Description
+                  <input value={line.description} onChange={(event) => updateSafety(line.id, { description: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+                <label className="text-xs font-medium text-slate-700">Severity
+                  <input value={line.severity} onChange={(event) => updateSafety(line.id, { severity: event.target.value })} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addSafetyObservation} className="mt-3 rounded border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Add safety observation</button>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5">
