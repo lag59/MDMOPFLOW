@@ -1,14 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import React, { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { ROLE_WORKSPACES } from "@/lib/roles";
 import { getLocale, t } from "@/lib/i18n";
-import { MODULE_ROUTE_MAP, buildModuleDetailHref } from "@/lib/modules";
+import { MODULE_ROUTE_MAP, buildModuleDetailHref, getVisibleWorkspacesForRole } from "@/lib/modules";
+import { getCurrentRoleAccess } from "@/lib/roleAccess";
+import { type RoleKey } from "@/lib/roles";
 
 export default function ModulesPage() {
   const locale = getLocale();
+  const [activeRole, setActiveRole] = useState<RoleKey>("project_manager");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  useEffect(() => {
+    const resolveAccess = async () => {
+      const context = await getCurrentRoleAccess();
+      if (!context) {
+        window.location.href = "/login";
+        return;
+      }
+      setActiveRole(context.roleKey);
+      setIsSuperAdmin(context.isSuperAdmin);
+    };
+
+    resolveAccess();
+  }, []);
+
+  const visibleWorkspaces = getVisibleWorkspacesForRole(activeRole, isSuperAdmin);
 
   return (
     <AppShell titleKey="modules.title">
@@ -18,7 +38,7 @@ export default function ModulesPage() {
       </div>
 
       <div className="grid">
-        {ROLE_WORKSPACES.map((workspace) => (
+        {visibleWorkspaces.map((workspace) => (
           <div className="card" key={workspace.key}>
             <span className="auth-eyebrow">{workspace.label}</span>
             <h3>{workspace.summary}</h3>

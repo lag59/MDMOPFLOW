@@ -570,6 +570,321 @@ class EmployeeResponse(EmployeeBase):
     updated_at: datetime
 
 
+class PayrollTimecardBase(BaseModel):
+    employee_id: str
+    project_id: str | None = None
+    work_date: datetime
+    regular_hours: Decimal = Decimal("0.00")
+    overtime_hours: Decimal = Decimal("0.00")
+    double_time_hours: Decimal = Decimal("0.00")
+    cost_code: str = ""
+    work_description: str = ""
+    status: str = "draft"
+
+
+class PayrollTimecardCreate(PayrollTimecardBase):
+    pass
+
+
+class PayrollTimecardUpdate(BaseModel):
+    employee_id: str | None = None
+    project_id: str | None = None
+    work_date: datetime | None = None
+    regular_hours: Decimal | None = None
+    overtime_hours: Decimal | None = None
+    double_time_hours: Decimal | None = None
+    cost_code: str | None = None
+    work_description: str | None = None
+    status: str | None = None
+
+
+class PayrollTimecardResponse(PayrollTimecardBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PayrollRunBase(BaseModel):
+    run_number: str = Field(min_length=2, max_length=120)
+    period_start: datetime
+    period_end: datetime
+    status: str = "draft"
+    notes: str = ""
+
+
+class PayrollRunCreate(PayrollRunBase):
+    pass
+
+
+class PayrollRunResponse(PayrollRunBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    employee_count: int
+    total_regular_hours: Decimal
+    total_overtime_hours: Decimal
+    total_double_time_hours: Decimal
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PayrollSummaryByProjectResponse(BaseModel):
+    project_id: str | None = None
+    timecard_count: int
+    regular_hours: Decimal
+    overtime_hours: Decimal
+    double_time_hours: Decimal
+
+
+class PayrollSummaryResponse(BaseModel):
+    employee_count: int
+    timecard_count: int
+    payroll_run_count: int
+    total_regular_hours: Decimal
+    total_overtime_hours: Decimal
+    total_double_time_hours: Decimal
+    by_project: list[PayrollSummaryByProjectResponse]
+
+
+class EstimatorTakeoffBase(BaseModel):
+    project_id: str | None = None
+    takeoff_number: str = Field(min_length=2, max_length=120)
+    material_name: str = ""
+    quantity: Decimal = Decimal("0.00")
+    unit_of_measure: str = "cy"
+    estimated_cost: Decimal | None = None
+    status: str = "draft"
+    notes: str = ""
+
+
+class EstimatorTakeoffCreate(EstimatorTakeoffBase):
+    pass
+
+
+class EstimatorTakeoffResponse(EstimatorTakeoffBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimatorVersionBase(BaseModel):
+    project_id: str | None = None
+    version_name: str = Field(min_length=2, max_length=120)
+    revision_number: int = 1
+    estimated_revenue: Decimal | None = None
+    estimated_cost: Decimal | None = None
+    status: str = "draft"
+    notes: str = ""
+
+
+class EstimatorVersionCreate(EstimatorVersionBase):
+    pass
+
+
+class EstimatorVersionResponse(EstimatorVersionBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimatorBidPipelineItemBase(BaseModel):
+    project_id: str | None = None
+    bid_number: str = Field(min_length=2, max_length=120)
+    customer_name: str = ""
+    stage: str = "qualifying"
+    bid_amount: Decimal | None = None
+    probability_percent: Decimal | None = None
+    due_date: datetime | None = None
+    status: str = "open"
+    notes: str = ""
+
+
+class EstimatorBidPipelineItemCreate(EstimatorBidPipelineItemBase):
+    pass
+
+
+class EstimatorBidPipelineItemResponse(EstimatorBidPipelineItemBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimatorWinLossRecordBase(BaseModel):
+    project_id: str | None = None
+    bid_pipeline_item_id: str | None = None
+    outcome: str = "pending"
+    final_amount: Decimal | None = None
+    decision_date: datetime | None = None
+    reason: str = ""
+
+
+class EstimatorWinLossRecordCreate(EstimatorWinLossRecordBase):
+    pass
+
+
+class EstimatorWinLossRecordResponse(EstimatorWinLossRecordBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimatorSummaryResponse(BaseModel):
+    takeoff_count: int
+    version_count: int
+    bid_pipeline_count: int
+    wins: int
+    losses: int
+    pending: int
+    win_rate_percent: Decimal
+
+
+class VendorPurchaseOrderBase(BaseModel):
+    project_id: str | None = None
+    po_number: str = Field(min_length=2, max_length=120)
+    vendor_name: str = ""
+    description: str = ""
+    status: str = "open"
+    total_amount: Decimal | None = None
+
+
+class VendorPurchaseOrderCreate(VendorPurchaseOrderBase):
+    pass
+
+
+class VendorPurchaseOrderResponse(VendorPurchaseOrderBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorInvoiceSubmissionBase(BaseModel):
+    project_id: str | None = None
+    purchase_order_id: str | None = None
+    invoice_number: str = Field(min_length=2, max_length=120)
+    vendor_name: str = ""
+    amount: Decimal | None = None
+    status: str = "submitted"
+    notes: str = ""
+
+
+class VendorInvoiceSubmissionCreate(VendorInvoiceSubmissionBase):
+    pass
+
+
+class VendorInvoiceSubmissionResponse(VendorInvoiceSubmissionBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorDeliveryRecordBase(BaseModel):
+    project_id: str | None = None
+    purchase_order_id: str | None = None
+    ticket_number: str = ""
+    vendor_name: str = ""
+    destination: str = ""
+    status: str = "pending"
+    received_at: datetime | None = None
+
+
+class VendorDeliveryRecordCreate(VendorDeliveryRecordBase):
+    pass
+
+
+class VendorDeliveryRecordResponse(VendorDeliveryRecordBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorComplianceDocumentBase(BaseModel):
+    project_id: str | None = None
+    document_name: str = Field(min_length=2, max_length=255)
+    vendor_name: str = ""
+    status: str = "current"
+    expires_at: datetime | None = None
+    notes: str = ""
+
+
+class VendorComplianceDocumentCreate(VendorComplianceDocumentBase):
+    pass
+
+
+class VendorComplianceDocumentResponse(VendorComplianceDocumentBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CustomerPortalProjectSummaryResponse(BaseModel):
+    project_id: str
+    project_name: str
+    project_number: str
+    status: str
+    project_manager: str
+    actual_revenue: Decimal
+    ticket_count: int
+    total_documents: int
+    pending_review_documents: int
+
+
+class CustomerPortalBillingStatusResponse(BaseModel):
+    project_id: str
+    project_name: str
+    status: str
+    actual_revenue: Decimal
+    ticket_count: int
+    total_tons: Decimal
+    total_cubic_yards: Decimal
+    revenue_shortfall: bool
+
+
+class CustomerPortalDocumentStatusResponse(BaseModel):
+    project_id: str
+    project_name: str
+    total_documents: int
+    pending_review_documents: int
+    latest_document_at: datetime | None = None
+
+
 class EquipmentBase(BaseModel):
     name: str = Field(min_length=2, max_length=255)
     equipment_type: str = ""

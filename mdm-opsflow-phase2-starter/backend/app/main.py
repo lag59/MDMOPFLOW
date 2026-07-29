@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, auth, ai_assignment, billing, core_platform, daily_field_reports, health, intake, onboarding, projects, tenant_users, tickets, extractions
+from app.api.routes import admin, auth, ai_assignment, billing, core_platform, customer_portal, daily_field_reports, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
 from app.core.config import settings
 
 from app.db import SessionLocal
@@ -99,6 +99,22 @@ openapi_tags = [
         "description": "Invoice generation and billing calculation endpoints.",
     },
     {
+        "name": "Payroll",
+        "description": "Timecards, payroll runs, and labor allocation summary endpoints.",
+    },
+    {
+        "name": "Estimator",
+        "description": "Takeoff, estimate versioning, bid pipeline, and win/loss workflow endpoints.",
+    },
+    {
+        "name": "Vendor Portal",
+        "description": "Purchase orders, invoice submissions, delivery records, and compliance document endpoints.",
+    },
+    {
+        "name": "Customer Portal",
+        "description": "Portal-safe project, billing, and document visibility endpoints for customer members.",
+    },
+    {
         "name": "Extractions",
         "description": "Document extraction review, approval, and distribution workflow endpoints.",
     },
@@ -130,6 +146,10 @@ app.include_router(tenant_users.router)
 app.include_router(tickets.router)
 app.include_router(daily_field_reports.router)
 app.include_router(billing.router)
+app.include_router(payroll.router)
+app.include_router(estimator.router)
+app.include_router(vendor.router)
+app.include_router(customer_portal.router)
 app.include_router(ai_assignment.router)
 app.include_router(extractions.router)
 

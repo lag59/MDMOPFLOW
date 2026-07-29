@@ -656,3 +656,10 @@ export function getModuleDetail(roleKey: string, moduleSlug: string): ModuleDeta
     route,
   };
 }
+
+export function getVisibleWorkspacesForRole(roleKey: RoleKey, isSuperAdmin: boolean) {
+  if (isSuperAdmin) {
+    return ROLE_WORKSPACES;
+  }
+  return ROLE_WORKSPACES.filter((workspace) => workspace.key === roleKey);
+}

@@ -5,11 +5,16 @@ import { useParams } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
+import { getCustomerPortalBillingStatus, getCustomerPortalDocumentStatus, listCustomerPortalProjects, type CustomerPortalBillingStatus, type CustomerPortalDocumentStatus, type CustomerPortalProjectSummary } from "@/lib/customerPortal";
+import { getEstimatorSummary, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getModuleDetail } from "@/lib/modules";
+import { getPayrollSummary, listPayrollRuns, listPayrollTimecards, type PayrollRun, type PayrollSummary, type PayrollTimecard } from "@/lib/payroll";
 import { fetchReplayTokenStateAlerts, type ReplayTokenStateAlerts } from "@/lib/replayTokens";
 import { getApiBaseUrl } from "@/lib/i18n";
+import { canAccessModuleRole, getCurrentRoleAccess, type RoleAccessContext } from "@/lib/roleAccess";
 import { listMaterialDensityPresets, listTickets, type MaterialDensityPreset, type Ticket } from "@/lib/tickets";
+import { listVendorComplianceDocuments, listVendorDeliveryRecords, listVendorInvoiceSubmissions, listVendorPurchaseOrders, type VendorComplianceDocument, type VendorDeliveryRecord, type VendorInvoiceSubmission, type VendorPurchaseOrder } from "@/lib/vendor";
 
 type Project = {
   id: string;
@@ -85,16 +90,51 @@ export default function ModuleDetailPage() {
   const [equipment, setEquipment] = useState<WorkspaceResource[]>([]);
   const [trucks, setTrucks] = useState<WorkspaceResource[]>([]);
   const [employees, setEmployees] = useState<WorkspaceResource[]>([]);
+  const [payrollSummary, setPayrollSummary] = useState<PayrollSummary | null>(null);
+  const [payrollTimecards, setPayrollTimecards] = useState<PayrollTimecard[]>([]);
+  const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>([]);
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [serviceInsights, setServiceInsights] = useState<ServiceInsights | null>(null);
   const [tenantUsers, setTenantUsers] = useState<TenantUserMembership[]>([]);
   const [permissionCatalog, setPermissionCatalog] = useState<string[]>([]);
   const [materialPresets, setMaterialPresets] = useState<MaterialDensityPreset[]>([]);
+  const [customerPortalProjects, setCustomerPortalProjects] = useState<CustomerPortalProjectSummary[]>([]);
+  const [customerPortalBilling, setCustomerPortalBilling] = useState<CustomerPortalBillingStatus[]>([]);
+  const [customerPortalDocuments, setCustomerPortalDocuments] = useState<CustomerPortalDocumentStatus[]>([]);
+  const [vendorPurchaseOrders, setVendorPurchaseOrders] = useState<VendorPurchaseOrder[]>([]);
+  const [vendorInvoiceSubmissions, setVendorInvoiceSubmissions] = useState<VendorInvoiceSubmission[]>([]);
+  const [vendorDeliveryRecords, setVendorDeliveryRecords] = useState<VendorDeliveryRecord[]>([]);
+  const [vendorComplianceDocuments, setVendorComplianceDocuments] = useState<VendorComplianceDocument[]>([]);
+  const [estimatorTakeoffs, setEstimatorTakeoffs] = useState<EstimatorTakeoff[]>([]);
+  const [estimatorVersions, setEstimatorVersions] = useState<EstimatorVersion[]>([]);
+  const [estimatorBidPipelineItems, setEstimatorBidPipelineItems] = useState<EstimatorBidPipelineItem[]>([]);
+  const [estimatorWinLossRecords, setEstimatorWinLossRecords] = useState<EstimatorWinLossRecord[]>([]);
+  const [estimatorSummary, setEstimatorSummary] = useState<EstimatorSummary | null>(null);
+  const [roleAccess, setRoleAccess] = useState<RoleAccessContext | null>(null);
+  const [roleAccessResolved, setRoleAccessResolved] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
 
   useEffect(() => {
+    const resolveRoleAccess = async () => {
+      const context = await getCurrentRoleAccess();
+      setRoleAccess(context);
+      setRoleAccessResolved(true);
+    };
+
+    resolveRoleAccess();
+  }, []);
+
+  useEffect(() => {
+    if (!roleAccessResolved) {
+      return;
+    }
+
     if (!detail || !["company_owner", "executive", "project_manager", "estimator", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
+      return;
+    }
+
+    if (!canAccessModuleRole(roleAccess, detail.roleKey)) {
       return;
     }
 
@@ -133,7 +173,7 @@ export default function ModuleDetailPage() {
         setProfitability(new Map(profitEntries.filter((entry): entry is readonly [string, ProjectProfitability] => entry !== null)));
 
         try {
-          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, materialPresetData] = await Promise.all([
+          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, materialPresetData, payrollSummaryData, payrollTimecardData, payrollRunData, vendorPurchaseOrderData, vendorInvoiceSubmissionData, vendorDeliveryRecordData, vendorComplianceDocumentData, customerPortalProjectData, estimatorTakeoffData, estimatorVersionData, estimatorBidPipelineData, estimatorWinLossData, estimatorSummaryData] = await Promise.all([
             listTickets(),
             fetchReplayTokenStateAlerts({ staleThresholdMinutes: 60, staleActiveThresholdCount: 10 }),
             fetch(`${getApiBaseUrl()}/api/equipment`, { headers }).then((res) => (res.ok ? res.json() : [])),
@@ -145,6 +185,19 @@ export default function ModuleDetailPage() {
             fetch(`${getApiBaseUrl()}/api/admin/users`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => (res.ok ? res.json() : [])),
             fetch(`${getApiBaseUrl()}/api/admin/service-insights`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => (res.ok ? res.json() : null)),
             listMaterialDensityPresets().catch(() => []),
+            getPayrollSummary().catch(() => null),
+            listPayrollTimecards().catch(() => []),
+            listPayrollRuns().catch(() => []),
+            listVendorPurchaseOrders().catch(() => []),
+            listVendorInvoiceSubmissions().catch(() => []),
+            listVendorDeliveryRecords().catch(() => []),
+            listVendorComplianceDocuments().catch(() => []),
+            listCustomerPortalProjects().catch(() => []),
+            listEstimatorTakeoffs().catch(() => []),
+            listEstimatorVersions().catch(() => []),
+            listEstimatorBidPipelineItems().catch(() => []),
+            listEstimatorWinLossRecords().catch(() => []),
+            getEstimatorSummary().catch(() => null),
           ]);
           setTickets(ticketData);
           setAlerts(alertData);
@@ -157,6 +210,28 @@ export default function ModuleDetailPage() {
           setAdminUsers(adminUserData as AdminUser[]);
           setServiceInsights(serviceInsightsData as ServiceInsights | null);
           setMaterialPresets(materialPresetData as MaterialDensityPreset[]);
+          setPayrollSummary(payrollSummaryData as PayrollSummary | null);
+          setPayrollTimecards(payrollTimecardData as PayrollTimecard[]);
+          setPayrollRuns(payrollRunData as PayrollRun[]);
+          setVendorPurchaseOrders(vendorPurchaseOrderData as VendorPurchaseOrder[]);
+          setVendorInvoiceSubmissions(vendorInvoiceSubmissionData as VendorInvoiceSubmission[]);
+          setVendorDeliveryRecords(vendorDeliveryRecordData as VendorDeliveryRecord[]);
+          setVendorComplianceDocuments(vendorComplianceDocumentData as VendorComplianceDocument[]);
+          setCustomerPortalProjects(customerPortalProjectData as CustomerPortalProjectSummary[]);
+          setEstimatorTakeoffs(estimatorTakeoffData as EstimatorTakeoff[]);
+          setEstimatorVersions(estimatorVersionData as EstimatorVersion[]);
+          setEstimatorBidPipelineItems(estimatorBidPipelineData as EstimatorBidPipelineItem[]);
+          setEstimatorWinLossRecords(estimatorWinLossData as EstimatorWinLossRecord[]);
+          setEstimatorSummary(estimatorSummaryData as EstimatorSummary | null);
+          const portalProjects = customerPortalProjectData as CustomerPortalProjectSummary[];
+          const billingRecords = await Promise.all(
+            portalProjects.map((project) => getCustomerPortalBillingStatus(project.project_id).catch(() => null))
+          );
+          const documentRecords = await Promise.all(
+            portalProjects.map((project) => getCustomerPortalDocumentStatus(project.project_id).catch(() => null))
+          );
+          setCustomerPortalBilling(billingRecords.filter((item): item is CustomerPortalBillingStatus => item !== null));
+          setCustomerPortalDocuments(documentRecords.filter((item): item is CustomerPortalDocumentStatus => item !== null));
         } catch {
           setTickets([]);
           setAlerts(null);
@@ -169,6 +244,21 @@ export default function ModuleDetailPage() {
           setAdminUsers([]);
           setServiceInsights(null);
           setMaterialPresets([]);
+          setPayrollSummary(null);
+          setPayrollTimecards([]);
+          setPayrollRuns([]);
+          setVendorPurchaseOrders([]);
+          setVendorInvoiceSubmissions([]);
+          setVendorDeliveryRecords([]);
+          setVendorComplianceDocuments([]);
+          setCustomerPortalProjects([]);
+          setCustomerPortalBilling([]);
+          setCustomerPortalDocuments([]);
+          setEstimatorTakeoffs([]);
+          setEstimatorVersions([]);
+          setEstimatorBidPipelineItems([]);
+          setEstimatorWinLossRecords([]);
+          setEstimatorSummary(null);
         }
       } finally {
         setInsightsLoading(false);
@@ -176,7 +266,7 @@ export default function ModuleDetailPage() {
     };
 
     loadInsights();
-  }, [detail?.moduleSlug, detail?.roleKey]);
+  }, [detail?.moduleSlug, detail?.roleKey, roleAccessResolved, roleAccess]);
 
   const ownerSummary = useMemo(() => {
     const profitabilityItems = Array.from(profitability.values());
@@ -906,16 +996,16 @@ export default function ModuleDetailPage() {
       return (
         <section className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Ticket records</div><div className="mt-2 text-3xl font-bold text-slate-900">{tickets.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Material presets</div><div className="mt-2 text-3xl font-bold text-blue-700">{materialPresets.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Material coverage</div><div className="mt-2 text-3xl font-bold text-green-600">{presetCoverage}/{distinctMaterials.length || 0}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Revenue tracked</div><div className="mt-2 text-3xl font-bold text-slate-900">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Takeoffs</div><div className="mt-2 text-3xl font-bold text-slate-900">{estimatorSummary?.takeoff_count ?? estimatorTakeoffs.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Estimate versions</div><div className="mt-2 text-3xl font-bold text-blue-700">{estimatorSummary?.version_count ?? estimatorVersions.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Material presets</div><div className="mt-2 text-3xl font-bold text-green-600">{materialPresets.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Bid pipeline</div><div className="mt-2 text-3xl font-bold text-slate-900">{estimatorSummary?.bid_pipeline_count ?? estimatorBidPipelineItems.length}</div></div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Takeoff inputs</h2>
             <div className="mt-4 space-y-2 text-sm text-slate-700">
-              {materialPresets.slice(0, 5).map((preset) => (
-                <div key={preset.id} className="rounded-md border border-slate-200 px-3 py-2">{preset.material_name} • density {preset.density_tons_per_cubic_yard}</div>
+              {estimatorTakeoffs.slice(0, 5).map((takeoff) => (
+                <div key={takeoff.id} className="rounded-md border border-slate-200 px-3 py-2">{takeoff.takeoff_number} • {takeoff.material_name || "Unknown material"} • {takeoff.quantity} {takeoff.unit_of_measure}</div>
               ))}
             </div>
           </div>
@@ -928,9 +1018,18 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Estimate version signals</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Preset library</div><div className="mt-2 text-2xl font-bold text-slate-900">{materialPresets.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Distinct materials</div><div className="mt-2 text-2xl font-bold text-blue-700">{distinctMaterials.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">At-risk jobs</div><div className="mt-2 text-2xl font-bold text-amber-600">{ownerSummary.topAtRiskProjects.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Versions</div><div className="mt-2 text-2xl font-bold text-slate-900">{estimatorSummary?.version_count ?? estimatorVersions.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Submitted versions</div><div className="mt-2 text-2xl font-bold text-blue-700">{estimatorVersions.filter((item) => item.status === "submitted").length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Draft versions</div><div className="mt-2 text-2xl font-bold text-amber-600">{estimatorVersions.filter((item) => item.status === "draft").length}</div></div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {estimatorVersions.slice(0, 5).map((version) => (
+              <div key={version.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                <div className="font-semibold text-slate-900">{version.version_name} r{version.revision_number}</div>
+                <div className="mt-1">Revenue: {formatCurrency(Number(version.estimated_revenue || 0))} • Cost: {formatCurrency(Number(version.estimated_cost || 0))}</div>
+                <div className="mt-1">Status: {version.status}</div>
+              </div>
+            ))}
           </div>
         </section>
       );
@@ -941,18 +1040,17 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Bid pipeline</h2>
           <div className="mt-4 space-y-3">
-            {projects.slice(0, 6).map((project) => {
-              const projectProfitability = profitability.get(project.id);
+            {estimatorBidPipelineItems.slice(0, 6).map((bid) => {
               return (
-                <div key={project.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                <div key={bid.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-semibold text-slate-900">{project.project_name}</div>
-                      <div>{project.project_number} • {project.status}</div>
+                      <div className="font-semibold text-slate-900">{bid.bid_number}</div>
+                      <div>{bid.customer_name || "Unknown customer"} • {bid.stage}</div>
                     </div>
                     <div className="text-right">
-                      <div>Revenue: {formatCurrency(Number(projectProfitability?.actual_revenue || 0))}</div>
-                      <div>Margin: {Number(projectProfitability?.profit_margin || 0).toFixed(1)}%</div>
+                      <div>Bid amount: {formatCurrency(Number(bid.bid_amount || 0))}</div>
+                      <div>Probability: {Number(bid.probability_percent || 0).toFixed(1)}%</div>
                     </div>
                   </div>
                 </div>
@@ -966,9 +1064,9 @@ export default function ModuleDetailPage() {
     if (detail.roleKey === "estimator" && detail.moduleSlug === "win-loss") {
       return (
         <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked jobs</div><div className="mt-2 text-3xl font-bold text-slate-900">{projects.length}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">At-risk jobs</div><div className="mt-2 text-3xl font-bold text-amber-600">{ownerSummary.topAtRiskProjects.length}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Gross profit tracked</div><div className="mt-2 text-3xl font-bold text-green-600">{formatCurrency(totalGrossProfit)}</div></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Wins</div><div className="mt-2 text-3xl font-bold text-green-600">{estimatorSummary?.wins ?? estimatorWinLossRecords.filter((item) => item.outcome === "won").length}</div></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Losses</div><div className="mt-2 text-3xl font-bold text-red-600">{estimatorSummary?.losses ?? estimatorWinLossRecords.filter((item) => item.outcome === "lost").length}</div></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Win rate</div><div className="mt-2 text-3xl font-bold text-slate-900">{Number(estimatorSummary?.win_rate_percent || 0).toFixed(1)}%</div></div>
         </section>
       );
     }
@@ -977,26 +1075,25 @@ export default function ModuleDetailPage() {
       return (
         <section className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-3xl font-bold text-slate-900">{projects.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active projects</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.activeProjects}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Project revenue</div><div className="mt-2 text-3xl font-bold text-green-600">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Project tickets</div><div className="mt-2 text-3xl font-bold text-slate-900">{ownerSummary.assignedTickets}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-3xl font-bold text-slate-900">{customerPortalProjects.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active projects</div><div className="mt-2 text-3xl font-bold text-blue-700">{customerPortalProjects.filter((project) => project.status === "active").length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Project revenue</div><div className="mt-2 text-3xl font-bold text-green-600">{formatCurrency(customerPortalProjects.reduce((sum, project) => sum + Number(project.actual_revenue || 0), 0))}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Project tickets</div><div className="mt-2 text-3xl font-bold text-slate-900">{customerPortalProjects.reduce((sum, project) => sum + project.ticket_count, 0)}</div></div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Customer project snapshot</h2>
             <div className="mt-4 space-y-3">
-              {projects.slice(0, 5).map((project) => {
-                const projectProfitability = profitability.get(project.id);
+              {customerPortalProjects.slice(0, 5).map((project) => {
                 return (
-                  <div key={project.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                  <div key={project.project_id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold text-slate-900">{project.project_name}</div>
                         <div>{project.project_number} • {project.status}</div>
                       </div>
                       <div className="text-right">
-                        <div>Revenue: {formatCurrency(Number(projectProfitability?.actual_revenue || 0))}</div>
-                        <div>Tickets: {projectProfitability?.ticket_count || 0}</div>
+                        <div>Revenue: {formatCurrency(Number(project.actual_revenue || 0))}</div>
+                        <div>Tickets: {project.ticket_count}</div>
                       </div>
                     </div>
                   </div>
@@ -1013,13 +1110,13 @@ export default function ModuleDetailPage() {
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Milestone progress</h2>
-            <p className="mt-3 text-sm text-slate-700">Active projects currently visible: {ownerSummary.activeProjects}</p>
-            <p className="mt-1 text-sm text-slate-700">Projects needing attention: {ownerSummary.topAtRiskProjects.length}</p>
+            <p className="mt-3 text-sm text-slate-700">Active projects currently visible: {customerPortalProjects.filter((project) => project.status === "active").length}</p>
+            <p className="mt-1 text-sm text-slate-700">Projects with pending document review: {customerPortalProjects.filter((project) => project.pending_review_documents > 0).length}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Delivery readiness</h2>
-            <p className="mt-3 text-sm text-slate-700">Assigned project tickets in circulation: {ownerSummary.assignedTickets}</p>
-            <p className="mt-1 text-sm text-slate-700">Review backlog that may affect milestones: {ownerSummary.flaggedApprovals}</p>
+            <p className="mt-3 text-sm text-slate-700">Tracked project tickets in circulation: {customerPortalProjects.reduce((sum, project) => sum + project.ticket_count, 0)}</p>
+            <p className="mt-1 text-sm text-slate-700">Pending document review items: {customerPortalProjects.reduce((sum, project) => sum + project.pending_review_documents, 0)}</p>
           </div>
         </section>
       );
@@ -1030,9 +1127,9 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Document visibility</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Review backlog</div><div className="mt-2 text-2xl font-bold text-amber-600">{ownerSummary.flaggedApprovals}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-2xl font-bold text-slate-900">{projects.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Ticket records</div><div className="mt-2 text-2xl font-bold text-blue-700">{tickets.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Review backlog</div><div className="mt-2 text-2xl font-bold text-amber-600">{customerPortalDocuments.reduce((sum, item) => sum + item.pending_review_documents, 0)}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-2xl font-bold text-slate-900">{customerPortalProjects.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Documents</div><div className="mt-2 text-2xl font-bold text-blue-700">{customerPortalDocuments.reduce((sum, item) => sum + item.total_documents, 0)}</div></div>
           </div>
         </section>
       );
@@ -1043,7 +1140,7 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Billing status</h2>
           <div className="mt-4 space-y-3">
-            {Array.from(profitability.values()).slice(0, 5).map((item) => (
+            {customerPortalBilling.slice(0, 5).map((item) => (
               <div key={item.project_id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1052,7 +1149,7 @@ export default function ModuleDetailPage() {
                   </div>
                   <div className="text-right">
                     <div>Revenue: {formatCurrency(Number(item.actual_revenue || 0))}</div>
-                    <div>Margin: {Number(item.profit_margin || 0).toFixed(1)}%</div>
+                    <div>Tickets: {item.ticket_count}</div>
                   </div>
                 </div>
               </div>
@@ -1066,18 +1163,18 @@ export default function ModuleDetailPage() {
       return (
         <section className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-3xl font-bold text-slate-900">{projects.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Assigned deliveries</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.assignedTickets}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Open review items</div><div className="mt-2 text-3xl font-bold text-amber-600">{ownerSummary.flaggedApprovals}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Revenue tracked</div><div className="mt-2 text-3xl font-bold text-green-600">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Purchase orders</div><div className="mt-2 text-3xl font-bold text-slate-900">{vendorPurchaseOrders.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Delivery records</div><div className="mt-2 text-3xl font-bold text-blue-700">{vendorDeliveryRecords.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Open review items</div><div className="mt-2 text-3xl font-bold text-amber-600">{vendorComplianceDocuments.filter((item) => item.status !== "current").length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Submitted invoices</div><div className="mt-2 text-3xl font-bold text-green-600">{vendorInvoiceSubmissions.length}</div></div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Purchase order context</h2>
             <div className="mt-4 space-y-3">
-              {projects.slice(0, 5).map((project) => (
-                <div key={project.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
-                  <div className="font-semibold text-slate-900">{project.project_name}</div>
-                  <div>{project.project_number} • {project.status}</div>
+              {vendorPurchaseOrders.slice(0, 5).map((purchaseOrder) => (
+                <div key={purchaseOrder.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">{purchaseOrder.po_number}</div>
+                  <div>{purchaseOrder.vendor_name || "Unknown vendor"} • {purchaseOrder.status}</div>
                 </div>
               ))}
             </div>
@@ -1091,16 +1188,16 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Invoice submit queue</h2>
           <div className="mt-4 space-y-3">
-            {tickets.slice(0, 5).map((ticket) => (
-              <div key={ticket.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+            {vendorInvoiceSubmissions.slice(0, 5).map((invoice) => (
+              <div key={invoice.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="font-semibold text-slate-900">{ticket.ticket_number || "Untitled ticket"}</div>
-                    <div>{ticket.material || "Unknown material"} • {ticket.destination || "No destination"}</div>
+                    <div className="font-semibold text-slate-900">{invoice.invoice_number}</div>
+                    <div>{invoice.vendor_name || "Unknown vendor"} • {invoice.status}</div>
                   </div>
                   <div className="text-right">
-                    <div>Revenue: {formatCurrency(Number(ticket.revenue || 0))}</div>
-                    <div>Status: {ticket.status}</div>
+                    <div>Amount: {formatCurrency(Number(invoice.amount || 0))}</div>
+                    <div>Status: {invoice.status}</div>
                   </div>
                 </div>
               </div>
@@ -1115,13 +1212,13 @@ export default function ModuleDetailPage() {
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Delivery tracking</h2>
-            <p className="mt-3 text-sm text-slate-700">Assigned project tickets: {ownerSummary.assignedTickets}</p>
-            <p className="mt-1 text-sm text-slate-700">Unassigned deliveries: {ownerSummary.unassignedTickets.length}</p>
+            <p className="mt-3 text-sm text-slate-700">Delivery records tracked: {vendorDeliveryRecords.length}</p>
+            <p className="mt-1 text-sm text-slate-700">Delivered records: {vendorDeliveryRecords.filter((item) => item.status === "delivered").length}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Project drop-offs</h2>
-            <p className="mt-3 text-sm text-slate-700">Active projects receiving loads: {ownerSummary.activeProjects}</p>
-            <p className="mt-1 text-sm text-slate-700">Review backlog affecting delivery flow: {ownerSummary.flaggedApprovals}</p>
+            <p className="mt-3 text-sm text-slate-700">Projects receiving vendor deliveries: {new Set(vendorDeliveryRecords.map((item) => item.project_id).filter(Boolean)).size}</p>
+            <p className="mt-1 text-sm text-slate-700">Pending delivery records: {vendorDeliveryRecords.filter((item) => item.status !== "delivered").length}</p>
           </div>
         </section>
       );
@@ -1132,9 +1229,9 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Compliance document status</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Review backlog</div><div className="mt-2 text-2xl font-bold text-amber-600">{ownerSummary.flaggedApprovals}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Ticket records</div><div className="mt-2 text-2xl font-bold text-slate-900">{tickets.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-2xl font-bold text-blue-700">{projects.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Compliance docs</div><div className="mt-2 text-2xl font-bold text-slate-900">{vendorComplianceDocuments.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Current docs</div><div className="mt-2 text-2xl font-bold text-green-600">{vendorComplianceDocuments.filter((item) => item.status === "current").length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Needs follow-up</div><div className="mt-2 text-2xl font-bold text-amber-600">{vendorComplianceDocuments.filter((item) => item.status !== "current").length}</div></div>
           </div>
         </section>
       );
@@ -1144,16 +1241,18 @@ export default function ModuleDetailPage() {
       return (
         <section className="space-y-4">
           <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Employees</div><div className="mt-2 text-3xl font-bold text-slate-900">{employeeCount}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Employees</div><div className="mt-2 text-3xl font-bold text-slate-900">{payrollSummary?.employee_count ?? employeeCount}</div></div>
             <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active projects</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.activeProjects}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Assigned tickets</div><div className="mt-2 text-3xl font-bold text-green-600">{ownerSummary.assignedTickets}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Jobs tracked</div><div className="mt-2 text-3xl font-bold text-slate-900">{projects.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Timecards</div><div className="mt-2 text-3xl font-bold text-green-600">{payrollSummary?.timecard_count ?? payrollTimecards.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Payroll runs</div><div className="mt-2 text-3xl font-bold text-slate-900">{payrollSummary?.payroll_run_count ?? payrollRuns.length}</div></div>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Timecard roster</h2>
             <div className="mt-4 space-y-2 text-sm text-slate-700">
-              {employees.slice(0, 5).map((employee) => (
-                <div key={employee.id} className="rounded-md border border-slate-200 px-3 py-2">{employee.name || employee.unit_number || employee.id}</div>
+              {payrollTimecards.slice(0, 5).map((timecard) => (
+                <div key={timecard.id} className="rounded-md border border-slate-200 px-3 py-2">
+                  {timecard.work_description || timecard.employee_id} • {timecard.regular_hours}h regular / {timecard.overtime_hours}h OT
+                </div>
               ))}
             </div>
           </div>
@@ -1166,8 +1265,8 @@ export default function ModuleDetailPage() {
         <section className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Overtime pressure</h2>
-            <p className="mt-3 text-sm text-slate-700">Assigned tickets suggesting active field load: {ownerSummary.assignedTickets}</p>
-            <p className="mt-1 text-sm text-slate-700">At-risk jobs requiring closer labor review: {ownerSummary.topAtRiskProjects.length}</p>
+            <p className="mt-3 text-sm text-slate-700">Overtime hours tracked: {payrollSummary?.total_overtime_hours ?? "0.00"}</p>
+            <p className="mt-1 text-sm text-slate-700">Double-time hours tracked: {payrollSummary?.total_double_time_hours ?? "0.00"}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Workload context</h2>
@@ -1183,9 +1282,9 @@ export default function ModuleDetailPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Payroll run readiness</h2>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Employee roster</div><div className="mt-2 text-2xl font-bold text-slate-900">{employeeCount}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Tracked projects</div><div className="mt-2 text-2xl font-bold text-blue-700">{projects.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Revenue tracked</div><div className="mt-2 text-2xl font-bold text-green-600">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Employee roster</div><div className="mt-2 text-2xl font-bold text-slate-900">{payrollSummary?.employee_count ?? employeeCount}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Payroll runs</div><div className="mt-2 text-2xl font-bold text-blue-700">{payrollRuns.length}</div></div>
+            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Regular hours</div><div className="mt-2 text-2xl font-bold text-green-600">{payrollSummary?.total_regular_hours ?? "0.00"}</div></div>
           </div>
         </section>
       );
@@ -1218,6 +1317,16 @@ export default function ModuleDetailPage() {
     return null;
   };
 
+  if (!roleAccessResolved) {
+    return (
+      <AppShell titleKey="modules.title">
+        <div className="space-y-4 p-6">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">Loading module access...</div>
+        </div>
+      </AppShell>
+    );
+  }
+
   if (!detail) {
     return (
       <AppShell titleKey="modules.title">
@@ -1225,6 +1334,22 @@ export default function ModuleDetailPage() {
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
             <h2 className="text-lg font-semibold text-red-900">Module route not found</h2>
             <p className="mt-1 text-sm text-red-800">The requested role/module combination does not exist in the current module catalog.</p>
+          </div>
+          <Link href="/modules" className="inline-flex text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline">
+            Back to Modules
+          </Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!canAccessModuleRole(roleAccess, detail.roleKey)) {
+    return (
+      <AppShell titleKey="modules.title">
+        <div className="space-y-4 p-6">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+            <h2 className="text-lg font-semibold text-red-900">Module access denied</h2>
+            <p className="mt-1 text-sm text-red-800">This module role workspace is not available for your current account role.</p>
           </div>
           <Link href="/modules" className="inline-flex text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline">
             Back to Modules

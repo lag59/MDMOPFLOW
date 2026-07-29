@@ -289,6 +289,184 @@ class DailyFieldReport(Base):
     )
 
 
+class PayrollTimecard(Base):
+    __tablename__ = "payroll_timecards"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    employee_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("employees.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    work_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    regular_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    overtime_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    double_time_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    cost_code: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    work_description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class PayrollRun(Base):
+    __tablename__ = "payroll_runs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    run_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
+    employee_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_regular_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    total_overtime_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    total_double_time_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class EstimatorTakeoff(Base):
+    __tablename__ = "estimator_takeoffs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    takeoff_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    material_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(12, 2), default=0, nullable=False)
+    unit_of_measure: Mapped[str] = mapped_column(String(40), default="cy", nullable=False)
+    estimated_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimatorVersion(Base):
+    __tablename__ = "estimator_versions"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    version_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    estimated_revenue: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    estimated_cost: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimatorBidPipelineItem(Base):
+    __tablename__ = "estimator_bid_pipeline_items"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    bid_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    customer_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    stage: Mapped[str] = mapped_column(String(40), default="qualifying", nullable=False)
+    bid_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    probability_percent: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="open", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimatorWinLossRecord(Base):
+    __tablename__ = "estimator_win_loss_records"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    bid_pipeline_item_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("estimator_bid_pipeline_items.id"), index=True, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(10), default="pending", nullable=False)
+    final_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    decision_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class VendorPurchaseOrder(Base):
+    __tablename__ = "vendor_purchase_orders"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    po_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    vendor_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="open", nullable=False)
+    total_amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class VendorInvoiceSubmission(Base):
+    __tablename__ = "vendor_invoice_submissions"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    purchase_order_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("vendor_purchase_orders.id"), index=True, nullable=True)
+    invoice_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    vendor_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="submitted", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class VendorDeliveryRecord(Base):
+    __tablename__ = "vendor_delivery_records"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    purchase_order_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("vendor_purchase_orders.id"), index=True, nullable=True)
+    ticket_number: Mapped[str] = mapped_column(String(120), default="", nullable=False, index=True)
+    vendor_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    destination: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class VendorComplianceDocument(Base):
+    __tablename__ = "vendor_compliance_documents"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    document_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    vendor_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="current", nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class IntakeItem(Base):
     __tablename__ = "intake_items"
 

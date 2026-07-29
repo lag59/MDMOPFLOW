@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildModuleDetailHref, getModuleDetail, toModuleSlug } from "./modules";
+import { buildModuleDetailHref, getModuleDetail, getVisibleWorkspacesForRole, toModuleSlug } from "./modules";
 
 describe("module metadata helpers", () => {
   it("slugifies labels and builds role-scoped module detail links", () => {
@@ -117,5 +117,16 @@ describe("module metadata helpers", () => {
   it("returns null for unknown role or module slugs", () => {
     expect(getModuleDetail("unknown", "dispatch-board")).toBeNull();
     expect(getModuleDetail("dispatcher", "not-a-real-module")).toBeNull();
+  });
+
+  it("filters visible module workspaces by user role", () => {
+    const estimatorVisible = getVisibleWorkspacesForRole("estimator", false);
+    expect(estimatorVisible).toHaveLength(1);
+    expect(estimatorVisible[0].key).toBe("estimator");
+  });
+
+  it("returns full workspace catalog for super admins", () => {
+    const allVisible = getVisibleWorkspacesForRole("project_manager", true);
+    expect(allVisible.length).toBeGreaterThan(1);
   });
 });
