@@ -15,6 +15,22 @@ AI-first bilingual construction operating system starter.
 docker compose up --build
 ```
 
+## Container Security: Postgres Image Patching
+
+The local DB service uses an explicit image tag in [docker-compose.yml](docker-compose.yml):
+
+- Default: `postgres:16-alpine3.22`
+- Override via env var: `POSTGRES_IMAGE`
+
+When Docker Scout reports CVEs for the Postgres base image, you can patch quickly by bumping the tag without code changes:
+
+```bash
+POSTGRES_IMAGE=postgres:16-alpine3.22 docker compose pull db
+POSTGRES_IMAGE=postgres:16-alpine3.22 docker compose up -d --build
+```
+
+If a newer patched tag is published, replace `16-alpine3.22` with that tag and re-run the commands.
+
 ## Railway Deployment (Monorepo)
 
 This repository contains three deployable services with different root folders. If Railway is pointed at the wrong root directory, it will build the wrong image and fail health checks.
