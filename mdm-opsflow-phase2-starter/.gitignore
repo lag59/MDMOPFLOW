@@ -5,3 +5,12 @@ node_modules/
 .next/
 .dart_tool/
 build/
+backend/mdm_opsflow.db
+backend/mdm_opsflow_fresh.db
+backend/test_opsflow.db
+backend/storage/
+backend/tmp_check_super_admin.py
+frontend/test_opsflow.db
+frontend/test-fixtures/
+test_opsflow.db
+docs/build-execution-plan.md
