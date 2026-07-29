@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as roleAccess from "@/lib/roleAccess";
+import * as ticketsLib from "@/lib/tickets";
 
 import ModuleDetailPage from "./page";
 
@@ -43,6 +44,31 @@ vi.mock("@/lib/roleAccess", () => ({
 }));
 
 vi.mock("@/lib/tickets", () => ({
+  createTicket: vi.fn(async () => ({
+    id: "ticket-created",
+    tenant_id: "tenant-1",
+    intake_item_id: null,
+    project_id: "project-1",
+    ticket_number: "BRG-100001",
+    truck: "",
+    driver: "",
+    material: "Bridge Initiative",
+    origin: "Bridge Module",
+    destination: "Operations Queue",
+    load_time: null,
+    unload_time: null,
+    miles: null,
+    weight: null,
+    volume_yards: null,
+    tons: null,
+    fuel_cost: null,
+    revenue: null,
+    status: "draft",
+    notes: "Bridge action ticket",
+    created_by: "user-1",
+    created_at: "2026-07-28T00:00:00Z",
+    updated_at: "2026-07-28T00:00:00Z",
+  })),
   listTickets: vi.fn(async () => [
     {
       id: "ticket-1",
@@ -374,6 +400,75 @@ describe("Company owner module detail page", () => {
     expect(saved).toContain("Q3 Portfolio Oversight");
     expect(saved).toContain("18.0");
     expect(screen.getByText("Bridge workspace saved.")).toBeInTheDocument();
+  });
+
+  it("runs AI assist and creates a bridge action ticket for bridge modules", async () => {
+    mockParams.role = "company_owner";
+    mockParams.module = "portfolio";
+
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/projects")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "project-1", project_name: "North Yard", project_number: "P-100", status: "active" },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/api/projects/project-1/profitability")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              project_id: "project-1",
+              project_name: "North Yard",
+              status: "active",
+              actual_revenue: 250000,
+              actual_cost: 210000,
+              gross_profit: 40000,
+              profit_margin: 16,
+              cost_overrun: false,
+              revenue_shortfall: false,
+              ticket_count: 7,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/ai/workflow/route")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ routed: true, message: "Bridge action routed to portfolio review." }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<ModuleDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Bridge workspace form")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run AI Assist" }));
+    await waitFor(() => {
+      expect(screen.getByText("AI: Bridge action routed to portfolio review.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Action Ticket" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bridge action ticket created/i)).toBeInTheDocument();
+    });
+    expect(vi.mocked(ticketsLib.createTicket)).toHaveBeenCalled();
   });
 
   it("renders live executive dashboard signals and actions", async () => {

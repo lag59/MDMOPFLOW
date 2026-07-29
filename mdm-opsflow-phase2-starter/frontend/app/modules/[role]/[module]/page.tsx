@@ -13,7 +13,7 @@ import { getPayrollSummary, listPayrollRuns, listPayrollTimecards, type PayrollR
 import { fetchReplayTokenStateAlerts, type ReplayTokenStateAlerts } from "@/lib/replayTokens";
 import { getApiBaseUrl } from "@/lib/i18n";
 import { canAccessModuleRole, getCurrentRoleAccess, type RoleAccessContext } from "@/lib/roleAccess";
-import { listMaterialDensityPresets, listTickets, type MaterialDensityPreset, type Ticket } from "@/lib/tickets";
+import { createTicket, listMaterialDensityPresets, listTickets, type MaterialDensityPreset, type Ticket } from "@/lib/tickets";
 import { listVendorComplianceDocuments, listVendorDeliveryRecords, listVendorInvoiceSubmissions, listVendorPurchaseOrders, type VendorComplianceDocument, type VendorDeliveryRecord, type VendorInvoiceSubmission, type VendorPurchaseOrder } from "@/lib/vendor";
 
 type Project = {
@@ -177,6 +177,9 @@ export default function ModuleDetailPage() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [bridgeDraft, setBridgeDraft] = useState<BridgeWorkspaceDraft>(DEFAULT_BRIDGE_DRAFT);
   const [bridgeDraftMessage, setBridgeDraftMessage] = useState("");
+  const [bridgeAiMessage, setBridgeAiMessage] = useState("");
+  const [bridgeActionMessage, setBridgeActionMessage] = useState("");
+  const [bridgeActionSaving, setBridgeActionSaving] = useState(false);
   const [estimateProjectId, setEstimateProjectId] = useState("");
   const [estimateTicketId, setEstimateTicketId] = useState("");
   const [estimateName, setEstimateName] = useState("Field Production Estimate");
@@ -238,6 +241,84 @@ export default function ModuleDetailPage() {
     window.localStorage.removeItem(bridgeStorageKey);
     setBridgeDraft(DEFAULT_BRIDGE_DRAFT);
     setBridgeDraftMessage("Bridge workspace reset.");
+  };
+
+  const runBridgeAiAssist = async () => {
+    setBridgeAiMessage("");
+    const token = getAccessToken();
+    if (!token) {
+      setBridgeAiMessage("Login required.");
+      return;
+    }
+
+    const note = [
+      `Bridge workspace: ${detail?.moduleLabel || "module"}`,
+      `Initiative: ${bridgeDraft.initiative || "n/a"}`,
+      `Scope: ${bridgeDraft.portfolioView || "n/a"}`,
+      `Risk: ${bridgeDraft.riskLevel}`,
+      `Margin target: ${bridgeDraft.marginTarget || "n/a"}`,
+      `Owner: ${bridgeDraft.owner || "n/a"}`,
+      `Due: ${bridgeDraft.dueDate || "n/a"}`,
+      `Notes: ${bridgeDraft.notes || "n/a"}`,
+    ].join("\n");
+
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/ai/workflow/route`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": getTenantId(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          note,
+          company_name: detail?.moduleLabel || "Bridge Workspace",
+          reporting_supervisor: bridgeDraft.owner || "Operations",
+          material_name: bridgeDraft.portfolioView || "Bridge",
+          project_id: bridgeDraft.linkedProjectId || null,
+        }),
+      });
+
+      if (!response.ok) {
+        setBridgeAiMessage("AI assist could not be completed.");
+        return;
+      }
+
+      const data = (await response.json()) as { routed?: boolean; message?: string };
+      setBridgeAiMessage(data.message || "Bridge action routed for follow-up.");
+    } catch {
+      setBridgeAiMessage("AI assist could not be completed.");
+    }
+  };
+
+  const createBridgeActionTicket = async () => {
+    setBridgeActionMessage("");
+    setBridgeActionSaving(true);
+
+    try {
+      const created = await createTicket({
+        project_id: bridgeDraft.linkedProjectId || null,
+        ticket_number: `BRG-${Date.now().toString().slice(-6)}`,
+        material: bridgeDraft.initiative || detail?.moduleLabel || "Bridge Initiative",
+        origin: "Bridge Module",
+        destination: "Operations Queue",
+        status: "draft",
+        notes: [
+          `Module: ${detail?.moduleLabel || "Bridge"}`,
+          `Initiative: ${bridgeDraft.initiative || "n/a"}`,
+          `Scope: ${bridgeDraft.portfolioView || "n/a"}`,
+          `Risk: ${bridgeDraft.riskLevel}`,
+          `Margin target: ${bridgeDraft.marginTarget || "n/a"}`,
+          `Owner: ${bridgeDraft.owner || "n/a"}`,
+          `Due: ${bridgeDraft.dueDate || "n/a"}`,
+        ].join("\n"),
+      });
+      setBridgeActionMessage(`Bridge action ticket created: ${created.ticket_number || created.id}`);
+    } catch {
+      setBridgeActionMessage("Unable to create bridge action ticket right now.");
+    } finally {
+      setBridgeActionSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -1936,8 +2017,25 @@ export default function ModuleDetailPage() {
                 >
                   Reset
                 </button>
+                <button
+                  type="button"
+                  onClick={runBridgeAiAssist}
+                  className="inline-flex items-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
+                >
+                  Run AI Assist
+                </button>
+                <button
+                  type="button"
+                  onClick={createBridgeActionTicket}
+                  disabled={bridgeActionSaving}
+                  className="inline-flex items-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                >
+                  {bridgeActionSaving ? "Creating..." : "Create Action Ticket"}
+                </button>
                 {bridgeDraftMessage ? <span className="text-sm text-amber-900">{bridgeDraftMessage}</span> : null}
               </div>
+              {bridgeAiMessage ? <p className="mt-3 text-sm text-indigo-800">AI: {bridgeAiMessage}</p> : null}
+              {bridgeActionMessage ? <p className="mt-2 text-sm text-emerald-800">{bridgeActionMessage}</p> : null}
             </div>
           ) : null}
 
