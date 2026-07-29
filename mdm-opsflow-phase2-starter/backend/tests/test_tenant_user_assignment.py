@@ -3,6 +3,39 @@ from fastapi.testclient import TestClient
 from .helpers import complete_onboarding, register_user
 
 
+def test_first_credentialed_user_becomes_owner_and_can_manage_employee_access(client: TestClient):
+    founder = register_user(client, "founder-admin@acme.com", "Pass12345!", "Founder Admin")
+    founder_token = founder["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, founder_token, "Acme Admin Rule", "Admin Rule Project")
+    tenant_id = onboarding["tenant_id"]
+
+    members = client.get(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {founder_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert members.status_code == 200
+    founder_row = next((item for item in members.json() if item["email"] == founder["email"]), None)
+    assert founder_row is not None
+    assert founder_row["role_name"] == "owner"
+
+    employee = register_user(client, "employee-access@acme.com", "Pass12345!", "Employee Access")
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {founder_token}", "X-Tenant-ID": tenant_id},
+        json={"email": employee["email"], "role_name": "project_manager"},
+    )
+    assert assign.status_code == 201
+    employee_user_id = assign.json()["user_id"]
+
+    toggle = client.put(
+        f"/api/tenant-users/{employee_user_id}/permissions",
+        headers={"Authorization": f"Bearer {founder_token}", "X-Tenant-ID": tenant_id},
+        json={"overrides": [{"permission": "billing_read", "enabled": True}]},
+    )
+    assert toggle.status_code == 200
+    assert "billing_read" in toggle.json()["effective_permissions"]
+
+
 def test_tenant_admin_can_assign_registered_user_to_tenant(client: TestClient):
     owner = register_user(client, "owner@acme.com", "Pass12345!", "Owner")
     owner_token = owner["tokens"]["access_token"]

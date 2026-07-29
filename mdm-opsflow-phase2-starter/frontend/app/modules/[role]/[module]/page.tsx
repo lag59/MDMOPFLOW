@@ -78,6 +78,28 @@ type ProjectProfitability = {
   ticket_count: number;
 };
 
+type BridgeWorkspaceDraft = {
+  initiative: string;
+  portfolioView: string;
+  riskLevel: "low" | "medium" | "high";
+  marginTarget: string;
+  owner: string;
+  dueDate: string;
+  linkedProjectId: string;
+  notes: string;
+};
+
+const DEFAULT_BRIDGE_DRAFT: BridgeWorkspaceDraft = {
+  initiative: "",
+  portfolioView: "",
+  riskLevel: "medium",
+  marginTarget: "",
+  owner: "",
+  dueDate: "",
+  linkedProjectId: "",
+  notes: "",
+};
+
 export default function ModuleDetailPage() {
   const params = useParams();
   const role = String(params?.role || "");
@@ -114,6 +136,59 @@ export default function ModuleDetailPage() {
   const [roleAccess, setRoleAccess] = useState<RoleAccessContext | null>(null);
   const [roleAccessResolved, setRoleAccessResolved] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [bridgeDraft, setBridgeDraft] = useState<BridgeWorkspaceDraft>(DEFAULT_BRIDGE_DRAFT);
+  const [bridgeDraftMessage, setBridgeDraftMessage] = useState("");
+
+  const bridgeStorageKey = useMemo(() => {
+    if (!detail || detail.route.status !== "bridge") {
+      return null;
+    }
+    const tenantId = getTenantId() || "no-tenant";
+    return `opsflow_bridge_${tenantId}_${detail.roleKey}_${detail.moduleSlug}`;
+  }, [detail]);
+
+  useEffect(() => {
+    if (!bridgeStorageKey || typeof window === "undefined") {
+      setBridgeDraft(DEFAULT_BRIDGE_DRAFT);
+      setBridgeDraftMessage("");
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(bridgeStorageKey);
+      if (!raw) {
+        setBridgeDraft(DEFAULT_BRIDGE_DRAFT);
+        setBridgeDraftMessage("No saved bridge draft yet.");
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<BridgeWorkspaceDraft>;
+      setBridgeDraft({ ...DEFAULT_BRIDGE_DRAFT, ...parsed });
+      setBridgeDraftMessage("Bridge draft loaded.");
+    } catch {
+      setBridgeDraft(DEFAULT_BRIDGE_DRAFT);
+      setBridgeDraftMessage("Saved bridge draft could not be read. Starting fresh.");
+    }
+  }, [bridgeStorageKey]);
+
+  const saveBridgeDraft = () => {
+    if (!bridgeStorageKey || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(bridgeStorageKey, JSON.stringify(bridgeDraft));
+    setBridgeDraftMessage("Bridge workspace saved.");
+  };
+
+  const resetBridgeDraft = () => {
+    if (!bridgeStorageKey || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.removeItem(bridgeStorageKey);
+    setBridgeDraft(DEFAULT_BRIDGE_DRAFT);
+    setBridgeDraftMessage("Bridge workspace reset.");
+  };
 
   useEffect(() => {
     const resolveRoleAccess = async () => {
@@ -1383,6 +1458,123 @@ export default function ModuleDetailPage() {
           <h1 className="text-3xl font-bold text-slate-900">{detail.moduleLabel}</h1>
           <p className="mt-2 text-sm text-slate-600">{detail.roleSummary}</p>
           <p className="mt-2 text-sm text-slate-700">{detail.route.helperText}</p>
+
+          {detail.route.status === "bridge" ? (
+            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-900">Bridge workspace form</h2>
+              <p className="mt-2 text-sm text-amber-900">
+                Capture ownership, risk, margin, and next actions here while this module is bridged to core workflows.
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Initiative
+                  <input
+                    value={bridgeDraft.initiative}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, initiative: event.target.value }))}
+                    placeholder={`${detail.moduleLabel} action plan`}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Portfolio view / scope
+                  <input
+                    value={bridgeDraft.portfolioView}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, portfolioView: event.target.value }))}
+                    placeholder="Example: Q3 heavy civil portfolio"
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Risk level
+                  <select
+                    value={bridgeDraft.riskLevel}
+                    onChange={(event) =>
+                      setBridgeDraft((prev) => ({
+                        ...prev,
+                        riskLevel: event.target.value as BridgeWorkspaceDraft["riskLevel"],
+                      }))
+                    }
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Margin target (%)
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={bridgeDraft.marginTarget}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, marginTarget: event.target.value }))}
+                    placeholder="12.5"
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Action owner
+                  <input
+                    value={bridgeDraft.owner}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, owner: event.target.value }))}
+                    placeholder="Name or email"
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Due date
+                  <input
+                    type="date"
+                    value={bridgeDraft.dueDate}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+                <label className="text-sm font-medium text-slate-700 md:col-span-2">
+                  Linked project
+                  <select
+                    value={bridgeDraft.linkedProjectId}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, linkedProjectId: event.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  >
+                    <option value="">Select project context</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.project_name} ({project.project_number})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm font-medium text-slate-700 md:col-span-2">
+                  Notes / decisions
+                  <textarea
+                    value={bridgeDraft.notes}
+                    onChange={(event) => setBridgeDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                    placeholder="Track portfolio visibility decisions, risk actions, approvals, and follow-ups."
+                    className="mt-1 min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveBridgeDraft}
+                  className="inline-flex items-center rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800"
+                >
+                  Save Bridge Workspace
+                </button>
+                <button
+                  type="button"
+                  onClick={resetBridgeDraft}
+                  className="inline-flex items-center rounded-lg border border-amber-300 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Reset
+                </button>
+                {bridgeDraftMessage ? <span className="text-sm text-amber-900">{bridgeDraftMessage}</span> : null}
+              </div>
+            </div>
+          ) : null}
 
           {detail.route.focusAreas?.length ? (
             <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">

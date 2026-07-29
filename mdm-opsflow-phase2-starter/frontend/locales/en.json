@@ -40,9 +40,9 @@
   "onboarding": {
     "title": "Company onboarding",
     "subtitle": "Create company, choose language, modules, team, and first project.",
-    "wizardSubtitle": "Complete onboarding in guided steps with validation.",
+    "wizardSubtitle": "Complete onboarding in guided steps with validation. The first credentialed user becomes the company admin.",
     "stepLabel": "Step",
-    "createAccountDone": "I have created my account and I am ready to continue.",
+    "createAccountDone": "I have created the first company account and I understand this account is the initial admin who assigns employee roles and access.",
     "companyName": "Company name",
     "companyType": "Company type",
     "language": "Default language",

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as roleAccess from "@/lib/roleAccess";
@@ -280,8 +280,71 @@ vi.mock("@/lib/estimator", () => ({
 describe("Company owner module detail page", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
     mockParams.role = "company_owner";
     mockParams.module = "executive-dashboard";
+  });
+
+  it("renders an editable bridge workspace form for bridge modules", async () => {
+    mockParams.role = "company_owner";
+    mockParams.module = "portfolio";
+
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/projects")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "project-1", project_name: "North Yard", project_number: "P-100", status: "active" },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/api/projects/project-1/profitability")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              project_id: "project-1",
+              project_name: "North Yard",
+              status: "active",
+              actual_revenue: 250000,
+              actual_cost: 210000,
+              gross_profit: 40000,
+              profit_margin: 16,
+              cost_overrun: false,
+              revenue_shortfall: false,
+              ticket_count: 7,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<ModuleDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Bridge workspace form")).toBeInTheDocument();
+      expect(screen.getByText("Save Bridge Workspace")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Initiative"), {
+      target: { value: "Q3 Portfolio Oversight" },
+    });
+    fireEvent.change(screen.getByLabelText("Margin target (%)"), {
+      target: { value: "18.0" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Bridge Workspace" }));
+
+    const saved = window.localStorage.getItem("opsflow_bridge_tenant-1_company_owner_portfolio");
+    expect(saved).toContain("Q3 Portfolio Oversight");
+    expect(saved).toContain("18.0");
+    expect(screen.getByText("Bridge workspace saved.")).toBeInTheDocument();
   });
 
   it("renders live executive dashboard signals and actions", async () => {

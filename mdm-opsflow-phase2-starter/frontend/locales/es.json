@@ -40,9 +40,9 @@
   "onboarding": {
     "title": "Implementacion de empresa",
     "subtitle": "Crea empresa, idioma, modulos, equipo y primer proyecto.",
-    "wizardSubtitle": "Completa la implementacion en pasos guiados con validaciones.",
+    "wizardSubtitle": "Completa la implementacion en pasos guiados con validaciones. La primera cuenta con credenciales sera la administradora de la empresa.",
     "stepLabel": "Paso",
-    "createAccountDone": "Ya cree mi cuenta y estoy lista para continuar.",
+    "createAccountDone": "Ya cree la primera cuenta de la empresa y entiendo que esta cuenta sera la administradora inicial para asignar roles y accesos a empleados.",
     "companyName": "Nombre de empresa",
     "companyType": "Tipo de empresa",
     "language": "Idioma predeterminado",

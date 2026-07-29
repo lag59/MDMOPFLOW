@@ -41,7 +41,8 @@ def company_types():
     operation_id="onboarding_complete",
     summary="Complete onboarding",
     description=(
-        "Creates tenant, owner role, owner membership, and first project for the authenticated user. "
+        "Creates tenant, owner role, owner membership (company admin), and first project for the "
+        "authenticated user. "
         "Can only be completed once per user."
     ),
     responses={
