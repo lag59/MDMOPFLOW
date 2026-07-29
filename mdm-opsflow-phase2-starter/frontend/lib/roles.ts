@@ -95,7 +95,7 @@ export const ROLE_WORKSPACES: RoleWorkspace[] = [
 ];
 
 export function mapBackendRole(platformRole: string, membershipRoleName: string | undefined): RoleKey {
-  if (platformRole === "platform_super_admin") {
+  if ((platformRole || "").toLowerCase() === "platform_super_admin") {
     return "administrator";
   }
 

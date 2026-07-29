@@ -33,9 +33,10 @@ export async function getCurrentRoleAccess(): Promise<RoleAccessContext | null> 
   }
 
   const me = (await response.json()) as MeResponse;
+  const normalizedPlatformRole = (me.platform_role || "").toLowerCase();
   return {
     roleKey: mapBackendRole(me.platform_role, me.memberships?.[0]?.role_name),
-    isSuperAdmin: me.platform_role === "platform_super_admin",
+    isSuperAdmin: normalizedPlatformRole === "platform_super_admin",
   };
 }
 
