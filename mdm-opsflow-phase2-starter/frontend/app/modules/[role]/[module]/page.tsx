@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getCustomerPortalBillingStatus, getCustomerPortalDocumentStatus, listCustomerPortalProjects, type CustomerPortalBillingStatus, type CustomerPortalDocumentStatus, type CustomerPortalProjectSummary } from "@/lib/customerPortal";
-import { getEstimatorSummary, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
+import { createEstimatorTakeoff, createEstimatorVersion, getEstimatorSummary, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getModuleDetail } from "@/lib/modules";
 import { getPayrollSummary, listPayrollRuns, listPayrollTimecards, type PayrollRun, type PayrollSummary, type PayrollTimecard } from "@/lib/payroll";
@@ -89,6 +89,30 @@ type BridgeWorkspaceDraft = {
   notes: string;
 };
 
+type EstimateCrewLine = {
+  id: string;
+  crewType: string;
+  headcount: number;
+  hourlyRate: number;
+  hours: number;
+};
+
+type EstimateMachineLine = {
+  id: string;
+  machineType: string;
+  count: number;
+  hourlyRate: number;
+  hours: number;
+};
+
+type EstimateMaterialLine = {
+  id: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+};
+
 const DEFAULT_BRIDGE_DRAFT: BridgeWorkspaceDraft = {
   initiative: "",
   portfolioView: "",
@@ -99,6 +123,21 @@ const DEFAULT_BRIDGE_DRAFT: BridgeWorkspaceDraft = {
   linkedProjectId: "",
   notes: "",
 };
+
+const DEFAULT_CREW_LINES: EstimateCrewLine[] = [
+  { id: "crew-1", crewType: "Foreman", headcount: 1, hourlyRate: 68, hours: 8 },
+  { id: "crew-2", crewType: "Operator", headcount: 2, hourlyRate: 52, hours: 8 },
+  { id: "crew-3", crewType: "Laborer", headcount: 2, hourlyRate: 39, hours: 8 },
+];
+
+const DEFAULT_MACHINE_LINES: EstimateMachineLine[] = [
+  { id: "machine-1", machineType: "Excavator", count: 1, hourlyRate: 165, hours: 8 },
+  { id: "machine-2", machineType: "Dump Truck", count: 2, hourlyRate: 125, hours: 8 },
+];
+
+const DEFAULT_MATERIAL_LINES: EstimateMaterialLine[] = [
+  { id: "material-1", materialName: "Aggregate Base", quantity: 100, unit: "tons", unitCost: 28 },
+];
 
 export default function ModuleDetailPage() {
   const params = useParams();
@@ -138,6 +177,17 @@ export default function ModuleDetailPage() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [bridgeDraft, setBridgeDraft] = useState<BridgeWorkspaceDraft>(DEFAULT_BRIDGE_DRAFT);
   const [bridgeDraftMessage, setBridgeDraftMessage] = useState("");
+  const [estimateProjectId, setEstimateProjectId] = useState("");
+  const [estimateTicketId, setEstimateTicketId] = useState("");
+  const [estimateName, setEstimateName] = useState("Field Production Estimate");
+  const [estimateScope, setEstimateScope] = useState("");
+  const [contingencyPercent, setContingencyPercent] = useState(8);
+  const [markupPercent, setMarkupPercent] = useState(12);
+  const [crewLines, setCrewLines] = useState<EstimateCrewLine[]>(DEFAULT_CREW_LINES);
+  const [machineLines, setMachineLines] = useState<EstimateMachineLine[]>(DEFAULT_MACHINE_LINES);
+  const [materialLines, setMaterialLines] = useState<EstimateMaterialLine[]>(DEFAULT_MATERIAL_LINES);
+  const [estimateMessage, setEstimateMessage] = useState("");
+  const [estimateSaving, setEstimateSaving] = useState(false);
 
   const bridgeStorageKey = useMemo(() => {
     if (!detail || detail.route.status !== "bridge") {
@@ -363,6 +413,164 @@ export default function ModuleDetailPage() {
       unassignedTickets: tickets.filter((ticket) => !ticket.project_id).slice(0, 5),
     };
   }, [alerts, profitability, projects, tickets]);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === estimateProjectId) || null,
+    [projects, estimateProjectId]
+  );
+
+  const selectedTicket = useMemo(
+    () => tickets.find((ticket) => ticket.id === estimateTicketId) || null,
+    [tickets, estimateTicketId]
+  );
+
+  const selectedProjectProfitability = useMemo(() => {
+    if (!selectedProject) {
+      return null;
+    }
+    return profitability.get(selectedProject.id) || null;
+  }, [profitability, selectedProject]);
+
+  const crewCost = useMemo(
+    () => crewLines.reduce((sum, line) => sum + line.headcount * line.hourlyRate * line.hours, 0),
+    [crewLines]
+  );
+
+  const machineCost = useMemo(
+    () => machineLines.reduce((sum, line) => sum + line.count * line.hourlyRate * line.hours, 0),
+    [machineLines]
+  );
+
+  const materialCost = useMemo(
+    () => materialLines.reduce((sum, line) => sum + line.quantity * line.unitCost, 0),
+    [materialLines]
+  );
+
+  const estimateBaseCost = crewCost + machineCost + materialCost;
+  const estimateContingency = estimateBaseCost * (contingencyPercent / 100);
+  const estimateSubtotal = estimateBaseCost + estimateContingency;
+  const estimateMarkup = estimateSubtotal * (markupPercent / 100);
+  const estimateGrandTotal = estimateSubtotal + estimateMarkup;
+
+  const recommendedCrewHeadcount = useMemo(() => {
+    const projectTicketCount = selectedProjectProfitability?.ticket_count || 0;
+    const ticketTons = Number(selectedTicket?.tons || 0);
+    return Math.max(3, Math.ceil((projectTicketCount + ticketTons / 20) / 2));
+  }, [selectedProjectProfitability, selectedTicket]);
+
+  const recommendedMachineCount = useMemo(() => {
+    const ticketMiles = Number(selectedTicket?.miles || 0);
+    const projectRiskMultiplier = selectedProjectProfitability?.cost_overrun ? 1 : 0;
+    return Math.max(1, Math.ceil(ticketMiles / 25) + projectRiskMultiplier);
+  }, [selectedProjectProfitability, selectedTicket]);
+
+  const updateCrewLine = (id: string, patch: Partial<EstimateCrewLine>) => {
+    setCrewLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateMachineLine = (id: string, patch: Partial<EstimateMachineLine>) => {
+    setMachineLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const updateMaterialLine = (id: string, patch: Partial<EstimateMaterialLine>) => {
+    setMaterialLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
+  };
+
+  const applyTicketAndProjectContext = () => {
+    if (!selectedTicket) {
+      return;
+    }
+
+    const materialName = selectedTicket.material || materialLines[0]?.materialName || "Aggregate Base";
+    const ticketTons = Number(selectedTicket.tons || 0);
+    const ticketYards = Number(selectedTicket.volume_yards || 0);
+    const quantity = ticketTons > 0 ? ticketTons : ticketYards > 0 ? ticketYards : materialLines[0]?.quantity || 100;
+    const unit = ticketTons > 0 ? "tons" : "cy";
+    const preset = materialPresets.find((item) => item.material_name.toLowerCase() === materialName.toLowerCase());
+    const densityHint = preset ? Number(preset.density_tons_per_cubic_yard) : null;
+    const riskNote = selectedProjectProfitability?.cost_overrun
+      ? "Cost overrun risk currently flagged on this project."
+      : "No current cost overrun flag on selected project.";
+
+    setMaterialLines((prev) => {
+      const first = prev[0] || DEFAULT_MATERIAL_LINES[0];
+      return [
+        {
+          ...first,
+          materialName,
+          quantity,
+          unit,
+          unitCost: first.unitCost || 28,
+        },
+        ...prev.slice(1),
+      ];
+    });
+
+    setEstimateScope((prev) => {
+      const contextBits = [
+        selectedProject ? `${selectedProject.project_name} (${selectedProject.project_number})` : "",
+        selectedTicket.ticket_number ? `Ticket ${selectedTicket.ticket_number}` : "",
+        densityHint ? `Density preset ${densityHint.toFixed(2)} tons/cy` : "",
+        riskNote,
+      ].filter(Boolean);
+      return prev || contextBits.join(". ");
+    });
+
+    setEstimateMessage("Applied file and project context to the estimate form.");
+  };
+
+  const saveEstimate = async () => {
+    if (!estimateName.trim()) {
+      setEstimateMessage("Estimate name is required.");
+      return;
+    }
+
+    const primaryMaterial = materialLines[0] || DEFAULT_MATERIAL_LINES[0];
+    const takeoffNumber = `TK-${Date.now().toString().slice(-6)}`;
+    const scopeNotes = [
+      `Estimate: ${estimateName}`,
+      estimateScope,
+      `Crew recommendation: ${recommendedCrewHeadcount}`,
+      `Machine recommendation: ${recommendedMachineCount}`,
+      `Contingency %: ${contingencyPercent}`,
+      `Markup %: ${markupPercent}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    setEstimateSaving(true);
+    setEstimateMessage("");
+    try {
+      const takeoff = await createEstimatorTakeoff({
+        project_id: estimateProjectId || null,
+        takeoff_number: takeoffNumber,
+        material_name: primaryMaterial.materialName,
+        quantity: primaryMaterial.quantity.toString(),
+        unit_of_measure: primaryMaterial.unit,
+        estimated_cost: estimateGrandTotal.toFixed(2),
+        status: "draft",
+        notes: scopeNotes,
+      });
+
+      await createEstimatorVersion({
+        project_id: estimateProjectId || null,
+        version_name: `${estimateName} v1`,
+        revision_number: 1,
+        estimated_revenue: estimateGrandTotal.toFixed(2),
+        estimated_cost: estimateGrandTotal.toFixed(2),
+        status: "draft",
+        notes: `Generated from ${takeoff.takeoff_number}`,
+      });
+
+      setEstimatorTakeoffs((prev) => [takeoff, ...prev]);
+      setEstimateMessage("Estimate saved to Takeoffs and Estimate Versions.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save estimate.";
+      setEstimateMessage(message);
+    } finally {
+      setEstimateSaving(false);
+    }
+  };
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("en-US", {
@@ -1082,6 +1290,163 @@ export default function ModuleDetailPage() {
               {estimatorTakeoffs.slice(0, 5).map((takeoff) => (
                 <div key={takeoff.id} className="rounded-md border border-slate-200 px-3 py-2">{takeoff.takeoff_number} • {takeoff.material_name || "Unknown material"} • {takeoff.quantity} {takeoff.unit_of_measure}</div>
               ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-900">Editable estimate worksheet</h2>
+            <p className="mt-2 text-sm text-blue-900">
+              Build a working estimate using project context, extracted ticket data, crew mix, equipment, and materials.
+            </p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">
+                Estimate name
+                <input
+                  value={estimateName}
+                  onChange={(event) => setEstimateName(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Project context
+                <select
+                  value={estimateProjectId}
+                  onChange={(event) => setEstimateProjectId(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.project_name} ({project.project_number})</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                File/ticket context
+                <select
+                  value={estimateTicketId}
+                  onChange={(event) => setEstimateTicketId(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select ticket/extracted file</option>
+                  {tickets.map((ticket) => (
+                    <option key={ticket.id} value={ticket.id}>{ticket.ticket_number || ticket.id} • {ticket.material || "Material n/a"}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Scope description
+                <input
+                  value={estimateScope}
+                  onChange={(event) => setEstimateScope(event.target.value)}
+                  placeholder="Describe scope and estimating assumptions"
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Contingency (%)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={contingencyPercent}
+                  onChange={(event) => setContingencyPercent(Number(event.target.value || 0))}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Markup (%)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={markupPercent}
+                  onChange={(event) => setMarkupPercent(Number(event.target.value || 0))}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={applyTicketAndProjectContext}
+                className="inline-flex rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                Apply File + Project Context
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Crew</h3>
+                <div className="mt-2 space-y-2">
+                  {crewLines.map((line) => (
+                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
+                      <input value={line.crewType} onChange={(event) => updateCrewLine(line.id, { crewType: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.headcount} onChange={(event) => updateCrewLine(line.id, { headcount: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.hourlyRate} onChange={(event) => updateCrewLine(line.id, { hourlyRate: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.hours} onChange={(event) => updateCrewLine(line.id, { hours: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-600">Recommended crew headcount: {recommendedCrewHeadcount}</p>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Machines</h3>
+                <div className="mt-2 space-y-2">
+                  {machineLines.map((line) => (
+                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
+                      <input value={line.machineType} onChange={(event) => updateMachineLine(line.id, { machineType: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.count} onChange={(event) => updateMachineLine(line.id, { count: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.hourlyRate} onChange={(event) => updateMachineLine(line.id, { hourlyRate: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.hours} onChange={(event) => updateMachineLine(line.id, { hours: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-600">Recommended machine count: {recommendedMachineCount}</p>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Materials</h3>
+                <div className="mt-2 space-y-2">
+                  {materialLines.map((line) => (
+                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
+                      <input value={line.materialName} onChange={(event) => updateMaterialLine(line.id, { materialName: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.quantity} onChange={(event) => updateMaterialLine(line.id, { quantity: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input value={line.unit} onChange={(event) => updateMaterialLine(line.id, { unit: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
+                      <input type="number" value={line.unitCost} onChange={(event) => updateMaterialLine(line.id, { unitCost: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Crew: {formatCurrency(crewCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Machines: {formatCurrency(machineCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Materials: {formatCurrency(materialCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Contingency: {formatCurrency(estimateContingency)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Markup: {formatCurrency(estimateMarkup)}</div>
+              <div className="rounded-lg border border-blue-300 bg-blue-100 p-3 text-sm font-semibold text-blue-900">Total estimate: {formatCurrency(estimateGrandTotal)}</div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={saveEstimate}
+                disabled={estimateSaving}
+                className="inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+              >
+                {estimateSaving ? "Saving..." : "Save Estimate"}
+              </button>
+              {estimateMessage ? <span className="text-sm text-slate-700">{estimateMessage}</span> : null}
             </div>
           </div>
         </section>

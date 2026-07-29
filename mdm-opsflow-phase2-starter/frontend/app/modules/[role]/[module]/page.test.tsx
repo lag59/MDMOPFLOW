@@ -200,6 +200,35 @@ vi.mock("@/lib/customerPortal", () => ({
 }));
 
 vi.mock("@/lib/estimator", () => ({
+  createEstimatorTakeoff: vi.fn(async () => ({
+    id: "takeoff-new",
+    tenant_id: "tenant-1",
+    project_id: "project-1",
+    takeoff_number: "TK-900",
+    material_name: "Aggregate",
+    quantity: "100.00",
+    unit_of_measure: "tons",
+    estimated_cost: "25000.00",
+    status: "draft",
+    notes: "Saved from worksheet",
+    created_by: "user-1",
+    created_at: "2026-07-28T00:00:00Z",
+    updated_at: "2026-07-28T00:00:00Z",
+  })),
+  createEstimatorVersion: vi.fn(async () => ({
+    id: "version-new",
+    tenant_id: "tenant-1",
+    project_id: "project-1",
+    version_name: "Field Production Estimate v1",
+    revision_number: 1,
+    estimated_revenue: "25000.00",
+    estimated_cost: "25000.00",
+    status: "draft",
+    notes: "Generated from TK-900",
+    created_by: "user-1",
+    created_at: "2026-07-28T00:00:00Z",
+    updated_at: "2026-07-28T00:00:00Z",
+  })),
   listEstimatorTakeoffs: vi.fn(async () => [
     {
       id: "takeoff-1",
@@ -948,6 +977,18 @@ describe("Company owner module detail page", () => {
       expect(screen.getByText("Takeoffs")).toBeInTheDocument();
       expect(screen.getByText("Bid pipeline")).toBeInTheDocument();
       expect(screen.getByText("TK-001 • Aggregate Base • 120.50 cy")).toBeInTheDocument();
+      expect(screen.getByText("Editable estimate worksheet")).toBeInTheDocument();
+      expect(screen.getByText("Apply File + Project Context")).toBeInTheDocument();
+      expect(screen.getByText("Save Estimate")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Estimate name"), {
+      target: { value: "North Yard Phase 1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Estimate" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Estimate saved to Takeoffs and Estimate Versions.")).toBeInTheDocument();
     });
   });
 

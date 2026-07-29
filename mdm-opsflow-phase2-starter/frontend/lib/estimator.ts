@@ -17,6 +17,17 @@ export type EstimatorTakeoff = {
   updated_at: string;
 };
 
+export type CreateEstimatorTakeoffPayload = {
+  project_id?: string | null;
+  takeoff_number: string;
+  material_name?: string;
+  quantity: string;
+  unit_of_measure?: string;
+  estimated_cost?: string | null;
+  status?: string;
+  notes?: string;
+};
+
 export type EstimatorVersion = {
   id: string;
   tenant_id: string;
@@ -30,6 +41,16 @@ export type EstimatorVersion = {
   created_by: string;
   created_at: string;
   updated_at: string;
+};
+
+export type CreateEstimatorVersionPayload = {
+  project_id?: string | null;
+  version_name: string;
+  revision_number?: number;
+  estimated_revenue?: string | null;
+  estimated_cost?: string | null;
+  status?: string;
+  notes?: string;
 };
 
 export type EstimatorBidPipelineItem = {
@@ -131,12 +152,59 @@ export async function listEstimatorTakeoffs(): Promise<EstimatorTakeoff[]> {
   return (await response.json()) as EstimatorTakeoff[];
 }
 
+export async function createEstimatorTakeoff(
+  payload: CreateEstimatorTakeoffPayload
+): Promise<EstimatorTakeoff> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimator/takeoffs`, {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      project_id: payload.project_id ?? null,
+      takeoff_number: payload.takeoff_number,
+      material_name: payload.material_name || "",
+      quantity: payload.quantity,
+      unit_of_measure: payload.unit_of_measure || "cy",
+      estimated_cost: payload.estimated_cost ?? null,
+      status: payload.status || "draft",
+      notes: payload.notes || "",
+    }),
+  });
+  await throwIfNotOk(response, "Unable to create estimator takeoff");
+  return (await response.json()) as EstimatorTakeoff;
+}
+
 export async function listEstimatorVersions(): Promise<EstimatorVersion[]> {
   const response = await fetch(`${getApiBaseUrl()}/api/estimator/versions`, {
     headers: buildAuthHeaders(),
   });
   await throwIfNotOk(response, "Unable to load estimate versions");
   return (await response.json()) as EstimatorVersion[];
+}
+
+export async function createEstimatorVersion(
+  payload: CreateEstimatorVersionPayload
+): Promise<EstimatorVersion> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimator/versions`, {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      project_id: payload.project_id ?? null,
+      version_name: payload.version_name,
+      revision_number: payload.revision_number ?? 1,
+      estimated_revenue: payload.estimated_revenue ?? null,
+      estimated_cost: payload.estimated_cost ?? null,
+      status: payload.status || "draft",
+      notes: payload.notes || "",
+    }),
+  });
+  await throwIfNotOk(response, "Unable to create estimate version");
+  return (await response.json()) as EstimatorVersion;
 }
 
 export async function listEstimatorBidPipelineItems(): Promise<EstimatorBidPipelineItem[]> {
