@@ -20,21 +20,29 @@ vi.mock("@/lib/i18n", () => ({
 
 vi.mock("@/lib/roleAccess", () => ({
   getCurrentRoleAccess: vi.fn(async () => accessState),
+  canAccessModuleRole: vi.fn((context: { roleKey: string; isSuperAdmin: boolean } | null, routeRoleKey: string) => {
+    if (!context) {
+      return false;
+    }
+    return context.isSuperAdmin || context.roleKey === routeRoleKey;
+  }),
 }));
 
-describe("Modules page role filtering", () => {
+describe("Modules page workspace visibility", () => {
   beforeEach(() => {
     accessState.roleKey = "project_manager";
     accessState.isSuperAdmin = false;
   });
 
-  it("shows only the current role modules for non-super-admin users", async () => {
+  it("shows all role cards and marks only the active role for non-super-admin users", async () => {
     render(<ModulesPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Project Manager")).toBeInTheDocument();
-      expect(screen.queryByText("Estimator")).not.toBeInTheDocument();
-      expect(screen.queryByText("Vendor")).not.toBeInTheDocument();
+      expect(screen.getByText("Estimator")).toBeInTheDocument();
+      expect(screen.getByText("Vendor")).toBeInTheDocument();
+      expect(screen.getByText("Current Role")).toBeInTheDocument();
+      expect(screen.getAllByText("Preview").length).toBeGreaterThan(0);
     });
   });
 

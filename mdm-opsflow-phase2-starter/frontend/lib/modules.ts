@@ -661,5 +661,9 @@ export function getVisibleWorkspacesForRole(roleKey: RoleKey, isSuperAdmin: bool
   if (isSuperAdmin) {
     return ROLE_WORKSPACES;
   }
-  return ROLE_WORKSPACES.filter((workspace) => workspace.key === roleKey);
+
+  const currentRoleWorkspace = ROLE_WORKSPACES.find((workspace) => workspace.key === roleKey);
+  const otherWorkspaces = ROLE_WORKSPACES.filter((workspace) => workspace.key !== roleKey);
+
+  return currentRoleWorkspace ? [currentRoleWorkspace, ...otherWorkspaces] : ROLE_WORKSPACES;
 }
