@@ -35,6 +35,16 @@ type TenantOption = {
   tenant_name: string;
 };
 
+type CurrentUserMembership = {
+  tenant_id: string;
+  tenant_name: string;
+};
+
+type CurrentUserProfile = {
+  platform_role: string;
+  memberships: CurrentUserMembership[];
+};
+
 const ROLE_OPTIONS = [
   "owner",
   "executive",
@@ -111,24 +121,68 @@ export default function UserSettingsPage() {
   }
 
   async function loadTenantOptions(): Promise<void> {
+    const authHeaders = {
+      Authorization: `Bearer ${getAccessToken()}`,
+    };
+
     const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/admin/tenant-service-summary`, {
-      headers: {
-        Authorization: `Bearer ${getAccessToken()}`,
-      },
+      headers: authHeaders,
     });
 
-    if (!response.ok) {
-      setTenantOptions([]);
+    if (response.ok) {
+      const payload = (await response.json()) as { items: TenantOption[] };
+      setTenantOptions(payload.items);
+
+      const hasSelectedTenant = selectedTenantId
+        ? payload.items.some((tenant) => tenant.tenant_id === selectedTenantId)
+        : false;
+      if (!hasSelectedTenant) {
+        setSelectedTenantId(payload.items[0]?.tenant_id ?? "");
+      }
       return;
     }
 
-    const payload = (await response.json()) as { items: TenantOption[] };
-    setTenantOptions(payload.items);
+    // Non super-admin users cannot access tenant-service-summary. Fall back to memberships.
+    if (response.status === 403) {
+      const meResponse = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/auth/me`, {
+        headers: authHeaders,
+      });
 
-    if (!selectedTenantId && payload.items.length > 0) {
-      setSelectedTenantId(payload.items[0].tenant_id);
+      if (meResponse.ok) {
+        const profile = (await meResponse.json()) as CurrentUserProfile;
+        const options = profile.memberships.map((membership) => ({
+          tenant_id: membership.tenant_id,
+          tenant_name: membership.tenant_name,
+        }));
+        setTenantOptions(options);
+
+        const hasSelectedTenant = selectedTenantId
+          ? options.some((tenant) => tenant.tenant_id === selectedTenantId)
+          : false;
+        if (!hasSelectedTenant) {
+          setSelectedTenantId(options[0]?.tenant_id ?? "");
+        }
+        return;
+      }
+    }
+
+    setTenantOptions([]);
+
+    if (selectedTenantId) {
+      setSelectedTenantId("");
     }
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (selectedTenantId) {
+      window.localStorage.setItem("opsflow_tenant_id", selectedTenantId);
+    } else {
+      window.localStorage.removeItem("opsflow_tenant_id");
+    }
+  }, [selectedTenantId]);
 
   async function loadMembers(): Promise<void> {
     setLoadError("");
@@ -152,7 +206,13 @@ export default function UserSettingsPage() {
       } else if (response.status === 400) {
         setLoadError("Tenant context is missing. Complete onboarding or select a tenant before managing services.");
       } else if (response.status === 403) {
-        setLoadError("You do not have permission to manage users for this tenant.");
+        const payload = await response.json().catch(() => null);
+        if (payload?.detail === "Tenant membership required") {
+          setSelectedTenantId("");
+          setLoadError("Your current tenant selection is not available for this account. Select a tenant and try again.");
+        } else {
+          setLoadError("You do not have permission to manage users for this tenant.");
+        }
       } else {
         setLoadError(`Could not load team members (HTTP ${response.status}).`);
       }
