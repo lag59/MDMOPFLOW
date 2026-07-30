@@ -94,6 +94,93 @@ export type EstimatorSummary = {
   win_rate_percent: string;
 };
 
+export type Estimate = {
+  id: string;
+  tenant_id: string;
+  project_id: string | null;
+  estimate_name: string;
+  estimate_number: string;
+  customer_name: string;
+  project_name: string;
+  project_address: string;
+  project_type: string;
+  bid_due_date: string | null;
+  expected_start_date: string | null;
+  expected_completion_date: string | null;
+  estimator_name: string;
+  project_manager_name: string;
+  sales_contact: string;
+  contract_type: string;
+  estimate_type: string;
+  currency: string;
+  tax_jurisdiction: string;
+  target_margin_percent: string;
+  default_overhead_percent: string;
+  default_contingency_percent: string;
+  notes: string;
+  status: string;
+  approval_status: string;
+  is_locked: boolean;
+  locked_at: string | null;
+  converted_project_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateEstimatePayload = {
+  project_id?: string | null;
+  estimate_name: string;
+  estimate_number: string;
+  customer_name?: string;
+  project_name?: string;
+  project_address?: string;
+  project_type?: string;
+  bid_due_date?: string | null;
+  expected_start_date?: string | null;
+  expected_completion_date?: string | null;
+  estimator_name?: string;
+  project_manager_name?: string;
+  sales_contact?: string;
+  contract_type?: string;
+  estimate_type?: string;
+  currency?: string;
+  tax_jurisdiction?: string;
+  target_margin_percent?: string;
+  default_overhead_percent?: string;
+  default_contingency_percent?: string;
+  notes?: string;
+  status?: string;
+};
+
+export type EstimateDocument = {
+  id: string;
+  tenant_id: string;
+  estimate_id: string;
+  intake_item_id: string | null;
+  filename: string;
+  document_type: string;
+  processing_status: string;
+  confidence_score: string;
+  version_label: string;
+  review_status: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EstimateValidation = {
+  completion_score: number;
+  unresolved_issues: string[];
+};
+
+export type EstimateAiReview = {
+  estimate_id: string;
+  warnings: string[];
+  recommendations: string[];
+};
+
 class EstimatorApiError extends Error {
   status: number;
   detail: string;
@@ -229,4 +316,109 @@ export async function getEstimatorSummary(): Promise<EstimatorSummary> {
   });
   await throwIfNotOk(response, "Unable to load estimator summary");
   return (await response.json()) as EstimatorSummary;
+}
+
+export async function listEstimates(): Promise<Estimate[]> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates`, {
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to load estimates");
+  return (await response.json()) as Estimate[];
+}
+
+export async function createEstimate(payload: CreateEstimatePayload): Promise<Estimate> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates`, {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      project_id: payload.project_id ?? null,
+      estimate_name: payload.estimate_name,
+      estimate_number: payload.estimate_number,
+      customer_name: payload.customer_name || "",
+      project_name: payload.project_name || "",
+      project_address: payload.project_address || "",
+      project_type: payload.project_type || "",
+      bid_due_date: payload.bid_due_date ?? null,
+      expected_start_date: payload.expected_start_date ?? null,
+      expected_completion_date: payload.expected_completion_date ?? null,
+      estimator_name: payload.estimator_name || "",
+      project_manager_name: payload.project_manager_name || "",
+      sales_contact: payload.sales_contact || "",
+      contract_type: payload.contract_type || "",
+      estimate_type: payload.estimate_type || "",
+      currency: payload.currency || "USD",
+      tax_jurisdiction: payload.tax_jurisdiction || "",
+      target_margin_percent: payload.target_margin_percent || "0.00",
+      default_overhead_percent: payload.default_overhead_percent || "0.00",
+      default_contingency_percent: payload.default_contingency_percent || "0.00",
+      notes: payload.notes || "",
+      status: payload.status || "New",
+    }),
+  });
+  await throwIfNotOk(response, "Unable to create estimate");
+  return (await response.json()) as Estimate;
+}
+
+export async function uploadEstimateDocuments(estimateId: string, files: File[]): Promise<EstimateDocument[]> {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/documents`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+    body: formData,
+  });
+  await throwIfNotOk(response, "Unable to upload estimate documents");
+  return (await response.json()) as EstimateDocument[];
+}
+
+export async function validateEstimate(estimateId: string): Promise<EstimateValidation> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/validate`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to validate estimate");
+  return (await response.json()) as EstimateValidation;
+}
+
+export async function submitEstimate(estimateId: string): Promise<Estimate> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/submit`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to submit estimate");
+  return (await response.json()) as Estimate;
+}
+
+export async function approveEstimate(estimateId: string): Promise<{ decision: string }> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/approve`, {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ decision: "approved", comments: "Approved from estimator workspace" }),
+  });
+  await throwIfNotOk(response, "Unable to approve estimate");
+  return (await response.json()) as { decision: string };
+}
+
+export async function convertEstimateToProject(estimateId: string): Promise<Estimate> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/convert-to-project`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to convert estimate to project");
+  return (await response.json()) as Estimate;
+}
+
+export async function runEstimateAiReview(estimateId: string): Promise<EstimateAiReview> {
+  const response = await fetch(`${getApiBaseUrl()}/api/estimates/${estimateId}/ai-review`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to run estimate AI review");
+  return (await response.json()) as EstimateAiReview;
 }

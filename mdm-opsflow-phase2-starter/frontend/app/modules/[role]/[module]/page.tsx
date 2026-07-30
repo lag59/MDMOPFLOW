@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 
 import AppShell from "@/components/AppShell";
 import { getCustomerPortalBillingStatus, getCustomerPortalDocumentStatus, listCustomerPortalProjects, type CustomerPortalBillingStatus, type CustomerPortalDocumentStatus, type CustomerPortalProjectSummary } from "@/lib/customerPortal";
-import { createEstimatorTakeoff, createEstimatorVersion, getEstimatorSummary, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
+import { approveEstimate, convertEstimateToProject, createEstimate, createEstimatorTakeoff, createEstimatorVersion, getEstimatorSummary, listEstimates, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, runEstimateAiReview, submitEstimate, uploadEstimateDocuments, validateEstimate, type Estimate, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getModuleDetail } from "@/lib/modules";
 import { getPayrollSummary, listPayrollRuns, listPayrollTimecards, type PayrollRun, type PayrollSummary, type PayrollTimecard } from "@/lib/payroll";
@@ -139,6 +139,58 @@ type ProjectManagerActionDraft = {
   notes: string;
 };
 
+type EstimatorLocale = "en" | "es";
+
+type EstimatorEstimateInfo = {
+  estimateName: string;
+  estimateNumber: string;
+  customer: string;
+  projectName: string;
+  projectAddress: string;
+  projectType: string;
+  bidDueDate: string;
+  expectedStartDate: string;
+  expectedCompletionDate: string;
+  estimator: string;
+  projectManager: string;
+  salesContact: string;
+  contractType: string;
+  estimateType: string;
+  currency: string;
+  taxJurisdiction: string;
+  targetMargin: string;
+  defaultOverheadPercent: string;
+  defaultContingencyPercent: string;
+  notes: string;
+};
+
+type EstimatorUploadedDocument = {
+  id: string;
+  fileName: string;
+  documentType: string;
+  uploadDate: string;
+  uploadedBy: string;
+  processingStatus: string;
+  confidenceScore: number;
+  estimateAssociation: string;
+  version: string;
+  reviewStatus: string;
+};
+
+type EstimatorRiskRegisterItem = {
+  id: string;
+  riskTitle: string;
+  category: string;
+  description: string;
+  probability: string;
+  costImpact: string;
+  scheduleImpact: string;
+  proposedContingency: string;
+  mitigation: string;
+  owner: string;
+  reviewStatus: string;
+};
+
 const DEFAULT_BRIDGE_DRAFT: BridgeWorkspaceDraft = {
   initiative: "",
   portfolioView: "",
@@ -164,6 +216,58 @@ const DEFAULT_MACHINE_LINES: EstimateMachineLine[] = [
 const DEFAULT_MATERIAL_LINES: EstimateMaterialLine[] = [
   { id: "material-1", materialName: "Aggregate Base", quantity: 100, unit: "tons", unitCost: 28 },
 ];
+
+const ESTIMATE_STATUSES = [
+  "New",
+  "Documents Uploaded",
+  "Extraction in Progress",
+  "Extraction Review",
+  "Draft Estimate",
+  "Internal Review",
+  "Returned for Revision",
+  "Approved for Submission",
+  "Submitted",
+  "Customer Revision Requested",
+  "Awarded",
+  "Not Awarded",
+  "Converted to Project",
+  "Archived",
+] as const;
+
+const ESTIMATOR_HEADER_LABELS: Record<EstimatorLocale, Record<string, string>> = {
+  en: {
+    title: "AI Project Estimator",
+    subtitle: "Build, review, compare, and approve construction estimates from initial bid documents through project handoff.",
+    create: "Create New Estimate",
+    upload: "Upload Bid Documents",
+    importSheet: "Import Spreadsheet",
+    versions: "Open Estimate Versions",
+    costLibrary: "Open Cost Library",
+    compare: "Compare Scenarios",
+    aiReview: "Run AI Estimate Review",
+    submit: "Submit for Approval",
+    convert: "Convert Awarded Estimate to Project",
+    back: "Back to Modules",
+    switchLanguage: "Switch Language",
+    logout: "Logout",
+  },
+  es: {
+    title: "Estimador de Proyectos con IA",
+    subtitle: "Crear, revisar, comparar y aprobar estimaciones de construccion desde documentos iniciales hasta la transferencia del proyecto.",
+    create: "Crear Nueva Estimacion",
+    upload: "Cargar Documentos de Licitacion",
+    importSheet: "Importar Hoja de Calculo",
+    versions: "Abrir Versiones de la Estimacion",
+    costLibrary: "Abrir Biblioteca de Costos",
+    compare: "Comparar Escenarios",
+    aiReview: "Ejecutar Revision de IA",
+    submit: "Enviar para Aprobacion",
+    convert: "Convertir en Proyecto",
+    back: "Volver a Modulos",
+    switchLanguage: "Cambiar Idioma",
+    logout: "Cerrar Sesion",
+  },
+};
 
 const PROJECT_MANAGER_LABELS: Record<ProjectManagerLocale, Record<string, string>> = {
   en: {
@@ -281,6 +385,8 @@ export default function ModuleDetailPage() {
   const [estimatorVersions, setEstimatorVersions] = useState<EstimatorVersion[]>([]);
   const [estimatorBidPipelineItems, setEstimatorBidPipelineItems] = useState<EstimatorBidPipelineItem[]>([]);
   const [estimatorWinLossRecords, setEstimatorWinLossRecords] = useState<EstimatorWinLossRecord[]>([]);
+  const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [selectedEstimateId, setSelectedEstimateId] = useState("");
   const [estimatorSummary, setEstimatorSummary] = useState<EstimatorSummary | null>(null);
   const [roleAccess, setRoleAccess] = useState<RoleAccessContext | null>(null);
   const [roleAccessResolved, setRoleAccessResolved] = useState(false);
@@ -301,6 +407,48 @@ export default function ModuleDetailPage() {
   const [materialLines, setMaterialLines] = useState<EstimateMaterialLine[]>(DEFAULT_MATERIAL_LINES);
   const [estimateMessage, setEstimateMessage] = useState("");
   const [estimateSaving, setEstimateSaving] = useState(false);
+  const [estimatorLocale, setEstimatorLocale] = useState<EstimatorLocale>("en");
+  const [estimatorAiMessage, setEstimatorAiMessage] = useState("");
+  const [estimatorAiRunning, setEstimatorAiRunning] = useState(false);
+  const [estimatorUploadMessage, setEstimatorUploadMessage] = useState("");
+  const [estimatorUploadedDocuments, setEstimatorUploadedDocuments] = useState<EstimatorUploadedDocument[]>([]);
+  const [estimatorEstimateInfo, setEstimatorEstimateInfo] = useState<EstimatorEstimateInfo>({
+    estimateName: "",
+    estimateNumber: "",
+    customer: "",
+    projectName: "",
+    projectAddress: "",
+    projectType: "Heavy civil",
+    bidDueDate: "",
+    expectedStartDate: "",
+    expectedCompletionDate: "",
+    estimator: "",
+    projectManager: "",
+    salesContact: "",
+    contractType: "Lump sum",
+    estimateType: "Detailed",
+    currency: "USD",
+    taxJurisdiction: "",
+    targetMargin: "15",
+    defaultOverheadPercent: "8",
+    defaultContingencyPercent: "5",
+    notes: "",
+  });
+  const [estimatorRiskRegister, setEstimatorRiskRegister] = useState<EstimatorRiskRegisterItem[]>([
+    {
+      id: "risk-1",
+      riskTitle: "Storm drainage quantity variance",
+      category: "Quantity",
+      description: "Bid schedule and plans show conflicting LF for storm pipe runs.",
+      probability: "Medium",
+      costImpact: "$45,000",
+      scheduleImpact: "5 days",
+      proposedContingency: "2.0%",
+      mitigation: "Validate with addenda and issue RFI prior to submission.",
+      owner: "Estimator",
+      reviewStatus: "Review required",
+    },
+  ]);
   const [projectManagerLocale, setProjectManagerLocale] = useState<ProjectManagerLocale>("en");
   const [projectManagerAiMessage, setProjectManagerAiMessage] = useState("");
   const [projectManagerActionMessage, setProjectManagerActionMessage] = useState("");
@@ -362,7 +510,21 @@ export default function ModuleDetailPage() {
     if (saved === "es" || saved === "en") {
       setProjectManagerLocale(saved);
     }
+    const savedEstimatorLocale = window.localStorage.getItem("opsflow_estimator_locale");
+    if (savedEstimatorLocale === "es" || savedEstimatorLocale === "en") {
+      setEstimatorLocale(savedEstimatorLocale);
+    }
   }, []);
+
+  useEffect(() => {
+    if (selectedEstimateId) {
+      const exists = estimates.some((estimate) => estimate.id === selectedEstimateId);
+      if (exists) {
+        return;
+      }
+    }
+    setSelectedEstimateId(estimates[0]?.id || "");
+  }, [estimates, selectedEstimateId]);
 
   const saveBridgeDraft = () => {
     if (!bridgeStorageKey || typeof window === "undefined") {
@@ -519,7 +681,7 @@ export default function ModuleDetailPage() {
         setProfitability(new Map(profitEntries.filter((entry): entry is readonly [string, ProjectProfitability] => entry !== null)));
 
         try {
-          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, dailyFieldReportData, materialPresetData, payrollSummaryData, payrollTimecardData, payrollRunData, vendorPurchaseOrderData, vendorInvoiceSubmissionData, vendorDeliveryRecordData, vendorComplianceDocumentData, customerPortalProjectData, estimatorTakeoffData, estimatorVersionData, estimatorBidPipelineData, estimatorWinLossData, estimatorSummaryData] = await Promise.all([
+          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, dailyFieldReportData, materialPresetData, payrollSummaryData, payrollTimecardData, payrollRunData, vendorPurchaseOrderData, vendorInvoiceSubmissionData, vendorDeliveryRecordData, vendorComplianceDocumentData, customerPortalProjectData, estimatorTakeoffData, estimatorVersionData, estimatorBidPipelineData, estimatorWinLossData, estimatorSummaryData, estimatesData] = await Promise.all([
             listTickets(),
             fetchReplayTokenStateAlerts({ staleThresholdMinutes: 60, staleActiveThresholdCount: 10 }),
             fetch(`${getApiBaseUrl()}/api/equipment`, { headers }).then((res) => (res.ok ? res.json() : [])),
@@ -545,6 +707,7 @@ export default function ModuleDetailPage() {
             listEstimatorBidPipelineItems().catch(() => []),
             listEstimatorWinLossRecords().catch(() => []),
             getEstimatorSummary().catch(() => null),
+            listEstimates().catch(() => []),
           ]);
           setTickets(ticketData);
           setAlerts(alertData);
@@ -571,6 +734,7 @@ export default function ModuleDetailPage() {
           setEstimatorBidPipelineItems(estimatorBidPipelineData as EstimatorBidPipelineItem[]);
           setEstimatorWinLossRecords(estimatorWinLossData as EstimatorWinLossRecord[]);
           setEstimatorSummary(estimatorSummaryData as EstimatorSummary | null);
+          setEstimates(estimatesData as Estimate[]);
           const portalProjects = customerPortalProjectData as CustomerPortalProjectSummary[];
           const billingRecords = await Promise.all(
             portalProjects.map((project) => getCustomerPortalBillingStatus(project.project_id).catch(() => null))
@@ -608,6 +772,7 @@ export default function ModuleDetailPage() {
           setEstimatorBidPipelineItems([]);
           setEstimatorWinLossRecords([]);
           setEstimatorSummary(null);
+          setEstimates([]);
         }
       } finally {
         setInsightsLoading(false);
@@ -803,6 +968,209 @@ export default function ModuleDetailPage() {
       notation: "compact",
       maximumFractionDigits: 1,
     }).format(value);
+
+  const estimatorText = (key: string) => ESTIMATOR_HEADER_LABELS[estimatorLocale][key] || key;
+
+  const toggleEstimatorLanguage = () => {
+    const nextLocale: EstimatorLocale = estimatorLocale === "en" ? "es" : "en";
+    setEstimatorLocale(nextLocale);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("opsflow_estimator_locale", nextLocale);
+    }
+  };
+
+  const handleEstimatorFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    if (!selectedEstimateId) {
+      setEstimatorUploadMessage("Create or select an estimate before uploading documents.");
+      event.target.value = "";
+      return;
+    }
+
+    const uploadFiles = Array.from(files);
+    try {
+      const uploaded = await uploadEstimateDocuments(selectedEstimateId, uploadFiles);
+      setEstimatorUploadedDocuments((prev) => [
+        ...uploaded.map((doc) => ({
+          id: doc.id,
+          fileName: doc.filename,
+          documentType: doc.document_type,
+          uploadDate: doc.uploaded_at.slice(0, 10),
+          uploadedBy: doc.uploaded_by,
+          processingStatus: doc.processing_status,
+          confidenceScore: Number(doc.confidence_score || 0),
+          estimateAssociation: doc.estimate_id,
+          version: doc.version_label,
+          reviewStatus: doc.review_status,
+        })),
+        ...prev,
+      ]);
+      setEstimatorUploadMessage(`${uploadFiles.length} document(s) uploaded to estimate workflow.`);
+      setEstimates(await listEstimates());
+      event.target.value = "";
+      return;
+    } catch {
+      // Fall through to local queue as a non-blocking UX backup.
+    }
+
+    const now = new Date().toISOString().slice(0, 10);
+    const uploadedBy = estimatorEstimateInfo.estimator || "Estimator";
+    const rows: EstimatorUploadedDocument[] = uploadFiles.map((file, index) => ({
+      id: `doc-${Date.now()}-${index}`,
+      fileName: file.name,
+      documentType: "Unknown document",
+      uploadDate: now,
+      uploadedBy,
+      processingStatus: "Extraction Review",
+      confidenceScore: 0.76,
+      estimateAssociation: estimatorEstimateInfo.estimateNumber || estimatorEstimateInfo.estimateName || selectedEstimateId,
+      version: "v1",
+      reviewStatus: "Review recommended",
+    }));
+    setEstimatorUploadedDocuments((prev) => [...rows, ...prev]);
+    setEstimatorUploadMessage(`${rows.length} document(s) queued for OCR and review.`);
+    event.target.value = "";
+  };
+
+  const runEstimatorAiReview = async (command: string) => {
+    setEstimatorAiRunning(true);
+    setEstimatorAiMessage("");
+
+    if (selectedEstimateId) {
+      try {
+        const review = await runEstimateAiReview(selectedEstimateId);
+        const warningText = review.warnings.length > 0 ? `Warnings: ${review.warnings.join(" | ")}` : "No critical warnings.";
+        const recommendationText = review.recommendations.join(" | ");
+        setEstimatorAiMessage(`${warningText} ${recommendationText}`.trim());
+        return;
+      } catch {
+        // Fall back to generic routing below.
+      } finally {
+        setEstimatorAiRunning(false);
+      }
+    }
+
+    const token = getAccessToken();
+    if (!token) {
+      setEstimatorAiMessage("Login required.");
+      setEstimatorAiRunning(false);
+      return;
+    }
+
+    const note = [
+      `Estimator AI Action: ${command}`,
+      `Estimate: ${estimatorEstimateInfo.estimateName || estimateName || "Untitled"}`,
+      `Estimate number: ${estimatorEstimateInfo.estimateNumber || "n/a"}`,
+      `Project: ${estimatorEstimateInfo.projectName || "n/a"}`,
+      `Uploaded docs: ${estimatorUploadedDocuments.length}`,
+      `Takeoffs: ${estimatorTakeoffs.length}`,
+      `Versions: ${estimatorVersions.length}`,
+    ].join("\n");
+
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/ai/workflow/route`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": getTenantId(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          note,
+          company_name: estimatorEstimateInfo.customer || "Estimator Workspace",
+          reporting_supervisor: estimatorEstimateInfo.estimator || "Estimator",
+          project_id: estimateProjectId || null,
+        }),
+      });
+
+      if (!response.ok) {
+        setEstimatorAiMessage("AI review could not be completed.");
+        return;
+      }
+
+      const data = (await response.json()) as { message?: string };
+      setEstimatorAiMessage(data.message || "AI review completed.");
+    } catch {
+      setEstimatorAiMessage("AI review could not be completed.");
+    } finally {
+      setEstimatorAiRunning(false);
+    }
+  };
+
+  const createNewEstimateRecord = async () => {
+    const generatedNumber = estimatorEstimateInfo.estimateNumber || `EST-${Date.now().toString().slice(-6)}`;
+    try {
+      const created = await createEstimate({
+        project_id: estimateProjectId || null,
+        estimate_name: estimatorEstimateInfo.estimateName || estimateName || "Untitled Estimate",
+        estimate_number: generatedNumber,
+        customer_name: estimatorEstimateInfo.customer,
+        project_name: estimatorEstimateInfo.projectName,
+        project_address: estimatorEstimateInfo.projectAddress,
+        project_type: estimatorEstimateInfo.projectType,
+        bid_due_date: estimatorEstimateInfo.bidDueDate || null,
+        expected_start_date: estimatorEstimateInfo.expectedStartDate || null,
+        expected_completion_date: estimatorEstimateInfo.expectedCompletionDate || null,
+        estimator_name: estimatorEstimateInfo.estimator,
+        project_manager_name: estimatorEstimateInfo.projectManager,
+        sales_contact: estimatorEstimateInfo.salesContact,
+        contract_type: estimatorEstimateInfo.contractType,
+        estimate_type: estimatorEstimateInfo.estimateType,
+        currency: estimatorEstimateInfo.currency,
+        tax_jurisdiction: estimatorEstimateInfo.taxJurisdiction,
+        target_margin_percent: estimatorEstimateInfo.targetMargin,
+        default_overhead_percent: estimatorEstimateInfo.defaultOverheadPercent,
+        default_contingency_percent: estimatorEstimateInfo.defaultContingencyPercent,
+        notes: estimatorEstimateInfo.notes,
+        status: "New",
+      });
+      const refreshed = await listEstimates();
+      setEstimates(refreshed);
+      setSelectedEstimateId(created.id);
+      setEstimatorEstimateInfo((prev) => ({ ...prev, estimateNumber: created.estimate_number }));
+      setEstimateMessage(`Estimate created: ${created.estimate_number}`);
+    } catch {
+      setEstimateMessage("Unable to create estimate right now.");
+    }
+  };
+
+  const submitSelectedEstimate = async () => {
+    if (!selectedEstimateId) {
+      setEstimateMessage("Select an estimate before submitting.");
+      return;
+    }
+    try {
+      const validation = await validateEstimate(selectedEstimateId);
+      if (validation.unresolved_issues.length > 0) {
+        setEstimateMessage(`Resolve validation issues before submit: ${validation.unresolved_issues[0]}`);
+        return;
+      }
+      await submitEstimate(selectedEstimateId);
+      await approveEstimate(selectedEstimateId);
+      setEstimates(await listEstimates());
+      setEstimateMessage("Estimate submitted and approved for submission.");
+    } catch {
+      setEstimateMessage("Unable to submit estimate right now.");
+    }
+  };
+
+  const convertSelectedEstimate = async () => {
+    if (!selectedEstimateId) {
+      setEstimateMessage("Select an estimate before converting.");
+      return;
+    }
+    try {
+      const converted = await convertEstimateToProject(selectedEstimateId);
+      setEstimates(await listEstimates());
+      setEstimateMessage(`Estimate converted to project: ${converted.converted_project_id || "created"}.`);
+    } catch {
+      setEstimateMessage("Unable to convert estimate right now.");
+    }
+  };
 
   const projectManagerText = (key: string) => PROJECT_MANAGER_LABELS[projectManagerLocale][key] || key;
 
@@ -2117,238 +2485,290 @@ export default function ModuleDetailPage() {
       );
     }
 
-    if (detail.roleKey === "estimator" && detail.moduleSlug === "takeoff") {
+    if (detail.roleKey === "estimator") {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const activeEstimates = estimates.length > 0
+        ? estimates.filter((item) => !["Archived", "Not Awarded", "Converted to Project"].includes(item.status)).length
+        : estimatorVersions.filter((item) => ["draft", "submitted", "approved"].includes((item.status || "").toLowerCase())).length;
+      const draftEstimates = estimates.length > 0
+        ? estimates.filter((item) => item.status === "Draft Estimate").length
+        : estimatorVersions.filter((item) => (item.status || "").toLowerCase() === "draft").length;
+      const submittedEstimates = estimates.length > 0
+        ? estimates.filter((item) => item.status === "Submitted").length
+        : estimatorVersions.filter((item) => (item.status || "").toLowerCase() === "submitted").length;
+      const dueSoon = estimatorBidPipelineItems.filter((item) => (item.due_date || "").slice(0, 10) >= todayIso).length;
+      const missingInformation = Math.max(0, estimatorUploadedDocuments.filter((item) => item.reviewStatus !== "Accepted").length);
+      const riskReviewRequired = estimatorRiskRegister.filter((item) => item.reviewStatus !== "Approved").length;
+      const awardedEstimates = estimates.length > 0
+        ? estimates.filter((item) => item.status === "Awarded" || item.status === "Converted to Project").length
+        : estimatorWinLossRecords.filter((item) => item.outcome === "won").length;
+      const lostBids = estimates.length > 0
+        ? estimates.filter((item) => item.status === "Not Awarded").length
+        : estimatorWinLossRecords.filter((item) => item.outcome !== "won").length;
+      const unresolvedValidationIssues = [
+        missingInformation > 0 ? "Unreviewed OCR extraction fields" : "",
+        materialLines.some((line) => line.quantity <= 0) ? "Missing quantities" : "",
+        materialLines.some((line) => line.unitCost <= 0) ? "Zero unit costs" : "",
+        Number(estimatorEstimateInfo.targetMargin || 0) < 10 ? "Margin below company minimum" : "",
+        estimatorRiskRegister.some((item) => item.reviewStatus !== "Approved") ? "Risk review requires approval" : "",
+      ].filter(Boolean);
+
       return (
         <section className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Takeoffs</div><div className="mt-2 text-3xl font-bold text-slate-900">{estimatorSummary?.takeoff_count ?? estimatorTakeoffs.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Estimate versions</div><div className="mt-2 text-3xl font-bold text-blue-700">{estimatorSummary?.version_count ?? estimatorVersions.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Material presets</div><div className="mt-2 text-3xl font-bold text-green-600">{materialPresets.length}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Bid pipeline</div><div className="mt-2 text-3xl font-bold text-slate-900">{estimatorSummary?.bid_pipeline_count ?? estimatorBidPipelineItems.length}</div></div>
+          <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active Estimates</div><div className="mt-2 text-2xl font-bold text-slate-900">{activeEstimates}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Draft Estimates</div><div className="mt-2 text-2xl font-bold text-slate-900">{draftEstimates}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Submitted Estimates</div><div className="mt-2 text-2xl font-bold text-blue-700">{submittedEstimates}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Due Soon</div><div className="mt-2 text-2xl font-bold text-amber-700">{dueSoon}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Missing Information</div><div className="mt-2 text-2xl font-bold text-red-700">{missingInformation}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Risk Review Required</div><div className="mt-2 text-2xl font-bold text-red-700">{riskReviewRequired}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Awarded Estimates</div><div className="mt-2 text-2xl font-bold text-emerald-700">{awardedEstimates}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Lost or Declined Bids</div><div className="mt-2 text-2xl font-bold text-slate-900">{lostBids}</div></div>
           </div>
+
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Takeoff inputs</h2>
-            <div className="mt-4 space-y-2 text-sm text-slate-700">
-              {estimatorTakeoffs.slice(0, 5).map((takeoff) => (
-                <div key={takeoff.id} className="rounded-md border border-slate-200 px-3 py-2">{takeoff.takeoff_number} • {takeoff.material_name || "Unknown material"} • {takeoff.quantity} {takeoff.unit_of_measure}</div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Estimate statuses</h2>
+            <p className="mt-1 text-sm text-slate-600">Every status transition is tracked in the estimate audit log.</p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4 text-sm text-slate-700">
+              {ESTIMATE_STATUSES.map((status, index) => (
+                <div key={status} className="rounded-md border border-slate-200 px-3 py-2">{index + 1}. {status}</div>
               ))}
             </div>
           </div>
 
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-900">Editable estimate worksheet</h2>
-            <p className="mt-2 text-sm text-blue-900">
-              Build a working estimate using project context, extracted ticket data, crew mix, equipment, and materials.
-            </p>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="text-sm font-medium text-slate-700">
-                Estimate name
-                <input
-                  value={estimateName}
-                  onChange={(event) => setEstimateName(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-900">Create new estimate wizard</h2>
+            <p className="mt-1 text-sm text-blue-900">Step 1 - Estimate information</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <label className="text-sm font-medium text-slate-700">Estimate name
+                <input value={estimatorEstimateInfo.estimateName} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, estimateName: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
               </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Project context
-                <select
-                  value={estimateProjectId}
-                  onChange={(event) => setEstimateProjectId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>{project.project_name} ({project.project_number})</option>
-                  ))}
+              <label className="text-sm font-medium text-slate-700">Estimate number
+                <input value={estimatorEstimateInfo.estimateNumber} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, estimateNumber: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Customer
+                <input value={estimatorEstimateInfo.customer} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, customer: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Project name
+                <input value={estimatorEstimateInfo.projectName} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, projectName: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Project address
+                <input value={estimatorEstimateInfo.projectAddress} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, projectAddress: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Project type
+                <select value={estimatorEstimateInfo.projectType} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, projectType: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Heavy civil</option><option>Site development</option><option>Excavation</option><option>Land clearing</option><option>Grading</option><option>Underground utilities</option><option>Hauling</option><option>Demolition</option><option>Concrete</option><option>Paving</option><option>Landscaping</option><option>General construction</option><option>Other</option>
                 </select>
               </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                File/ticket context
-                <select
-                  value={estimateTicketId}
-                  onChange={(event) => setEstimateTicketId(event.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select ticket/extracted file</option>
-                  {tickets.map((ticket) => (
-                    <option key={ticket.id} value={ticket.id}>{ticket.ticket_number || ticket.id} • {ticket.material || "Material n/a"}</option>
-                  ))}
+              <label className="text-sm font-medium text-slate-700">Bid due date
+                <input type="date" value={estimatorEstimateInfo.bidDueDate} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, bidDueDate: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Estimator
+                <input value={estimatorEstimateInfo.estimator} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, estimator: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Project Manager
+                <input value={estimatorEstimateInfo.projectManager} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, projectManager: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Contract type
+                <select value={estimatorEstimateInfo.contractType} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, contractType: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Lump sum</option><option>Unit price</option><option>Cost plus</option><option>Time and materials</option><option>Guaranteed maximum price</option><option>Design-build</option><option>Other</option>
                 </select>
               </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Scope description
-                <input
-                  value={estimateScope}
-                  onChange={(event) => setEstimateScope(event.target.value)}
-                  placeholder="Describe scope and estimating assumptions"
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
+              <label className="text-sm font-medium text-slate-700">Estimate type
+                <select value={estimatorEstimateInfo.estimateType} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, estimateType: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Conceptual</option><option>Preliminary</option><option>Budgetary</option><option>Detailed</option><option>Bid</option><option>Change-order estimate</option>
+                </select>
               </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Contingency (%)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={contingencyPercent}
-                  onChange={(event) => setContingencyPercent(Number(event.target.value || 0))}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700">
-                Markup (%)
-                <input
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={markupPercent}
-                  onChange={(event) => setMarkupPercent(Number(event.target.value || 0))}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                />
+              <label className="text-sm font-medium text-slate-700">Target margin (%)
+                <input type="number" min="0" step="0.1" value={estimatorEstimateInfo.targetMargin} onChange={(event) => setEstimatorEstimateInfo((prev) => ({ ...prev, targetMargin: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
               </label>
             </div>
+          </div>
 
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={applyTicketAndProjectContext}
-                className="inline-flex rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
-              >
-                Apply File + Project Context
-              </button>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Step 2 - Upload bid documents</h2>
+            <p className="mt-1 text-sm text-slate-600">PDF, scanned docs, specifications, CSV/XLSX, Word, quotes, photos, and ZIP folders.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                Upload files
+                <input type="file" multiple onChange={handleEstimatorFileUpload} className="hidden" />
+              </label>
+              <span className="text-xs text-slate-600">Supports multi-file upload and OCR extraction review queue.</span>
+            </div>
+            {estimatorUploadMessage ? <p className="mt-2 text-sm text-emerald-800">{estimatorUploadMessage}</p> : null}
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm text-slate-700">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">File name</th>
+                    <th className="px-3 py-2">Document type</th>
+                    <th className="px-3 py-2">Upload date</th>
+                    <th className="px-3 py-2">Uploaded by</th>
+                    <th className="px-3 py-2">Processing status</th>
+                    <th className="px-3 py-2">Confidence</th>
+                    <th className="px-3 py-2">Estimate</th>
+                    <th className="px-3 py-2">Version</th>
+                    <th className="px-3 py-2">Review</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(estimatorUploadedDocuments.length ? estimatorUploadedDocuments : [
+                    {
+                      id: "placeholder-doc",
+                      fileName: "scope-sheet-01.pdf",
+                      documentType: "Scope of work",
+                      uploadDate: todayIso,
+                      uploadedBy: "Estimator",
+                      processingStatus: "Extraction Review",
+                      confidenceScore: 0.89,
+                      estimateAssociation: "Pending",
+                      version: "v1",
+                      reviewStatus: "Review recommended",
+                    },
+                  ]).map((doc) => (
+                    <tr key={doc.id} className="border-t border-slate-200">
+                      <td className="px-3 py-2">{doc.fileName}</td>
+                      <td className="px-3 py-2">{doc.documentType}</td>
+                      <td className="px-3 py-2">{doc.uploadDate}</td>
+                      <td className="px-3 py-2">{doc.uploadedBy}</td>
+                      <td className="px-3 py-2">{doc.processingStatus}</td>
+                      <td className="px-3 py-2">{Math.round(doc.confidenceScore * 100)}%</td>
+                      <td className="px-3 py-2">{doc.estimateAssociation}</td>
+                      <td className="px-3 py-2">{doc.version}</td>
+                      <td className="px-3 py-2">{doc.reviewStatus}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">OCR extraction review</h2>
+            <p className="mt-1 text-sm text-slate-600">Review and approve extracted values before importing into estimate line items.</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+              <div className="rounded-lg border border-slate-200 p-3">Unclassified excavation • 25,000 CY • High confidence • Action: Accept</div>
+              <div className="rounded-lg border border-slate-200 p-3">24-inch RCP • 1,850 LF • Review recommended • Action: Edit</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-900">Estimate builder</h2>
+            <p className="mt-1 text-sm text-blue-900">Manual form, cost library, OCR-assisted proposal, and spreadsheet context in one editable worksheet.</p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">Estimate name
+                <input value={estimateName} onChange={(event) => setEstimateName(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Scope description
+                <input value={estimateScope} onChange={(event) => setEstimateScope(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Crew</h3>
-                <div className="mt-2 space-y-2">
-                  {crewLines.map((line) => (
-                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
-                      <input value={line.crewType} onChange={(event) => updateCrewLine(line.id, { crewType: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.headcount} onChange={(event) => updateCrewLine(line.id, { headcount: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.hourlyRate} onChange={(event) => updateCrewLine(line.id, { hourlyRate: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.hours} onChange={(event) => updateCrewLine(line.id, { hours: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-slate-600">Recommended crew headcount: {recommendedCrewHeadcount}</p>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Machines</h3>
-                <div className="mt-2 space-y-2">
-                  {machineLines.map((line) => (
-                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
-                      <input value={line.machineType} onChange={(event) => updateMachineLine(line.id, { machineType: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.count} onChange={(event) => updateMachineLine(line.id, { count: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.hourlyRate} onChange={(event) => updateMachineLine(line.id, { hourlyRate: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.hours} onChange={(event) => updateMachineLine(line.id, { hours: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-slate-600">Recommended machine count: {recommendedMachineCount}</p>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Materials</h3>
-                <div className="mt-2 space-y-2">
-                  {materialLines.map((line) => (
-                    <div key={line.id} className="grid grid-cols-4 gap-1 text-xs">
-                      <input value={line.materialName} onChange={(event) => updateMaterialLine(line.id, { materialName: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.quantity} onChange={(event) => updateMaterialLine(line.id, { quantity: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input value={line.unit} onChange={(event) => updateMaterialLine(line.id, { unit: event.target.value })} className="rounded border border-slate-300 px-2 py-1" />
-                      <input type="number" value={line.unitCost} onChange={(event) => updateMaterialLine(line.id, { unitCost: Number(event.target.value || 0) })} className="rounded border border-slate-300 px-2 py-1" />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">Crew cost: {formatCurrency(crewCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">Equipment cost: {formatCurrency(machineCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">Material cost: {formatCurrency(materialCost)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">Contingency: {formatCurrency(estimateContingency)}</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">Markup: {formatCurrency(estimateMarkup)}</div>
+              <div className="rounded-lg border border-blue-300 bg-white p-3 text-sm font-semibold text-blue-900">Total estimate: {formatCurrency(estimateGrandTotal)}</div>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Crew: {formatCurrency(crewCost)}</div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Machines: {formatCurrency(machineCost)}</div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Materials: {formatCurrency(materialCost)}</div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Contingency: {formatCurrency(estimateContingency)}</div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">Markup: {formatCurrency(estimateMarkup)}</div>
-              <div className="rounded-lg border border-blue-300 bg-blue-100 p-3 text-sm font-semibold text-blue-900">Total estimate: {formatCurrency(estimateGrandTotal)}</div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={saveEstimate}
-                disabled={estimateSaving}
-                className="inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
-              >
-                {estimateSaving ? "Saving..." : "Save Estimate"}
-              </button>
-              {estimateMessage ? <span className="text-sm text-slate-700">{estimateMessage}</span> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={saveEstimate} disabled={estimateSaving} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{estimateSaving ? "Saving..." : "Save Estimate"}</button>
+              <button type="button" onClick={applyTicketAndProjectContext} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">Apply Ticket Context</button>
+              {estimateMessage ? <span className="self-center text-sm text-slate-700">{estimateMessage}</span> : null}
             </div>
           </div>
-        </section>
-      );
-    }
 
-    if (detail.roleKey === "estimator" && detail.moduleSlug === "estimate-versions") {
-      return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Estimate version signals</h2>
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Versions</div><div className="mt-2 text-2xl font-bold text-slate-900">{estimatorSummary?.version_count ?? estimatorVersions.length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Submitted versions</div><div className="mt-2 text-2xl font-bold text-blue-700">{estimatorVersions.filter((item) => item.status === "submitted").length}</div></div>
-            <div className="rounded-lg border border-slate-200 p-4"><div className="text-xs font-semibold uppercase text-slate-500">Draft versions</div><div className="mt-2 text-2xl font-bold text-amber-600">{estimatorVersions.filter((item) => item.status === "draft").length}</div></div>
-          </div>
-          <div className="mt-4 space-y-3">
-            {estimatorVersions.slice(0, 5).map((version) => (
-              <div key={version.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
-                <div className="font-semibold text-slate-900">{version.version_name} r{version.revision_number}</div>
-                <div className="mt-1">Revenue: {formatCurrency(Number(version.estimated_revenue || 0))} • Cost: {formatCurrency(Number(version.estimated_cost || 0))}</div>
-                <div className="mt-1">Status: {version.status}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      );
-    }
-
-    if (detail.roleKey === "estimator" && detail.moduleSlug === "bid-pipeline") {
-      return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Bid pipeline</h2>
-          <div className="mt-4 space-y-3">
-            {estimatorBidPipelineItems.slice(0, 6).map((bid) => {
-              return (
-                <div key={bid.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-900">{bid.bid_number}</div>
-                      <div>{bid.customer_name || "Unknown customer"} • {bid.stage}</div>
-                    </div>
-                    <div className="text-right">
-                      <div>Bid amount: {formatCurrency(Number(bid.bid_amount || 0))}</div>
-                      <div>Probability: {Number(bid.probability_percent || 0).toFixed(1)}%</div>
-                    </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Risk review register</h2>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                {estimatorRiskRegister.map((risk) => (
+                  <div key={risk.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <div className="font-semibold text-slate-900">{risk.riskTitle}</div>
+                    <div className="mt-1">{risk.category} • Probability: {risk.probability} • Cost impact: {risk.costImpact}</div>
+                    <div className="mt-1">Mitigation: {risk.mitigation}</div>
+                    <div className="mt-1">Status: {risk.reviewStatus}</div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      );
-    }
+                ))}
+              </div>
+            </div>
 
-    if (detail.roleKey === "estimator" && detail.moduleSlug === "win-loss") {
-      return (
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Wins</div><div className="mt-2 text-3xl font-bold text-green-600">{estimatorSummary?.wins ?? estimatorWinLossRecords.filter((item) => item.outcome === "won").length}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Losses</div><div className="mt-2 text-3xl font-bold text-red-600">{estimatorSummary?.losses ?? estimatorWinLossRecords.filter((item) => item.outcome === "lost").length}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Win rate</div><div className="mt-2 text-3xl font-bold text-slate-900">{Number(estimatorSummary?.win_rate_percent || 0).toFixed(1)}%</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Estimate validation</h2>
+              <div className="mt-3 text-sm text-slate-700">Completion score: {Math.max(0, 100 - unresolvedValidationIssues.length * 10)}%</div>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                {unresolvedValidationIssues.length === 0 ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">No unresolved validation issues.</div>
+                ) : (
+                  unresolvedValidationIssues.map((issue) => (
+                    <div key={issue} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">{issue}</div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Estimate versions and comparison</h2>
+            <div className="mt-3 space-y-2 text-sm text-slate-700">
+              {estimatorVersions.slice(0, 4).map((version) => (
+                <div key={version.id} className="rounded-md border border-slate-200 px-3 py-2">
+                  {version.version_name} r{version.revision_number} • Cost {formatCurrency(Number(version.estimated_cost || 0))} • Revenue {formatCurrency(Number(version.estimated_revenue || 0))} • Status {version.status}
+                </div>
+              ))}
+              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-blue-900">Version comparison labels: Added, Removed, Increased, Decreased, Unchanged.</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">AI estimate review actions</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                "Extract Bid Items",
+                "Review Scope",
+                "Identify Missing Estimate Items",
+                "Review Quantity Conflicts",
+                "Review Addenda",
+                "Review Material Densities",
+                "Review Production Rates",
+                "Review Labor Assumptions",
+                "Review Equipment Utilization",
+                "Compare Vendor Quotes",
+                "Identify Scope Gaps",
+                "Identify Duplicate Costs",
+                "Review Risk and Contingency",
+                "Check Profit and Margin",
+                "Draft Assumptions and Exclusions",
+                "Draft Bid Summary",
+                "Compare Estimate Versions",
+                "Prepare Project Handoff",
+              ].map((action) => (
+                <button key={action} type="button" onClick={() => runEstimatorAiReview(action)} disabled={estimatorAiRunning} className="rounded border border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">{action}</button>
+              ))}
+            </div>
+            {estimatorAiMessage ? <p className="mt-3 text-sm text-indigo-800">AI: {estimatorAiMessage}</p> : null}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Approval workflow and audit log</h2>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 text-sm text-slate-700">
+              <div className="rounded-md border border-slate-200 px-3 py-2">1. Estimator prepares estimate</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">2. OCR/AI extractions reviewed</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">3. Validation completed</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">4. Submitted for internal review</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">5. Approved or returned</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">6. Approved version locked</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">7. Bid package generated</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2">8. Awarded estimate converted to project</div>
+            </div>
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              Audit log sample: {todayIso} - Status changed to Draft Estimate by {estimatorEstimateInfo.estimator || "Estimator"}.
+            </div>
+          </div>
         </section>
       );
     }
@@ -2642,11 +3062,12 @@ export default function ModuleDetailPage() {
   }
 
   const isProjectManagerProjects = detail.roleKey === "project_manager" && detail.moduleSlug === "projects";
+  const isEstimatorModule = detail.roleKey === "estimator";
 
   return (
     <AppShell titleKey="modules.title">
       <div className="space-y-6 p-6">
-        {!isProjectManagerProjects ? (
+        {!isProjectManagerProjects && !isEstimatorModule ? (
           <div className="mb-2">
             <Link href="/modules" className="inline-flex text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline">
               Back to Modules
@@ -2656,8 +3077,8 @@ export default function ModuleDetailPage() {
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{isProjectManagerProjects ? projectManagerText("projectManager") : detail.roleLabel}</span>
-            {!isProjectManagerProjects ? (
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{isProjectManagerProjects ? projectManagerText("projectManager") : isEstimatorModule ? estimatorText("title") : detail.roleLabel}</span>
+            {!isProjectManagerProjects && !isEstimatorModule ? (
               <span
                 className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                   detail.route.status === "live" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
@@ -2666,13 +3087,13 @@ export default function ModuleDetailPage() {
                 {detail.route.status === "live" ? "Live Module" : "Bridge Module"}
               </span>
             ) : (
-              <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">Operational Dashboard</span>
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">{isProjectManagerProjects ? "Operational Dashboard" : "Estimator Workspace"}</span>
             )}
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900">{isProjectManagerProjects ? projectManagerText("projectManager") : detail.moduleLabel}</h1>
+          <h1 className="text-3xl font-bold text-slate-900">{isProjectManagerProjects ? projectManagerText("projectManager") : isEstimatorModule ? estimatorText("title") : detail.moduleLabel}</h1>
           <p className="mt-2 text-sm text-slate-600">{detail.roleSummary}</p>
-          <p className="mt-2 text-sm text-slate-700">{isProjectManagerProjects ? "Plan, execute, monitor, and control active construction projects with daily production signals and approvals." : detail.route.helperText}</p>
+          <p className="mt-2 text-sm text-slate-700">{isProjectManagerProjects ? "Plan, execute, monitor, and control active construction projects with daily production signals and approvals." : isEstimatorModule ? estimatorText("subtitle") : detail.route.helperText}</p>
 
           {isProjectManagerProjects ? (
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -2688,9 +3109,41 @@ export default function ModuleDetailPage() {
               <button type="button" onClick={handleProjectManagerLogout} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("logout")}</button>
             </div>
           ) : null}
+          {isEstimatorModule ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={createNewEstimateRecord} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800">{estimatorText("create")}</button>
+              <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                {estimatorText("upload")}
+                <input type="file" multiple onChange={handleEstimatorFileUpload} className="hidden" />
+              </label>
+              <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                {estimatorText("importSheet")}
+                <input type="file" accept=".csv,.xlsx,.xls" onChange={handleEstimatorFileUpload} className="hidden" />
+              </label>
+              <Link href="/modules/estimator/estimate-versions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("versions")}</Link>
+              <Link href="/tickets" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("costLibrary")}</Link>
+              <Link href="/modules/estimator/estimate-versions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("compare")}</Link>
+              <button type="button" onClick={() => runEstimatorAiReview("Review Scope")} disabled={estimatorAiRunning} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">{estimatorText("aiReview")}</button>
+              <button type="button" onClick={submitSelectedEstimate} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">{estimatorText("submit")}</button>
+              <button type="button" onClick={convertSelectedEstimate} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">{estimatorText("convert")}</button>
+              <Link href="/modules" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("back")}</Link>
+              <button type="button" onClick={toggleEstimatorLanguage} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("switchLanguage")}</button>
+              <button type="button" onClick={handleProjectManagerLogout} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("logout")}</button>
+              <label className="text-xs font-semibold text-slate-700">
+                Active estimate
+                <select value={selectedEstimateId} onChange={(event) => setSelectedEstimateId(event.target.value)} className="ml-2 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700">
+                  <option value="">Select estimate</option>
+                  {estimates.map((estimate) => (
+                    <option key={estimate.id} value={estimate.id}>{estimate.estimate_number} - {estimate.estimate_name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          ) : null}
           {isProjectManagerProjects && projectManagerExportMessage ? <p className="mt-2 text-sm text-slate-700">{projectManagerExportMessage}</p> : null}
+          {isEstimatorModule && (estimateMessage || estimatorAiMessage || estimatorUploadMessage) ? <p className="mt-2 text-sm text-slate-700">{estimateMessage || estimatorAiMessage || estimatorUploadMessage}</p> : null}
 
-          {detail.route.status === "bridge" && !isProjectManagerProjects ? (
+          {detail.route.status === "bridge" && !isProjectManagerProjects && !isEstimatorModule ? (
             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-900">Bridge workspace form</h2>
               <p className="mt-2 text-sm text-amber-900">

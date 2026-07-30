@@ -401,6 +401,121 @@ class EstimatorWinLossRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class Estimate(Base):
+    __tablename__ = "estimates"
+    __table_args__ = (UniqueConstraint("tenant_id", "estimate_number", name="uq_estimates_tenant_number"),)
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), index=True, nullable=True)
+    estimate_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    estimate_number: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    customer_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    project_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    project_address: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    project_type: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    bid_due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expected_start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expected_completion_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    estimator_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    project_manager_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    sales_contact: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    contract_type: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    estimate_type: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    currency: Mapped[str] = mapped_column(String(12), default="USD", nullable=False)
+    tax_jurisdiction: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    target_margin_percent: Mapped[float] = mapped_column(Numeric(6, 2), default=0, nullable=False)
+    default_overhead_percent: Mapped[float] = mapped_column(Numeric(6, 2), default=0, nullable=False)
+    default_contingency_percent: Mapped[float] = mapped_column(Numeric(6, 2), default=0, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(40), default="New", nullable=False, index=True)
+    approval_status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_project_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("projects.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimateItem(Base):
+    __tablename__ = "estimate_items"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    estimate_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("estimates.id"), index=True, nullable=False)
+    item_number: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    cost_code: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    division: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    phase: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    work_location: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric(14, 4), default=0, nullable=False)
+    unit_of_measure: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    unit_cost: Mapped[float] = mapped_column(Numeric(14, 4), default=0, nullable=False)
+    total_cost: Mapped[float] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    unit_price: Mapped[float] = mapped_column(Numeric(14, 4), default=0, nullable=False)
+    total_selling_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(60), default="manual", nullable=False)
+    assumption: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    review_status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimateDocument(Base):
+    __tablename__ = "estimate_documents"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    estimate_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("estimates.id"), index=True, nullable=False)
+    intake_item_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("intake_items.id"), index=True, nullable=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(80), default="Unknown document", nullable=False)
+    processing_status: Mapped[str] = mapped_column(String(40), default="Uploaded", nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    version_label: Mapped[str] = mapped_column(String(40), default="v1", nullable=False)
+    review_status: Mapped[str] = mapped_column(String(40), default="Review recommended", nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimateApproval(Base):
+    __tablename__ = "estimate_approvals"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    estimate_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("estimates.id"), index=True, nullable=False)
+    approver_user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    approver_role: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    decision: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
+    comments: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class EstimateAuditLog(Base):
+    __tablename__ = "estimate_audit_logs"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    estimate_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("estimates.id"), index=True, nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    new_status: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    details: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class VendorPurchaseOrder(Base):
     __tablename__ = "vendor_purchase_orders"
 

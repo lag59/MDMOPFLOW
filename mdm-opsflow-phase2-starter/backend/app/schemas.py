@@ -760,6 +760,224 @@ class EstimatorSummaryResponse(BaseModel):
     win_rate_percent: Decimal
 
 
+class EstimateBase(BaseModel):
+    project_id: str | None = None
+    estimate_name: str = Field(min_length=2, max_length=255)
+    estimate_number: str = Field(min_length=2, max_length=120)
+    customer_name: str = ""
+    project_name: str = ""
+    project_address: str = ""
+    project_type: str = ""
+    bid_due_date: datetime | None = None
+    expected_start_date: datetime | None = None
+    expected_completion_date: datetime | None = None
+    estimator_name: str = ""
+    project_manager_name: str = ""
+    sales_contact: str = ""
+    contract_type: str = ""
+    estimate_type: str = ""
+    currency: str = "USD"
+    tax_jurisdiction: str = ""
+    target_margin_percent: Decimal = Decimal("0.00")
+    default_overhead_percent: Decimal = Decimal("0.00")
+    default_contingency_percent: Decimal = Decimal("0.00")
+    notes: str = ""
+
+
+class EstimateCreate(EstimateBase):
+    status: str = "New"
+
+
+class EstimateUpdate(BaseModel):
+    project_id: str | None = None
+    estimate_name: str | None = None
+    customer_name: str | None = None
+    project_name: str | None = None
+    project_address: str | None = None
+    project_type: str | None = None
+    bid_due_date: datetime | None = None
+    expected_start_date: datetime | None = None
+    expected_completion_date: datetime | None = None
+    estimator_name: str | None = None
+    project_manager_name: str | None = None
+    sales_contact: str | None = None
+    contract_type: str | None = None
+    estimate_type: str | None = None
+    currency: str | None = None
+    tax_jurisdiction: str | None = None
+    target_margin_percent: Decimal | None = None
+    default_overhead_percent: Decimal | None = None
+    default_contingency_percent: Decimal | None = None
+    notes: str | None = None
+
+
+class EstimateResponse(EstimateBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    status: str
+    approval_status: str
+    is_locked: bool
+    locked_at: datetime | None = None
+    converted_project_id: str | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimateStatusUpdateRequest(BaseModel):
+    status: str = Field(min_length=2, max_length=40)
+    details: str = ""
+
+
+class EstimateDocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    estimate_id: str
+    intake_item_id: str | None = None
+    filename: str
+    document_type: str
+    processing_status: str
+    confidence_score: Decimal
+    version_label: str
+    review_status: str
+    uploaded_by: str
+    uploaded_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimateItemBase(BaseModel):
+    item_number: str = ""
+    cost_code: str = ""
+    division: str = ""
+    phase: str = ""
+    description: str = ""
+    work_location: str = ""
+    quantity: Decimal = Decimal("0.00")
+    unit_of_measure: str = ""
+    unit_cost: Decimal = Decimal("0.00")
+    total_cost: Decimal = Decimal("0.00")
+    unit_price: Decimal = Decimal("0.00")
+    total_selling_price: Decimal = Decimal("0.00")
+    source: str = "manual"
+    assumption: str = ""
+    notes: str = ""
+    review_status: str = "pending"
+
+
+class EstimateItemCreate(EstimateItemBase):
+    pass
+
+
+class EstimateItemUpdate(BaseModel):
+    item_number: str | None = None
+    cost_code: str | None = None
+    division: str | None = None
+    phase: str | None = None
+    description: str | None = None
+    work_location: str | None = None
+    quantity: Decimal | None = None
+    unit_of_measure: str | None = None
+    unit_cost: Decimal | None = None
+    total_cost: Decimal | None = None
+    unit_price: Decimal | None = None
+    total_selling_price: Decimal | None = None
+    source: str | None = None
+    assumption: str | None = None
+    notes: str | None = None
+    review_status: str | None = None
+
+
+class EstimateItemResponse(EstimateItemBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    estimate_id: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimateApprovalRequest(BaseModel):
+    decision: str = Field(min_length=2, max_length=40)
+    comments: str = ""
+
+
+class EstimateApprovalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    estimate_id: str
+    approver_user_id: str
+    approver_role: str
+    decision: str
+    comments: str
+    decided_at: datetime | None = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimateAuditLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    estimate_id: str
+    actor_user_id: str
+    action: str
+    previous_status: str
+    new_status: str
+    details: str
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EstimateCompareResponse(BaseModel):
+    left_version_id: str
+    right_version_id: str
+    summary: str
+    changes: list[str]
+
+
+class EstimateValidationResponse(BaseModel):
+    completion_score: int
+    unresolved_issues: list[str]
+
+
+class EstimateAiReviewResponse(BaseModel):
+    estimate_id: str
+    warnings: list[str]
+    recommendations: list[str]
+
+
+class CostLibraryResponse(BaseModel):
+    labor: list[dict[str, str]]
+    equipment: list[dict[str, str]]
+    materials: list[dict[str, str]]
+    trucking: list[dict[str, str]]
+    subcontractors: list[dict[str, str]]
+
+
+class CostLibraryImportRequest(BaseModel):
+    labor: list[dict[str, str]] = []
+    equipment: list[dict[str, str]] = []
+    materials: list[dict[str, str]] = []
+    trucking: list[dict[str, str]] = []
+    subcontractors: list[dict[str, str]] = []
+
+
+class CostLibraryImportResponse(BaseModel):
+    imported_count: int
+
+
 class VendorPurchaseOrderBase(BaseModel):
     project_id: str | None = None
     po_number: str = Field(min_length=2, max_length=120)

@@ -133,6 +133,87 @@ def test_estimator_domain_workflows_and_permissions(client: TestClient) -> None:
     assert summary_payload["losses"] == 0
     assert summary_payload["win_rate_percent"] == "100.00"
 
+    estimate_response = client.post(
+        "/api/estimates",
+        headers=estimator_headers,
+        json={
+            "project_id": project_id,
+            "estimate_name": "North Yard Bid",
+            "estimate_number": "EST-1001",
+            "customer_name": "City Utilities",
+            "project_name": "North Yard",
+            "project_address": "100 Main St",
+            "project_type": "Heavy civil",
+            "estimator_name": "Estimator Member",
+            "project_manager_name": "Jordan PM",
+            "contract_type": "Lump sum",
+            "estimate_type": "Bid",
+            "currency": "USD",
+            "target_margin_percent": "15.00",
+            "default_overhead_percent": "8.00",
+            "default_contingency_percent": "5.00",
+            "notes": "Initial estimate",
+            "status": "New",
+        },
+    )
+    assert estimate_response.status_code == 201, estimate_response.text
+    estimate_id = estimate_response.json()["id"]
+
+    estimate_item_response = client.post(
+        f"/api/estimates/{estimate_id}/items",
+        headers=estimator_headers,
+        json={
+            "item_number": "1",
+            "cost_code": "31-23-16",
+            "division": "Sitework",
+            "phase": "Earthwork",
+            "description": "Mass excavation",
+            "quantity": "20000.00",
+            "unit_of_measure": "CY",
+            "unit_cost": "4.50",
+            "total_cost": "90000.00",
+            "unit_price": "5.25",
+            "total_selling_price": "105000.00",
+            "source": "manual",
+            "review_status": "accepted",
+        },
+    )
+    assert estimate_item_response.status_code == 201, estimate_item_response.text
+
+    validate_response = client.post(f"/api/estimates/{estimate_id}/validate", headers=estimator_headers)
+    assert validate_response.status_code == 200, validate_response.text
+    assert "completion_score" in validate_response.json()
+
+    submit_response = client.post(f"/api/estimates/{estimate_id}/submit", headers=estimator_headers)
+    assert submit_response.status_code == 200, submit_response.text
+    assert submit_response.json()["status"] == "Submitted"
+
+    approve_response = client.post(
+        f"/api/estimates/{estimate_id}/approve",
+        headers=estimator_headers,
+        json={"decision": "approved", "comments": "Reviewed and approved"},
+    )
+    assert approve_response.status_code == 200, approve_response.text
+    assert approve_response.json()["decision"] == "approved"
+
+    patch_awarded_response = client.patch(
+        f"/api/estimates/{estimate_id}",
+        headers=estimator_headers,
+        json={"notes": "Award confirmed"},
+    )
+    assert patch_awarded_response.status_code == 409, patch_awarded_response.text
+
+    ai_review_response = client.post(f"/api/estimates/{estimate_id}/ai-review", headers=estimator_headers)
+    assert ai_review_response.status_code == 200, ai_review_response.text
+
+    convert_response = client.post(f"/api/estimates/{estimate_id}/convert-to-project", headers=owner_headers)
+    assert convert_response.status_code == 200, convert_response.text
+    assert convert_response.json()["status"] == "Converted to Project"
+
+    audit_logs_response = client.get(f"/api/estimates/{estimate_id}/audit-logs", headers=estimator_headers)
+    assert audit_logs_response.status_code == 200, audit_logs_response.text
+    assert len(audit_logs_response.json()) >= 4
+
     list_takeoffs_response = client.get("/api/estimator/takeoffs", headers=accounting_headers)
     assert list_takeoffs_response.status_code == 200, list_takeoffs_response.text
     assert len(list_takeoffs_response.json()) == 1

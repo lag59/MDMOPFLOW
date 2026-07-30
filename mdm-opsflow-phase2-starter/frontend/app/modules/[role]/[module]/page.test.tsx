@@ -226,6 +226,80 @@ vi.mock("@/lib/customerPortal", () => ({
 }));
 
 vi.mock("@/lib/estimator", () => ({
+  listEstimates: vi.fn(async () => [
+    {
+      id: "estimate-1",
+      tenant_id: "tenant-1",
+      project_id: "project-1",
+      estimate_name: "North Yard Bid",
+      estimate_number: "EST-1001",
+      customer_name: "City Utilities",
+      project_name: "North Yard",
+      project_address: "100 Main St",
+      project_type: "Heavy civil",
+      bid_due_date: "2026-08-15T00:00:00Z",
+      expected_start_date: null,
+      expected_completion_date: null,
+      estimator_name: "Estimator Member",
+      project_manager_name: "Jordan PM",
+      sales_contact: "",
+      contract_type: "Lump sum",
+      estimate_type: "Bid",
+      currency: "USD",
+      tax_jurisdiction: "",
+      target_margin_percent: "15.00",
+      default_overhead_percent: "8.00",
+      default_contingency_percent: "5.00",
+      notes: "",
+      status: "Draft Estimate",
+      approval_status: "pending",
+      is_locked: false,
+      locked_at: null,
+      converted_project_id: null,
+      created_by: "user-1",
+      created_at: "2026-07-28T00:00:00Z",
+      updated_at: "2026-07-28T00:00:00Z",
+    },
+  ]),
+  createEstimate: vi.fn(async () => ({
+    id: "estimate-new",
+    tenant_id: "tenant-1",
+    project_id: "project-1",
+    estimate_name: "New Estimate",
+    estimate_number: "EST-2001",
+    customer_name: "",
+    project_name: "",
+    project_address: "",
+    project_type: "",
+    bid_due_date: null,
+    expected_start_date: null,
+    expected_completion_date: null,
+    estimator_name: "",
+    project_manager_name: "",
+    sales_contact: "",
+    contract_type: "",
+    estimate_type: "",
+    currency: "USD",
+    tax_jurisdiction: "",
+    target_margin_percent: "0.00",
+    default_overhead_percent: "0.00",
+    default_contingency_percent: "0.00",
+    notes: "",
+    status: "New",
+    approval_status: "pending",
+    is_locked: false,
+    locked_at: null,
+    converted_project_id: null,
+    created_by: "user-1",
+    created_at: "2026-07-28T00:00:00Z",
+    updated_at: "2026-07-28T00:00:00Z",
+  })),
+  uploadEstimateDocuments: vi.fn(async () => []),
+  validateEstimate: vi.fn(async () => ({ completion_score: 100, unresolved_issues: [] })),
+  submitEstimate: vi.fn(async () => ({})),
+  approveEstimate: vi.fn(async () => ({ decision: "approved" })),
+  convertEstimateToProject: vi.fn(async () => ({ converted_project_id: "project-new" })),
+  runEstimateAiReview: vi.fn(async () => ({ estimate_id: "estimate-1", warnings: [], recommendations: ["No critical gaps detected"] })),
   createEstimatorTakeoff: vi.fn(async () => ({
     id: "takeoff-new",
     tenant_id: "tenant-1",
@@ -1167,24 +1241,27 @@ describe("Company owner module detail page", () => {
     render(<ModuleDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Takeoff")).toBeInTheDocument();
-      expect(screen.getByText("Open Takeoff Workspace")).toBeInTheDocument();
-      expect(screen.getByText("Takeoff inputs")).toBeInTheDocument();
-      expect(screen.getByText("Takeoffs")).toBeInTheDocument();
-      expect(screen.getByText("Bid pipeline")).toBeInTheDocument();
-      expect(screen.getByText("TK-001 • Aggregate Base • 120.50 cy")).toBeInTheDocument();
-      expect(screen.getByText("Editable estimate worksheet")).toBeInTheDocument();
-      expect(screen.getByText("Apply File + Project Context")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "AI Project Estimator" })).toBeInTheDocument();
+      expect(screen.getByText("Create New Estimate")).toBeInTheDocument();
+      expect(screen.getByText("Upload Bid Documents")).toBeInTheDocument();
+      expect(screen.getByText("Open Estimate Versions")).toBeInTheDocument();
+      expect(screen.getByText("Open Cost Library")).toBeInTheDocument();
+      expect(screen.getByText("Estimate statuses")).toBeInTheDocument();
+      expect(screen.getByText("Create new estimate wizard")).toBeInTheDocument();
+      expect(screen.getByText("OCR extraction review")).toBeInTheDocument();
+      expect(screen.getByText("AI estimate review actions")).toBeInTheDocument();
       expect(screen.getByText("Save Estimate")).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Estimate name"), {
+    const estimateNameInputs = screen.getAllByLabelText("Estimate name") as HTMLInputElement[];
+    const worksheetNameInput = estimateNameInputs.find((input) => input.value === "Field Production Estimate") || estimateNameInputs[0];
+    fireEvent.change(worksheetNameInput, {
       target: { value: "North Yard Phase 1" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save Estimate" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Estimate saved to Takeoffs and Estimate Versions.")).toBeInTheDocument();
+      expect(screen.getAllByText("Estimate saved to Takeoffs and Estimate Versions.").length).toBeGreaterThan(0);
     });
   });
 
