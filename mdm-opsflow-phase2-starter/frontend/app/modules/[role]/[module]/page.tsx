@@ -193,6 +193,8 @@ const PROJECT_MANAGER_LABELS: Record<ProjectManagerLocale, Record<string, string
     reviewApprovals: "Review Approvals",
     createActionTicket: "Create Action Ticket",
     runAiReview: "Run AI Project Review",
+    exportPdf: "Export PDF",
+    exportExcel: "Export Excel",
     switchLanguage: "Switch Language",
     backToModules: "Back to Modules",
     logout: "Logout",
@@ -231,6 +233,8 @@ const PROJECT_MANAGER_LABELS: Record<ProjectManagerLocale, Record<string, string
     reviewApprovals: "Revisar Aprobaciones",
     createActionTicket: "Crear Ticket de Acción",
     runAiReview: "Ejecutar Revisión con IA",
+    exportPdf: "Exportar PDF",
+    exportExcel: "Exportar Excel",
     switchLanguage: "Cambiar Idioma",
     backToModules: "Volver a Módulos",
     logout: "Cerrar Sesión",
@@ -301,6 +305,9 @@ export default function ModuleDetailPage() {
   const [projectManagerActionMessage, setProjectManagerActionMessage] = useState("");
   const [projectManagerActionSaving, setProjectManagerActionSaving] = useState(false);
   const [projectManagerAiRunning, setProjectManagerAiRunning] = useState(false);
+  const [projectManagerExportMessage, setProjectManagerExportMessage] = useState("");
+  const [projectManagerExportingPdf, setProjectManagerExportingPdf] = useState(false);
+  const [projectManagerExportingExcel, setProjectManagerExportingExcel] = useState(false);
   const [projectManagerActionDraft, setProjectManagerActionDraft] = useState<ProjectManagerActionDraft>({
     title: "",
     projectId: "",
@@ -889,6 +896,112 @@ export default function ModuleDetailPage() {
       setProjectManagerActionMessage("Unable to create action ticket right now.");
     } finally {
       setProjectManagerActionSaving(false);
+    }
+  };
+
+  const exportProjectManagerPdf = async () => {
+    const token = getAccessToken();
+    if (!token) {
+      setProjectManagerExportMessage("Login required.");
+      return;
+    }
+
+    const report =
+      dailyReports.find((item) => ["submitted", "reviewed", "approved"].includes((item.status || "").toLowerCase())) ||
+      dailyReports[0];
+    if (!report?.id) {
+      setProjectManagerExportMessage("No daily report is available to export yet.");
+      return;
+    }
+
+    setProjectManagerExportingPdf(true);
+    setProjectManagerExportMessage("");
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/daily-field-reports/${report.id}/pdf`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": getTenantId(),
+        },
+      });
+      if (!response.ok) {
+        setProjectManagerExportMessage("Unable to export PDF right now.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${report.report_number || "daily-report"}.pdf`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+      setProjectManagerExportMessage(`Exported PDF for ${report.report_number || report.id}.`);
+    } catch {
+      setProjectManagerExportMessage("Unable to export PDF right now.");
+    } finally {
+      setProjectManagerExportingPdf(false);
+    }
+  };
+
+  const exportProjectManagerExcel = () => {
+    if (!projects.length) {
+      setProjectManagerExportMessage("No project data is available to export yet.");
+      return;
+    }
+
+    setProjectManagerExportingExcel(true);
+    setProjectManagerExportMessage("");
+    try {
+      const rows = [
+        [
+          "Project Name",
+          "Project Number",
+          "Status",
+          "Revenue",
+          "Actual Cost",
+          "Profit Margin",
+          "Open Issues",
+          "Latest Daily Report Status",
+        ],
+        ...projects.map((project) => {
+          const projectProfitability = profitability.get(project.id);
+          const latestReport = dailyReports.find((report) => report.project_id === project.id);
+          const openIssues = tickets.filter(
+            (ticket) => ticket.project_id === project.id && !["closed", "resolved"].includes((ticket.status || "").toLowerCase())
+          ).length;
+          return [
+            project.project_name,
+            project.project_number,
+            project.status,
+            String(Number(projectProfitability?.actual_revenue || 0)),
+            String(Number(projectProfitability?.actual_cost || 0)),
+            `${Number(projectProfitability?.profit_margin || 0).toFixed(1)}%`,
+            String(openIssues),
+            latestReport?.status || "Not Started",
+          ];
+        }),
+      ];
+
+      const csv = rows
+        .map((row) =>
+          row
+            .map((value) => `"${String(value).replaceAll("\"", '""')}"`)
+            .join(",")
+        )
+        .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `project-manager-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      window.URL.revokeObjectURL(url);
+      setProjectManagerExportMessage("Exported Excel-compatible project report (CSV).");
+    } catch {
+      setProjectManagerExportMessage("Unable to export Excel report right now.");
+    } finally {
+      setProjectManagerExportingExcel(false);
     }
   };
 
@@ -2479,11 +2592,14 @@ export default function ModuleDetailPage() {
               <Link href="/daily-production/queue" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("reviewApprovals")}</Link>
               <button type="button" onClick={() => createProjectManagerActionTicket("Open")} disabled={projectManagerActionSaving} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">{projectManagerText("createActionTicket")}</button>
               <button type="button" onClick={() => runProjectManagerAiReview("Summarize Today’s Field Activity")} disabled={projectManagerAiRunning} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">{projectManagerText("runAiReview")}</button>
+              <button type="button" onClick={exportProjectManagerPdf} disabled={projectManagerExportingPdf} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">{projectManagerExportingPdf ? "Exporting..." : projectManagerText("exportPdf")}</button>
+              <button type="button" onClick={exportProjectManagerExcel} disabled={projectManagerExportingExcel} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">{projectManagerExportingExcel ? "Exporting..." : projectManagerText("exportExcel")}</button>
               <button type="button" onClick={toggleProjectManagerLanguage} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("switchLanguage")}</button>
               <Link href="/modules" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("backToModules")}</Link>
               <button type="button" onClick={handleProjectManagerLogout} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("logout")}</button>
             </div>
           ) : null}
+          {isProjectManagerProjects && projectManagerExportMessage ? <p className="mt-2 text-sm text-slate-700">{projectManagerExportMessage}</p> : null}
 
           {detail.route.status === "bridge" && !isProjectManagerProjects ? (
             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">

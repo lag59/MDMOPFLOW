@@ -670,6 +670,8 @@ describe("Company owner module detail page", () => {
       expect(screen.getAllByText("South Yard").length).toBeGreaterThan(0);
       expect(screen.getByText("Create Project")).toBeInTheDocument();
       expect(screen.getByText("Open Daily Production")).toBeInTheDocument();
+      expect(screen.getByText("Export PDF")).toBeInTheDocument();
+      expect(screen.getByText("Export Excel")).toBeInTheDocument();
       expect(screen.getByText("$350K")).toBeInTheDocument();
     });
   });
