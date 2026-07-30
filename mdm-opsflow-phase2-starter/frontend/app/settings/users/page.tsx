@@ -83,6 +83,9 @@ export default function UserSettingsPage() {
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
   const [basePermissions, setBasePermissions] = useState<Set<string>>(new Set());
   const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [title, setTitle] = useState("");
+  const [temporaryPassword, setTemporaryPassword] = useState("ChangeMe123!");
   const [roleName, setRoleName] = useState("owner");
   const [roleOptions, setRoleOptions] = useState<string[]>(DEFAULT_ROLE_OPTIONS);
   const [message, setMessage] = useState("");
@@ -326,7 +329,13 @@ export default function UserSettingsPage() {
         Authorization: `Bearer ${getAccessToken()}`,
         "X-Tenant-ID": resolveTenantHeader(),
       },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), role_name: roleName }),
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        role_name: roleName,
+        display_name: displayName.trim(),
+        title: title.trim(),
+        temporary_password: temporaryPassword.trim() || "ChangeMe123!",
+      }),
     });
 
     if (!response.ok) {
@@ -336,7 +345,10 @@ export default function UserSettingsPage() {
     }
 
     setEmail("");
-    setMessage(t(locale, "settings.usersPage.success.assigned"));
+    setDisplayName("");
+    setTitle("");
+    setTemporaryPassword("ChangeMe123!");
+    setMessage(`${t(locale, "settings.usersPage.success.assigned")} Temporary password: ${temporaryPassword.trim() || "ChangeMe123!"}`);
     await loadMembers();
   }
 
@@ -427,6 +439,21 @@ export default function UserSettingsPage() {
           placeholder={t(locale, "settings.usersPage.userEmail")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+        />
+        <input
+          placeholder="Display name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
+        <input
+          placeholder="Job title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <input
+          placeholder="Temporary password"
+          value={temporaryPassword}
+          onChange={(e) => setTemporaryPassword(e.target.value)}
         />
         <label>
           Role

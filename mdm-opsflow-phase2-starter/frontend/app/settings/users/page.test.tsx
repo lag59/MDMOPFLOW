@@ -43,6 +43,12 @@ describe("User settings assignment flow", () => {
         })
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             user_id: "u1",
@@ -75,15 +81,17 @@ describe("User settings assignment flow", () => {
     render(<UserSettingsPage />);
 
     await user.type(screen.getByPlaceholderText("User email"), "member@acme.com");
+    await user.type(screen.getByPlaceholderText("Display name"), "Member User");
+    await user.type(screen.getByPlaceholderText("Job title"), "Project Engineer");
     await user.selectOptions(screen.getByLabelText("Role"), "project_manager");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("User assigned to company.")).toBeInTheDocument();
+      expect(screen.getByText("User assigned to company. Temporary password: ChangeMe123!")).toBeInTheDocument();
       expect(screen.getByText("Member User (member@acme.com)")).toBeInTheDocument();
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     const assignCall = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
 
     expect(assignCall?.[1]).toMatchObject({
@@ -94,6 +102,8 @@ describe("User settings assignment flow", () => {
       }),
     });
     expect(String((assignCall?.[1] as RequestInit | undefined)?.body)).toContain('"role_name":"project_manager"');
+    expect(String((assignCall?.[1] as RequestInit | undefined)?.body)).toContain('"display_name":"Member User"');
+    expect(String((assignCall?.[1] as RequestInit | undefined)?.body)).toContain('"temporary_password":"ChangeMe123!"');
   });
 
   it("shows localized error when backend returns user not found", async () => {
@@ -114,6 +124,12 @@ describe("User settings assignment flow", () => {
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -159,7 +175,25 @@ describe("User settings assignment flow", () => {
         })
       )
       .mockResolvedValueOnce(
+        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
         new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -239,6 +273,15 @@ describe("User settings assignment flow", () => {
       if (url.endsWith("/api/tenant-users/permissions/catalog")) {
         return Promise.resolve(
           new Response(JSON.stringify(["project_read", "project_write"]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users/roles/catalog")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })

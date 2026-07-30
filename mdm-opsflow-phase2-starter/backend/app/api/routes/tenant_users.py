@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, get_request_context, require_permissions
-from app.models import AuditLog, MembershipStatus, Role, TenantMembership, User, UserPermissionOverride
+from app.models import AuditLog, MembershipStatus, PlatformRole, Role, TenantMembership, User, UserPermissionOverride
 from app.rbac import ALL_KNOWN_PERMISSIONS, ROLE_PERMISSIONS, permission_exists, permissions_csv_for_role, resolve_permissions
+from app.security import hash_password
 from app.schemas import (
     AssignTenantUserRequest,
     TenantUserPermissionsResponse,
@@ -112,9 +113,20 @@ def assign_tenant_user(
     if not has_admin_write and not is_owner:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    normalized_email = payload.email.lower()
+    user = db.scalar(select(User).where(User.email == normalized_email))
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        inferred_display_name = payload.display_name.strip() or normalized_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+        user = User(
+            email=normalized_email,
+            password_hash=hash_password(payload.temporary_password),
+            display_name=inferred_display_name,
+            title=payload.title.strip(),
+            platform_role=PlatformRole.USER,
+            is_active=True,
+        )
+        db.add(user)
+        db.flush()
 
     role = db.scalar(
         select(Role).where(

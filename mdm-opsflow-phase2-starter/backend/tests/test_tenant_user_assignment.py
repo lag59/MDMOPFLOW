@@ -115,6 +115,37 @@ def test_assigning_standard_role_auto_provisions_missing_tenant_role(client: Tes
     assert assigned["role_name"] == "project_manager"
 
 
+def test_owner_can_create_user_with_temporary_password_and_assign_role(client: TestClient):
+    owner = register_user(client, "owner-create@acme.com", "Pass12345!", "Owner")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Create", "Acme Create Project")
+    tenant_id = onboarding["tenant_id"]
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={
+            "email": "newhire@acme.com",
+            "role_name": "estimator",
+            "display_name": "New Hire",
+            "title": "Estimator I",
+            "temporary_password": "ChangeMe123!",
+        },
+    )
+
+    assert assign.status_code == 201
+    assigned = assign.json()
+    assert assigned["email"] == "newhire@acme.com"
+    assert assigned["display_name"] == "New Hire"
+    assert assigned["role_name"] == "estimator"
+
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "newhire@acme.com", "password": "ChangeMe123!", "tenant_id": tenant_id},
+    )
+    assert login.status_code == 200
+
+
 def test_owner_can_toggle_user_permissions(client: TestClient):
     owner = register_user(client, "owner3@acme.com", "Pass12345!", "Owner")
     owner_token = owner["tokens"]["access_token"]

@@ -223,13 +223,19 @@ class AssignTenantUserRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "email": "new.member@example.com",
-                "role_name": "member",
+                "role_name": "project_manager",
+                "display_name": "New Member",
+                "title": "Assistant PM",
+                "temporary_password": "ChangeMe123!",
             }
         }
     )
 
     email: EmailStr
     role_name: str = Field(min_length=2, max_length=100)
+    display_name: str = Field(min_length=2, max_length=255, default="")
+    title: str = Field(max_length=120, default="")
+    temporary_password: str = Field(min_length=8, max_length=255, default="ChangeMe123!")
 
 
 class HealthResponse(BaseModel):
@@ -375,6 +381,58 @@ class AdminUserAccessItem(BaseModel):
     title: str
     platform_role: PlatformRole
     is_active: bool
+
+
+class AdminUserTenantMembershipItem(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "membership_id": "7e4e28dc-5038-4025-8e4c-a64fd3b76156",
+                "user_id": "12d3121c-5038-4025-8e4c-a64fd3b76156",
+                "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
+                "tenant_name": "Acme Civil",
+                "role_name": "estimator",
+                "status": "active",
+            }
+        }
+    )
+
+    membership_id: str
+    user_id: str
+    tenant_id: str
+    tenant_name: str
+    role_name: str
+    status: str
+
+
+class AdminAssignUserTenantMembershipRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
+                "role_name": "estimator",
+            }
+        }
+    )
+
+    tenant_id: str
+    role_name: str = Field(min_length=2, max_length=100)
+
+
+class AdminUpdateUserTenantMembershipRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
+                "role_name": "project_manager",
+                "status": "active",
+            }
+        }
+    )
+
+    tenant_id: str | None = None
+    role_name: str | None = Field(default=None, min_length=2, max_length=100)
+    status: str | None = Field(default=None, pattern="^(active|inactive|invited)$")
 
 
 class AdminUpdateUserAccessRequest(BaseModel):
