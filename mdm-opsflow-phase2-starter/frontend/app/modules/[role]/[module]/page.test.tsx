@@ -662,13 +662,107 @@ describe("Company owner module detail page", () => {
     render(<ModuleDetailPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Projects")).toBeInTheDocument();
-      expect(screen.getByText("Open Projects Workspace")).toBeInTheDocument();
-      expect(screen.getByText("Project execution board")).toBeInTheDocument();
-      expect(screen.getByText("North Yard")).toBeInTheDocument();
-      expect(screen.getByText("South Yard")).toBeInTheDocument();
-      expect(screen.getByText("Create new project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Project Manager" })).toBeInTheDocument();
+      expect(screen.getByText("Portfolio Summary")).toBeInTheDocument();
+      expect(screen.getByText("Project Portfolio View")).toBeInTheDocument();
+      expect(screen.getByText("Projects Needing Attention")).toBeInTheDocument();
+      expect(screen.getAllByText("North Yard").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("South Yard").length).toBeGreaterThan(0);
+      expect(screen.getByText("Create Project")).toBeInTheDocument();
+      expect(screen.getByText("Open Daily Production")).toBeInTheDocument();
       expect(screen.getByText("$350K")).toBeInTheDocument();
+    });
+  });
+
+  it("renders a project manager dashboard for project manager modules", async () => {
+    mockParams.role = "project_manager";
+    mockParams.module = "projects";
+
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/projects")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "project-1", project_name: "North Yard", project_number: "P-100", status: "active" },
+              { id: "project-2", project_name: "South Yard", project_number: "P-200", status: "planning" },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/api/projects/project-1/profitability")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              project_id: "project-1",
+              project_name: "North Yard",
+              status: "active",
+              actual_revenue: 250000,
+              actual_cost: 210000,
+              gross_profit: 40000,
+              profit_margin: 16,
+              cost_overrun: false,
+              revenue_shortfall: true,
+              ticket_count: 7,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/api/projects/project-2/profitability")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              project_id: "project-2",
+              project_name: "South Yard",
+              status: "planning",
+              actual_revenue: 100000,
+              actual_cost: 85000,
+              gross_profit: 15000,
+              profit_margin: 15,
+              cost_overrun: false,
+              revenue_shortfall: false,
+              ticket_count: 1,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/daily-field-reports")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "report-1",
+                report_number: "DR-001",
+                project_id: "project-1",
+                report_date: "2026-07-29",
+                reporting_supervisor: "Avery Chen",
+                status: "submitted",
+                work_performed: "Excavation complete",
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    render(<ModuleDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Project Manager" })).toBeInTheDocument();
+      expect(screen.getByText("Projects at risk")).toBeInTheDocument();
+      expect(screen.getByText("Daily reports awaiting review")).toBeInTheDocument();
+      expect(screen.getByText("Production performance")).toBeInTheDocument();
+      expect(screen.getByText("Project portfolio")).toBeInTheDocument();
     });
   });
 

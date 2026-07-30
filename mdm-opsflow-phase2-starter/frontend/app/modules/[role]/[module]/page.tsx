@@ -56,6 +56,16 @@ type ServiceInsights = {
   opportunities: string[];
 };
 
+type DailyFieldReport = {
+  id: string;
+  report_number?: string;
+  project_id?: string;
+  report_date?: string;
+  reporting_supervisor?: string;
+  status?: string;
+  work_performed?: string;
+};
+
 type TenantUserMembership = {
   user_id: string;
   email: string;
@@ -113,6 +123,21 @@ type EstimateMaterialLine = {
   unitCost: number;
 };
 
+type ProjectManagerLocale = "en" | "es";
+
+type ProjectManagerActionDraft = {
+  title: string;
+  projectId: string;
+  category: string;
+  priority: string;
+  riskLevel: string;
+  responsiblePerson: string;
+  dueDate: string;
+  description: string;
+  status: string;
+  notes: string;
+};
+
 const DEFAULT_BRIDGE_DRAFT: BridgeWorkspaceDraft = {
   initiative: "",
   portfolioView: "",
@@ -139,6 +164,85 @@ const DEFAULT_MATERIAL_LINES: EstimateMaterialLine[] = [
   { id: "material-1", materialName: "Aggregate Base", quantity: 100, unit: "tons", unitCost: 28 },
 ];
 
+const PROJECT_MANAGER_LABELS: Record<ProjectManagerLocale, Record<string, string>> = {
+  en: {
+    projectManager: "Project Manager",
+    portfolioSummary: "Portfolio Summary",
+    activeProjects: "Active Projects",
+    projectsAtRisk: "Projects at Risk",
+    dailyReportsDue: "Daily Reports Due",
+    reportsAwaitingApproval: "Reports Awaiting Approval",
+    openActionTickets: "Open Action Tickets",
+    unassignedDispatchItems: "Unassigned Dispatch Items",
+    potentialChangeOrders: "Potential Change Orders",
+    approvalBacklog: "Approval Backlog",
+    projectPortfolioView: "Project Portfolio View",
+    projectsNeedingAttention: "Projects Needing Attention",
+    dailyProductionReview: "Daily Production Review",
+    productionPerformance: "Production Performance",
+    laborHours: "Labor Hours",
+    machineHours: "Machine Hours",
+    materialUsage: "Material Usage",
+    schedulePressure: "Schedule Pressure",
+    executionLoad: "Execution Load",
+    actionPlan: "Project Manager Action Plan",
+    marginControl: "Margin and Cost Control",
+    aiAssist: "AI Project Manager Assist",
+    createProject: "Create Project",
+    openDailyProduction: "Open Daily Production",
+    reviewApprovals: "Review Approvals",
+    createActionTicket: "Create Action Ticket",
+    runAiReview: "Run AI Project Review",
+    switchLanguage: "Switch Language",
+    backToModules: "Back to Modules",
+    logout: "Logout",
+    saveAction: "Save Action",
+    assignAction: "Assign Action",
+    escalate: "Escalate",
+    markResolved: "Mark Resolved",
+    createFollowUp: "Create Follow-Up",
+    runAiAssist: "Run AI Assist",
+  },
+  es: {
+    projectManager: "Gerente de Proyecto",
+    portfolioSummary: "Resumen del Portafolio",
+    activeProjects: "Proyectos Activos",
+    projectsAtRisk: "Proyectos en Riesgo",
+    dailyReportsDue: "Reportes Diarios Pendientes",
+    reportsAwaitingApproval: "Reportes por Aprobar",
+    openActionTickets: "Tickets de Acción Abiertos",
+    unassignedDispatchItems: "Elementos sin Asignar en Despacho",
+    potentialChangeOrders: "Órdenes de Cambio Potenciales",
+    approvalBacklog: "Aprobaciones Pendientes",
+    projectPortfolioView: "Vista de Portafolio de Proyectos",
+    projectsNeedingAttention: "Proyectos que Requieren Atención",
+    dailyProductionReview: "Revisión de Producción Diaria",
+    productionPerformance: "Rendimiento de Producción",
+    laborHours: "Horas de Trabajo",
+    machineHours: "Horas de Equipo",
+    materialUsage: "Uso de Materiales",
+    schedulePressure: "Riesgo del Cronograma",
+    executionLoad: "Carga de Ejecución",
+    actionPlan: "Plan de Acción del Gerente de Proyecto",
+    marginControl: "Control de Margen y Costos",
+    aiAssist: "Asistente de IA para Gerente de Proyecto",
+    createProject: "Crear Proyecto",
+    openDailyProduction: "Abrir Producción Diaria",
+    reviewApprovals: "Revisar Aprobaciones",
+    createActionTicket: "Crear Ticket de Acción",
+    runAiReview: "Ejecutar Revisión con IA",
+    switchLanguage: "Cambiar Idioma",
+    backToModules: "Volver a Módulos",
+    logout: "Cerrar Sesión",
+    saveAction: "Guardar Acción",
+    assignAction: "Asignar Acción",
+    escalate: "Escalar",
+    markResolved: "Marcar Resuelta",
+    createFollowUp: "Crear Seguimiento",
+    runAiAssist: "Ejecutar Asistencia IA",
+  },
+};
+
 export default function ModuleDetailPage() {
   const params = useParams();
   const role = String(params?.role || "");
@@ -157,6 +261,7 @@ export default function ModuleDetailPage() {
   const [adminOverview, setAdminOverview] = useState<AdminOverview | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [serviceInsights, setServiceInsights] = useState<ServiceInsights | null>(null);
+  const [dailyReports, setDailyReports] = useState<DailyFieldReport[]>([]);
   const [tenantUsers, setTenantUsers] = useState<TenantUserMembership[]>([]);
   const [permissionCatalog, setPermissionCatalog] = useState<string[]>([]);
   const [materialPresets, setMaterialPresets] = useState<MaterialDensityPreset[]>([]);
@@ -191,6 +296,23 @@ export default function ModuleDetailPage() {
   const [materialLines, setMaterialLines] = useState<EstimateMaterialLine[]>(DEFAULT_MATERIAL_LINES);
   const [estimateMessage, setEstimateMessage] = useState("");
   const [estimateSaving, setEstimateSaving] = useState(false);
+  const [projectManagerLocale, setProjectManagerLocale] = useState<ProjectManagerLocale>("en");
+  const [projectManagerAiMessage, setProjectManagerAiMessage] = useState("");
+  const [projectManagerActionMessage, setProjectManagerActionMessage] = useState("");
+  const [projectManagerActionSaving, setProjectManagerActionSaving] = useState(false);
+  const [projectManagerAiRunning, setProjectManagerAiRunning] = useState(false);
+  const [projectManagerActionDraft, setProjectManagerActionDraft] = useState<ProjectManagerActionDraft>({
+    title: "",
+    projectId: "",
+    category: "Production",
+    priority: "Medium",
+    riskLevel: "Medium",
+    responsiblePerson: "",
+    dueDate: "",
+    description: "",
+    status: "Open",
+    notes: "",
+  });
 
   const bridgeStorageKey = useMemo(() => {
     if (!detail || detail.route.status !== "bridge") {
@@ -223,6 +345,16 @@ export default function ModuleDetailPage() {
       setBridgeDraftMessage("Saved bridge draft could not be read. Starting fresh.");
     }
   }, [bridgeStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const saved = window.localStorage.getItem("opsflow_locale");
+    if (saved === "es" || saved === "en") {
+      setProjectManagerLocale(saved);
+    }
+  }, []);
 
   const saveBridgeDraft = () => {
     if (!bridgeStorageKey || typeof window === "undefined") {
@@ -379,7 +511,7 @@ export default function ModuleDetailPage() {
         setProfitability(new Map(profitEntries.filter((entry): entry is readonly [string, ProjectProfitability] => entry !== null)));
 
         try {
-          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, materialPresetData, payrollSummaryData, payrollTimecardData, payrollRunData, vendorPurchaseOrderData, vendorInvoiceSubmissionData, vendorDeliveryRecordData, vendorComplianceDocumentData, customerPortalProjectData, estimatorTakeoffData, estimatorVersionData, estimatorBidPipelineData, estimatorWinLossData, estimatorSummaryData] = await Promise.all([
+          const [ticketData, alertData, equipmentData, truckData, employeeData, tenantUserData, permissionCatalogData, overviewData, adminUserData, serviceInsightsData, dailyFieldReportData, materialPresetData, payrollSummaryData, payrollTimecardData, payrollRunData, vendorPurchaseOrderData, vendorInvoiceSubmissionData, vendorDeliveryRecordData, vendorComplianceDocumentData, customerPortalProjectData, estimatorTakeoffData, estimatorVersionData, estimatorBidPipelineData, estimatorWinLossData, estimatorSummaryData] = await Promise.all([
             listTickets(),
             fetchReplayTokenStateAlerts({ staleThresholdMinutes: 60, staleActiveThresholdCount: 10 }),
             fetch(`${getApiBaseUrl()}/api/equipment`, { headers }).then((res) => (res.ok ? res.json() : [])),
@@ -390,6 +522,7 @@ export default function ModuleDetailPage() {
             fetch(`${getApiBaseUrl()}/api/admin/overview`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => (res.ok ? res.json() : null)),
             fetch(`${getApiBaseUrl()}/api/admin/users`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => (res.ok ? res.json() : [])),
             fetch(`${getApiBaseUrl()}/api/admin/service-insights`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => (res.ok ? res.json() : null)),
+            fetch(`${getApiBaseUrl()}/api/daily-field-reports`, { headers }).then((res) => (res.ok ? res.json() : [])),
             listMaterialDensityPresets().catch(() => []),
             getPayrollSummary().catch(() => null),
             listPayrollTimecards().catch(() => []),
@@ -415,6 +548,7 @@ export default function ModuleDetailPage() {
           setAdminOverview(overviewData as AdminOverview | null);
           setAdminUsers(adminUserData as AdminUser[]);
           setServiceInsights(serviceInsightsData as ServiceInsights | null);
+          setDailyReports(dailyFieldReportData as DailyFieldReport[]);
           setMaterialPresets(materialPresetData as MaterialDensityPreset[]);
           setPayrollSummary(payrollSummaryData as PayrollSummary | null);
           setPayrollTimecards(payrollTimecardData as PayrollTimecard[]);
@@ -449,6 +583,7 @@ export default function ModuleDetailPage() {
           setAdminOverview(null);
           setAdminUsers([]);
           setServiceInsights(null);
+          setDailyReports([]);
           setMaterialPresets([]);
           setPayrollSummary(null);
           setPayrollTimecards([]);
@@ -661,6 +796,102 @@ export default function ModuleDetailPage() {
       maximumFractionDigits: 1,
     }).format(value);
 
+  const projectManagerText = (key: string) => PROJECT_MANAGER_LABELS[projectManagerLocale][key] || key;
+
+  const toggleProjectManagerLanguage = () => {
+    const nextLocale: ProjectManagerLocale = projectManagerLocale === "en" ? "es" : "en";
+    setProjectManagerLocale(nextLocale);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("opsflow_locale", nextLocale);
+    }
+  };
+
+  const handleProjectManagerLogout = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("opsflow_access_token");
+      window.location.href = "/";
+    }
+  };
+
+  const runProjectManagerAiReview = async (command: string, projectName?: string) => {
+    const token = getAccessToken();
+    if (!token) {
+      setProjectManagerAiMessage("Login required.");
+      return;
+    }
+
+    setProjectManagerAiRunning(true);
+    setProjectManagerAiMessage("");
+    const note = [
+      `${command}`,
+      projectName ? `Project: ${projectName}` : "Project: portfolio",
+      `Active projects: ${ownerSummary.activeProjects}`,
+      `At-risk projects: ${ownerSummary.topAtRiskProjects.length}`,
+      `Open tickets: ${tickets.filter((ticket) => !["resolved", "closed"].includes((ticket.status || "").toLowerCase())).length}`,
+      `Pending reports: ${dailyReports.filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase())).length}`,
+    ].join("\n");
+
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/ai/workflow/route`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": getTenantId(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          note,
+          company_name: "Project Manager Review",
+          reporting_supervisor: "Project Manager",
+          project_id: projectManagerActionDraft.projectId || null,
+        }),
+      });
+
+      if (!response.ok) {
+        setProjectManagerAiMessage("AI review could not be completed.");
+        return;
+      }
+
+      const data = (await response.json()) as { message?: string };
+      setProjectManagerAiMessage(data.message || "AI review completed.");
+    } catch {
+      setProjectManagerAiMessage("AI review could not be completed.");
+    } finally {
+      setProjectManagerAiRunning(false);
+    }
+  };
+
+  const createProjectManagerActionTicket = async (actionStatus?: string) => {
+    setProjectManagerActionSaving(true);
+    setProjectManagerActionMessage("");
+    try {
+      const created = await createTicket({
+        project_id: projectManagerActionDraft.projectId || null,
+        ticket_number: `PM-${Date.now().toString().slice(-6)}`,
+        material: projectManagerActionDraft.category || "Project Action",
+        origin: "Project Manager Module",
+        destination: "Operations Queue",
+        status: "draft",
+        notes: [
+          `Action: ${projectManagerActionDraft.title || "Untitled action"}`,
+          `Category: ${projectManagerActionDraft.category}`,
+          `Priority: ${projectManagerActionDraft.priority}`,
+          `Risk: ${projectManagerActionDraft.riskLevel}`,
+          `Responsible: ${projectManagerActionDraft.responsiblePerson || "n/a"}`,
+          `Due: ${projectManagerActionDraft.dueDate || "n/a"}`,
+          `Status: ${actionStatus || projectManagerActionDraft.status}`,
+          `Description: ${projectManagerActionDraft.description || "n/a"}`,
+          `Notes: ${projectManagerActionDraft.notes || "n/a"}`,
+        ].join("\n"),
+      });
+      setProjectManagerActionMessage(`Action ticket created: ${created.ticket_number || created.id}`);
+    } catch {
+      setProjectManagerActionMessage("Unable to create action ticket right now.");
+    } finally {
+      setProjectManagerActionSaving(false);
+    }
+  };
+
   const renderCompanyOwnerContent = () => {
     if (!detail || !["company_owner", "executive", "project_manager", "estimator", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
       return null;
@@ -855,40 +1086,368 @@ export default function ModuleDetailPage() {
     }
 
     if (detail.roleKey === "project_manager" && detail.moduleSlug === "projects") {
+      const reviewReports = dailyReports.filter((report) => ["submitted", "review", "reviewed", "under_review"].includes((report.status || "").toLowerCase()));
+      const dueReports = dailyReports.filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase())).length;
+      const awaitingApproval = reviewReports.length;
+      const openActionTickets = tickets.filter((ticket) => !["resolved", "closed"].includes((ticket.status || "").toLowerCase())).length;
+      const unassignedDispatch = tickets.filter((ticket) => !ticket.driver || !ticket.truck).length;
+      const potentialChangeOrders = Math.max(ownerSummary.topAtRiskProjects.length, dailyReports.filter((report) => (report.work_performed || "").toLowerCase().includes("delay")).length);
+      const approvalBacklog = ownerSummary.flaggedApprovals + awaitingApproval;
+
+      const projectAlerts = [
+        ...dailyReports
+          .filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase()))
+          .map((report) => ({
+            project: projects.find((project) => project.id === report.project_id)?.project_name || "Unknown project",
+            issue: "Daily report not submitted",
+            severity: "High",
+            responsible: report.reporting_supervisor || "Superintendent",
+            dateIdentified: report.report_date || new Date().toISOString().slice(0, 10),
+            daysOpen: 1,
+            action: "Open report and request submission",
+          })),
+        ...ownerSummary.topAtRiskProjects.map((item) => ({
+          project: item.project_name,
+          issue: item.cost_overrun ? "Cost code over budget" : "Production below target",
+          severity: item.cost_overrun ? "Critical" : "Medium",
+          responsible: "Project Manager",
+          dateIdentified: new Date().toISOString().slice(0, 10),
+          daysOpen: 1,
+          action: "Create action ticket and review forecast",
+        })),
+      ].slice(0, 8);
+
+      const riskProjects = ownerSummary.topAtRiskProjects.length > 0 ? ownerSummary.topAtRiskProjects : projects.slice(0, 3).map((project) => ({
+        project_id: project.id,
+        project_name: project.project_name,
+        status: project.status,
+        actual_revenue: 0,
+        actual_cost: 0,
+        gross_profit: 0,
+        profit_margin: 0,
+        cost_overrun: false,
+        revenue_shortfall: false,
+        ticket_count: 0,
+      }));
+
       return (
         <section className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("portfolioSummary")}</h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-4 xl:grid-cols-8">
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("activeProjects")}</div><div className="mt-2 text-2xl font-bold text-slate-900">{ownerSummary.activeProjects}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("projectsAtRisk")}</div><div className="mt-2 text-2xl font-bold text-amber-600">{riskProjects.length}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("dailyReportsDue")}</div><div className="mt-2 text-2xl font-bold text-red-600">{dueReports}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("reportsAwaitingApproval")}</div><div className="mt-2 text-2xl font-bold text-blue-700">{awaitingApproval}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("openActionTickets")}</div><div className="mt-2 text-2xl font-bold text-slate-900">{openActionTickets}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("unassignedDispatchItems")}</div><div className="mt-2 text-2xl font-bold text-amber-600">{unassignedDispatch}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("potentialChangeOrders")}</div><div className="mt-2 text-2xl font-bold text-indigo-700">{potentialChangeOrders}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("approvalBacklog")}</div><div className="mt-2 text-2xl font-bold text-red-700">{approvalBacklog}</div></div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("projectPortfolioView")}</h2>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm text-slate-700">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Project</th>
+                    <th className="px-3 py-2">PM / Foreman</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Risk</th>
+                    <th className="px-3 py-2">Daily report</th>
+                    <th className="px-3 py-2">Open issues</th>
+                    <th className="px-3 py-2">Next action</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map((project) => {
+                    const projectProfitability = profitability.get(project.id);
+                    const projectReports = dailyReports.filter((report) => report.project_id === project.id);
+                    const latestReport = projectReports[0];
+                    const projectRisk = projectProfitability?.cost_overrun || projectProfitability?.revenue_shortfall ? "High" : "Low";
+                    const projectOpenIssues = tickets.filter((ticket) => ticket.project_id === project.id && !["closed", "resolved"].includes((ticket.status || "").toLowerCase())).length;
+
+                    return (
+                      <tr key={project.id} className="border-t border-slate-200 align-top">
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-slate-900">{project.project_name}</div>
+                          <div className="text-xs text-slate-500">{project.project_number} • {project.status}</div>
+                        </td>
+                        <td className="px-3 py-2">Project Manager / {latestReport?.reporting_supervisor || "Foreman"}</td>
+                        <td className="px-3 py-2">{project.status}</td>
+                        <td className="px-3 py-2">{projectRisk}</td>
+                        <td className="px-3 py-2">{latestReport?.status || "Not Started"}</td>
+                        <td className="px-3 py-2">{projectOpenIssues}</td>
+                        <td className="px-3 py-2">Review production variance</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/projects/${project.id}`} className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">Open Project</Link>
+                            <Link href="/daily-production" className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">View Daily Reports</Link>
+                            <button type="button" onClick={() => runProjectManagerAiReview("Identify Projects at Risk", project.project_name)} className="rounded border border-indigo-300 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">Run AI Review</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active jobs</div><div className="mt-2 text-3xl font-bold text-slate-900">{ownerSummary.activeProjects}</div></div>
             <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Assigned tickets</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.assignedTickets}</div></div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">At-risk jobs</div><div className="mt-2 text-3xl font-bold text-amber-600">{ownerSummary.topAtRiskProjects.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">At-risk jobs</div><div className="mt-2 text-3xl font-bold text-amber-600">{riskProjects.length}</div></div>
             <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Revenue tracked</div><div className="mt-2 text-3xl font-bold text-slate-900">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Project execution board</h2>
-            <div className="mt-4 space-y-3">
-              {projects.slice(0, 6).map((project) => {
-                const projectProfitability = profitability.get(project.id);
-                return (
-                  <div key={project.id} className="rounded-lg border border-slate-200 p-4">
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Projects at risk</h2>
+              <div className="mt-4 space-y-3">
+                {riskProjects.map((item) => (
+                  <div key={item.project_id} className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-800">
+                    <div className="font-semibold">{item.project_name}</div>
+                    <div className="mt-1">{item.status} • Margin {Number(item.profit_margin || 0).toFixed(1)}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Daily reports awaiting review</h2>
+              <div className="mt-4 space-y-3">
+                {reviewReports.length === 0 ? (
+                  <p className="text-sm text-slate-600">No daily reports are currently waiting for review.</p>
+                ) : (
+                  reviewReports.slice(0, 4).map((report) => (
+                    <div key={report.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                      <div className="font-semibold text-slate-900">{report.report_number || report.id}</div>
+                      <div className="mt-1">{report.reporting_supervisor || "Field lead"} • {report.status}</div>
+                      <div className="mt-1">{report.work_performed || "Daily production update captured"}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Production performance</h2>
+              <div className="mt-4 space-y-3">
+                {projects.slice(0, 4).map((project) => {
+                  const projectProfitability = profitability.get(project.id);
+                  return (
+                    <div key={project.id} className="rounded-lg border border-slate-200 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-900">{project.project_name}</div>
+                          <div className="text-sm text-slate-500">{project.project_number} • {project.status}</div>
+                        </div>
+                        <div className="text-sm text-slate-700">{Number(projectProfitability?.profit_margin || 0).toFixed(1)}% margin</div>
+                      </div>
+                      <div className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
+                        <div>Tickets: {projectProfitability?.ticket_count || 0}</div>
+                        <div>Revenue: {formatCurrency(Number(projectProfitability?.actual_revenue || 0))}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Project portfolio</h2>
+              <div className="mt-4 space-y-3">
+                {projects.slice(0, 4).map((project) => (
+                  <div key={project.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="font-semibold text-slate-900">{project.project_name}</div>
-                        <div className="text-sm text-slate-500">{project.project_number} • {project.status}</div>
+                        <div>{project.project_number}</div>
                       </div>
-                      <div className="flex gap-3 text-sm">
-                        <Link href={`/projects/${project.id}`} className="font-semibold text-blue-700 hover:underline">Details</Link>
-                        <Link href={`/projects/${project.id}/dashboard`} className="font-semibold text-blue-700 hover:underline">Dashboard</Link>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-3 text-sm text-slate-700 md:grid-cols-3">
-                      <div>Margin: {Number(projectProfitability?.profit_margin || 0).toFixed(1)}%</div>
-                      <div>Tickets: {projectProfitability?.ticket_count || 0}</div>
-                      <div>Revenue: {formatCurrency(Number(projectProfitability?.actual_revenue || 0))}</div>
+                      <Link href={`/projects/${project.id}`} className="font-semibold text-blue-700 hover:underline">Open</Link>
                     </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("projectsNeedingAttention")}</h2>
+            <div className="mt-4 space-y-3">
+              {projectAlerts.length === 0 ? (
+                <p className="text-sm text-slate-600">No alerts currently require project manager action.</p>
+              ) : (
+                projectAlerts.map((alert, index) => (
+                  <div key={`${alert.project}-${alert.issue}-${index}`} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-800">
+                    <div className="font-semibold">{alert.project} • {alert.issue}</div>
+                    <div className="mt-1">Severity: {alert.severity} • Responsible: {alert.responsible} • Days open: {alert.daysOpen}</div>
+                    <div className="mt-1">Recommended action: {alert.action}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("laborHours")}</h2>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+                <div>Total workers onsite: {employees.length}</div>
+                <div>Regular hours: {payrollSummary?.total_regular_hours ?? "0.00"}</div>
+                <div>Overtime hours: {payrollSummary?.total_overtime_hours ?? "0.00"}</div>
+                <div>Missing timecards: {Math.max(0, ownerSummary.activeProjects - payrollTimecards.length)}</div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("machineHours")}</h2>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+                <div>Equipment used today: {equipment.length}</div>
+                <div>Equipment requiring maintenance: {tickets.filter((ticket) => (ticket.notes || "").toLowerCase().includes("issue")).length}</div>
+                <div>Utilization estimate: {equipment.length === 0 ? "0%" : `${Math.min(100, Math.round((ownerSummary.assignedTickets / equipment.length) * 100))}%`}</div>
+                <div>Idle estimate: {equipment.length === 0 ? "0%" : `${Math.max(0, 100 - Math.min(100, Math.round((ownerSummary.assignedTickets / equipment.length) * 100)))}%`}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("materialUsage")}</h2>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                {tickets.slice(0, 4).map((ticket) => (
+                  <div key={ticket.id} className="rounded-md border border-slate-200 px-3 py-2">
+                    {ticket.material || "Material"} • {ticket.ticket_number || ticket.id} • {ticket.status}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("schedulePressure")}</h2>
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <div>Critical milestones: {riskProjects.length}</div>
+                <div>Delayed activities: {dailyReports.filter((report) => (report.work_performed || "").toLowerCase().includes("delay")).length}</div>
+                <div>Resource conflicts: {unassignedDispatch}</div>
+                <div>Decision constraints: {approvalBacklog}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("executionLoad")}</h2>
+            <div className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-5">
+              <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">Assigned action tickets: {openActionTickets}</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">Unassigned tickets: {unassignedDispatch}</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">Pending daily reports: {dueReports}</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">Pending approvals: {approvalBacklog}</div>
+              <div className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">Open change-order reviews: {potentialChangeOrders}</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("actionPlan")}</h2>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <label className="text-sm font-medium text-slate-700">Action title
+                <input value={projectManagerActionDraft.title} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, title: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Project
+                <select value={projectManagerActionDraft.projectId} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, projectId: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">Select project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.project_name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Category
+                <select value={projectManagerActionDraft.category} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, category: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Production</option><option>Labor</option><option>Equipment</option><option>Material</option><option>Schedule</option><option>Safety</option><option>Cost</option><option>Change Order</option><option>Other</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Priority
+                <select value={projectManagerActionDraft.priority} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, priority: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Risk level
+                <select value={projectManagerActionDraft.riskLevel} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, riskLevel: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700">Responsible person
+                <input value={projectManagerActionDraft.responsiblePerson} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, responsiblePerson: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Due date
+                <input type="date" value={projectManagerActionDraft.dueDate} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, dueDate: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700">Status
+                <select value={projectManagerActionDraft.status} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, status: event.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
+                  <option>Open</option><option>Assigned</option><option>In Progress</option><option>Waiting</option><option>Escalated</option><option>Resolved</option><option>Closed</option>
+                </select>
+              </label>
+              <label className="text-sm font-medium text-slate-700 md:col-span-3">Description
+                <textarea value={projectManagerActionDraft.description} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+              <label className="text-sm font-medium text-slate-700 md:col-span-3">Notes
+                <textarea value={projectManagerActionDraft.notes} onChange={(event) => setProjectManagerActionDraft((prev) => ({ ...prev, notes: event.target.value }))} className="mt-1 min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => createProjectManagerActionTicket("Open")} disabled={projectManagerActionSaving} className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-60">{projectManagerText("saveAction")}</button>
+              <button type="button" onClick={() => createProjectManagerActionTicket("Assigned")} disabled={projectManagerActionSaving} className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">{projectManagerText("assignAction")}</button>
+              <button type="button" onClick={() => createProjectManagerActionTicket("Escalated")} disabled={projectManagerActionSaving} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-60">{projectManagerText("escalate")}</button>
+              <button type="button" onClick={() => createProjectManagerActionTicket("Resolved")} disabled={projectManagerActionSaving} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">{projectManagerText("markResolved")}</button>
+              <button type="button" onClick={() => createProjectManagerActionTicket("In Progress")} disabled={projectManagerActionSaving} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">{projectManagerText("createFollowUp")}</button>
+              <button type="button" onClick={() => runProjectManagerAiReview("Recommend Next Actions")} disabled={projectManagerAiRunning} className="rounded-lg border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">{projectManagerText("runAiAssist")}</button>
+            </div>
+            {projectManagerActionMessage ? <p className="mt-3 text-sm text-emerald-800">{projectManagerActionMessage}</p> : null}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("marginControl")}</h2>
+            {(() => {
+              const projectCosts = Array.from(profitability.values()).reduce((sum, item) => sum + Number(item.actual_cost || 0), 0);
+              return (
+            <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm text-slate-700">
+              <div>Original contract value: {formatCurrency(ownerSummary.totalRevenue)}</div>
+              <div>Current budget: {formatCurrency(projectCosts)}</div>
+              <div>Actual cost to date: {formatCurrency(projectCosts)}</div>
+              <div>Forecasted final cost: {formatCurrency(projectCosts * 1.08)}</div>
+              <div>Forecasted profit: {formatCurrency(ownerSummary.totalMargin)}</div>
+              <div>Forecasted margin: {ownerSummary.totalRevenue > 0 ? `${((ownerSummary.totalMargin / ownerSummary.totalRevenue) * 100).toFixed(1)}%` : "0.0%"}</div>
+            </div>
+              );
+            })()}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("aiAssist")}</h2>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                "Summarize Today’s Field Activity",
+                "Identify Projects at Risk",
+                "Explain Production Variances",
+                "Identify Cost Overruns",
+                "Find Missing Daily Reports",
+                "Review Labor Productivity",
+                "Review Equipment Utilization",
+                "Review Material Variances",
+                "Identify Potential Change Orders",
+                "Identify Schedule Threats",
+                "Draft Owner Update",
+                "Draft Weekly Project Report",
+                "Recommend Next Actions",
+              ].map((command) => (
+                <button key={command} type="button" onClick={() => runProjectManagerAiReview(command)} disabled={projectManagerAiRunning} className="rounded border border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                  {command}
+                </button>
+              ))}
+            </div>
+            {projectManagerAiMessage ? <p className="mt-3 text-sm text-indigo-800">AI: {projectManagerAiMessage}</p> : null}
           </div>
         </section>
       );
@@ -1880,32 +2439,53 @@ export default function ModuleDetailPage() {
     );
   }
 
+  const isProjectManagerProjects = detail.roleKey === "project_manager" && detail.moduleSlug === "projects";
+
   return (
     <AppShell titleKey="modules.title">
       <div className="space-y-6 p-6">
-        <div className="mb-2">
-          <Link href="/modules" className="inline-flex text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline">
-            Back to Modules
-          </Link>
-        </div>
+        {!isProjectManagerProjects ? (
+          <div className="mb-2">
+            <Link href="/modules" className="inline-flex text-sm font-semibold text-blue-700 hover:text-blue-900 hover:underline">
+              Back to Modules
+            </Link>
+          </div>
+        ) : null}
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{detail.roleLabel}</span>
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                detail.route.status === "live" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {detail.route.status === "live" ? "Live Module" : "Bridge Module"}
-            </span>
+            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{isProjectManagerProjects ? projectManagerText("projectManager") : detail.roleLabel}</span>
+            {!isProjectManagerProjects ? (
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  detail.route.status === "live" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                {detail.route.status === "live" ? "Live Module" : "Bridge Module"}
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800">Operational Dashboard</span>
+            )}
           </div>
 
-          <h1 className="text-3xl font-bold text-slate-900">{detail.moduleLabel}</h1>
+          <h1 className="text-3xl font-bold text-slate-900">{isProjectManagerProjects ? projectManagerText("projectManager") : detail.moduleLabel}</h1>
           <p className="mt-2 text-sm text-slate-600">{detail.roleSummary}</p>
-          <p className="mt-2 text-sm text-slate-700">{detail.route.helperText}</p>
+          <p className="mt-2 text-sm text-slate-700">{isProjectManagerProjects ? "Plan, execute, monitor, and control active construction projects with daily production signals and approvals." : detail.route.helperText}</p>
 
-          {detail.route.status === "bridge" ? (
+          {isProjectManagerProjects ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Link href="/workspace" className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800">{projectManagerText("createProject")}</Link>
+              <Link href="/daily-production" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("openDailyProduction")}</Link>
+              <Link href="/daily-production/queue" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("reviewApprovals")}</Link>
+              <button type="button" onClick={() => createProjectManagerActionTicket("Open")} disabled={projectManagerActionSaving} className="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60">{projectManagerText("createActionTicket")}</button>
+              <button type="button" onClick={() => runProjectManagerAiReview("Summarize Today’s Field Activity")} disabled={projectManagerAiRunning} className="rounded-lg border border-indigo-300 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">{projectManagerText("runAiReview")}</button>
+              <button type="button" onClick={toggleProjectManagerLanguage} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("switchLanguage")}</button>
+              <Link href="/modules" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("backToModules")}</Link>
+              <button type="button" onClick={handleProjectManagerLogout} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{projectManagerText("logout")}</button>
+            </div>
+          ) : null}
+
+          {detail.route.status === "bridge" && !isProjectManagerProjects ? (
             <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-900">Bridge workspace form</h2>
               <p className="mt-2 text-sm text-amber-900">
@@ -2039,7 +2619,7 @@ export default function ModuleDetailPage() {
             </div>
           ) : null}
 
-          {detail.route.focusAreas?.length ? (
+          {detail.route.focusAreas?.length && !isProjectManagerProjects ? (
             <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Focus areas</h2>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -2052,7 +2632,7 @@ export default function ModuleDetailPage() {
             </div>
           ) : null}
 
-          {detail.route.actionLinks?.length ? (
+          {detail.route.actionLinks?.length && !isProjectManagerProjects ? (
             <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Recommended actions</h2>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -2069,20 +2649,22 @@ export default function ModuleDetailPage() {
             </div>
           ) : null}
 
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Link
-              href={detail.route.href}
-              className="inline-flex items-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
-            >
-              {detail.route.primaryActionLabel || "Open Module Workspace"}
-            </Link>
-            <Link
-              href="/modules"
-              className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              Browse Other Modules
-            </Link>
-          </div>
+          {!isProjectManagerProjects ? (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                href={detail.route.href}
+                className="inline-flex items-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+              >
+                {detail.route.primaryActionLabel || "Open Module Workspace"}
+              </Link>
+              <Link
+                href="/modules"
+                className="inline-flex items-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                Browse Other Modules
+              </Link>
+            </div>
+          ) : null}
         </section>
 
         {renderCompanyOwnerContent()}
