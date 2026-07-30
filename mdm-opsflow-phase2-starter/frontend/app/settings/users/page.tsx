@@ -45,7 +45,7 @@ type CurrentUserProfile = {
   memberships: CurrentUserMembership[];
 };
 
-const ROLE_OPTIONS = [
+const DEFAULT_ROLE_OPTIONS = [
   "owner",
   "executive",
   "project_manager",
@@ -84,6 +84,7 @@ export default function UserSettingsPage() {
   const [basePermissions, setBasePermissions] = useState<Set<string>>(new Set());
   const [email, setEmail] = useState("");
   const [roleName, setRoleName] = useState("owner");
+  const [roleOptions, setRoleOptions] = useState<string[]>(DEFAULT_ROLE_OPTIONS);
   const [message, setMessage] = useState("");
   const [toggleMessage, setToggleMessage] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -252,6 +253,30 @@ export default function UserSettingsPage() {
     setPermissionCatalog(data);
   }
 
+  async function loadRoleCatalog(): Promise<void> {
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/roles/catalog`, {
+      headers: {
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": resolveTenantHeader(),
+      },
+    });
+
+    if (!response.ok) {
+      setRoleOptions(DEFAULT_ROLE_OPTIONS);
+      if (!DEFAULT_ROLE_OPTIONS.includes(roleName)) {
+        setRoleName(DEFAULT_ROLE_OPTIONS[0] || "owner");
+      }
+      return;
+    }
+
+    const data = (await response.json()) as string[];
+    const options = data.length > 0 ? data : DEFAULT_ROLE_OPTIONS;
+    setRoleOptions(options);
+    if (!options.includes(roleName)) {
+      setRoleName(options[0] || "owner");
+    }
+  }
+
   async function loadUserPermissions(userId: string): Promise<void> {
     setToggleMessage("");
     const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/${userId}/permissions`, {
@@ -278,11 +303,13 @@ export default function UserSettingsPage() {
     if (!selectedTenantId) {
       setMemberships([]);
       setPermissionCatalog([]);
+      setRoleOptions(DEFAULT_ROLE_OPTIONS);
       return;
     }
 
     void loadMembers();
     void loadPermissionCatalog();
+    void loadRoleCatalog();
   }, [selectedTenantId]);
 
   async function assignUser(): Promise<void> {
@@ -408,7 +435,7 @@ export default function UserSettingsPage() {
             onChange={(e) => setRoleName(e.target.value)}
             disabled={!selectedTenantId}
           >
-            {ROLE_OPTIONS.map((role) => (
+            {roleOptions.map((role) => (
               <option key={role} value={role}>
                 {t(locale, `settings.usersPage.roles.${role}`)}
               </option>

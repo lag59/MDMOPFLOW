@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import AuditLog, MembershipStatus, Project, ProjectStatus, Role, Tenant, TenantMembership, User
-from app.rbac import permissions_csv_for_role
+from app.rbac import ROLE_PERMISSIONS, permissions_csv_for_role
 from app.schemas import OnboardingRequest, OnboardingResponse
 
 router = APIRouter(prefix="/api/onboarding", tags=["Onboarding"])
@@ -81,6 +81,19 @@ def complete_onboarding(
     )
     db.add(owner_role)
     db.flush()
+
+    # Seed standard tenant roles at onboarding so role lists are complete from day one.
+    for role_name in ROLE_PERMISSIONS:
+        if role_name in {"platform_super_admin", "owner"}:
+            continue
+        db.add(
+            Role(
+                tenant_id=tenant.id,
+                name=role_name,
+                permissions=permissions_csv_for_role(role_name),
+                created_by=current_user.id,
+            )
+        )
 
     membership = TenantMembership(
         tenant_id=tenant.id,

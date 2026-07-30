@@ -18,6 +18,23 @@ router = APIRouter(prefix="/api/tenant-users", tags=["Tenant Users"])
 
 
 @router.get(
+    "/roles/catalog",
+    response_model=list[str],
+    operation_id="tenant_users_roles_catalog",
+    summary="List assignable role catalog",
+    description="Returns all standard tenant roles that can be assigned to users.",
+    responses={
+        200: {"description": "Role catalog returned successfully."},
+    },
+)
+def list_role_catalog(
+    context: RequestContext = Depends(require_permissions("admin_read")),
+):
+    _ = context
+    return sorted(role_name for role_name in ROLE_PERMISSIONS if role_name != "platform_super_admin")
+
+
+@router.get(
     "",
     response_model=list[TenantUserSummary],
     operation_id="tenant_users_list",
