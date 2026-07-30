@@ -1077,6 +1077,21 @@ export default function ModuleDetailPage() {
               ? `${prev.notes ? `${prev.notes}\n` : ""}OCR tons: ${tonsValue}`
               : prev.notes,
           }));
+        } else {
+          const sourceName = uploadFiles[0]?.name || "";
+          const baseName = sourceName.replace(/\.[^.]+$/, "");
+          const inferredProjectName = baseName
+            .replace(/^f\w*\s+bid\s+package\s*[\u2013\u2014-]\s*/i, "")
+            .replace(/[_]+/g, " ")
+            .trim();
+          if (inferredProjectName) {
+            setEstimatorEstimateInfo((prev) => ({
+              ...prev,
+              projectName: prev.projectName || inferredProjectName,
+              estimateName: prev.estimateName || inferredProjectName,
+              notes: prev.notes || "Autofill used filename inference because OCR extraction fields were empty.",
+            }));
+          }
         }
 
         if (materialValue) {
@@ -1106,7 +1121,7 @@ export default function ModuleDetailPage() {
         setEstimatorUploadMessage(
           extractedFields.length > 0
             ? `${uploadFiles.length} document(s) uploaded and OCR auto-filled estimate fields.`
-            : `${uploadFiles.length} document(s) uploaded to estimate workflow.`
+            : `${uploadFiles.length} document(s) uploaded. OCR fields were empty, so filename inference was applied where possible.`
         );
         setEstimates(await listEstimates());
         event.target.value = "";
