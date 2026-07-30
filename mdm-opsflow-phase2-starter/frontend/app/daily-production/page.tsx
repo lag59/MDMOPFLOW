@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl } from "@/lib/i18n";
-import { createTicket, listTickets, type Ticket } from "@/lib/tickets";
+import { createTicket, listTickets, uploadTicketFilesForExtraction, type Ticket, type TicketUploadExtractionItem } from "@/lib/tickets";
 
 type ProjectSummary = {
   id: string;
@@ -146,6 +146,10 @@ export default function DailyProductionPage() {
   const [lastReportId, setLastReportId] = useState("");
   const [lastReportNumber, setLastReportNumber] = useState("");
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [scanFiles, setScanFiles] = useState<File[]>([]);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanMessage, setScanMessage] = useState("");
+  const [scanItems, setScanItems] = useState<TicketUploadExtractionItem[]>([]);
 
   const totalLaborHours = useMemo(
     () => crewLines.reduce((sum, line) => sum + line.count * line.hours, 0),
@@ -253,6 +257,96 @@ export default function DailyProductionPage() {
 
   const addSafetyObservation = () => {
     setSafetyLines((prev) => [...prev, { id: `safety-${Date.now()}`, observationType: "", description: "", severity: "medium" }]);
+  };
+
+  const readNumber = (value: string | number | null | undefined): number => {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : 0;
+    }
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const runScanExtraction = async () => {
+    if (!scanFiles.length) {
+      setScanMessage("Select one or more files to scan first.");
+      return;
+    }
+
+    setScanBusy(true);
+    setScanMessage("");
+    try {
+      const response = await uploadTicketFilesForExtraction(scanFiles, false);
+      setScanItems(response.items || []);
+      setScanMessage(`Scanned ${response.items.length} file(s). Review and apply extracted values.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to scan files right now.";
+      setScanMessage(message);
+      setScanItems([]);
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
+  const applyScannedItem = (item: TicketUploadExtractionItem) => {
+    const entities = item.extracted_entities || {};
+    const scannedMaterial =
+      entities.material_name ||
+      entities.material ||
+      item.calculator_prefill.material_name ||
+      materialLines[0]?.material ||
+      "Scanned Material";
+    const scannedTons = readNumber(entities.tons);
+    const scannedYards = readNumber(entities.volume_yards);
+    const scannedLoads = readNumber(item.calculator_prefill.number_of_loads);
+    const usedQty = scannedTons > 0 ? scannedTons : scannedYards > 0 ? scannedYards : scannedLoads;
+    const scannedUnit = scannedTons > 0 ? "tons" : scannedYards > 0 ? "cubic_yards" : "loads";
+    const scannedSupervisor = entities.driver || entities.reporting_supervisor || entities.supervisor || "";
+    const scannedTicket = entities.ticket_number || entities.invoice_number || "n/a";
+
+    setMaterialLines((prev) => {
+      const first = prev[0] || { id: `mat-${Date.now()}`, material: "", usedQty: 0, unit: "tons", needQty: 0 };
+      const remaining = prev.length > 1 ? prev.slice(1) : [];
+      return [
+        {
+          ...first,
+          material: scannedMaterial,
+          usedQty: usedQty > 0 ? usedQty : first.usedQty,
+          unit: usedQty > 0 ? scannedUnit : first.unit,
+        },
+        ...remaining,
+      ];
+    });
+
+    if (!reportingSupervisor.trim() && scannedSupervisor) {
+      setReportingSupervisor(scannedSupervisor);
+    }
+
+    if (!preparedBy.trim() && scannedSupervisor) {
+      setPreparedBy(scannedSupervisor);
+    }
+
+    setWorkPerformed((prev) => {
+      if (prev.trim()) {
+        return prev;
+      }
+      return `Scanned source ${item.original_filename} imported for review.`;
+    });
+
+    setSuperintendentNotes((prev) => {
+      const lines = [
+        prev.trim(),
+        `OCR source: ${item.original_filename}`,
+        `Ticket/Invoice: ${scannedTicket}`,
+        `Summary: ${item.extracted_summary || "n/a"}`,
+      ].filter(Boolean);
+      return lines.join("\n");
+    });
+
+    setScanMessage(`Applied extracted values from ${item.original_filename}. You can edit any field before saving.`);
   };
 
   const aiRouteNote = useMemo(() => {
@@ -532,6 +626,58 @@ export default function DailyProductionPage() {
               <input value={weatherWindMph} onChange={(event) => setWeatherWindMph(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
             </label>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">OCR scan intake</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Upload a ticket, delivery slip, or scanned field document. OCR extraction can prefill report fields, and every value stays editable in the form.
+          </p>
+          <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+            <label className="text-sm font-medium text-slate-700">Upload ticket or delivery scan
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg,.txt"
+                onChange={(event) => setScanFiles(Array.from(event.target.files || []))}
+                className="mt-1 block w-full text-sm"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={runScanExtraction}
+              disabled={scanBusy}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+            >
+              {scanBusy ? "Scanning..." : "Scan with OCR"}
+            </button>
+          </div>
+
+          {scanItems.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {scanItems.map((item, idx) => (
+                <div key={`${item.filename}-${idx}`} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{item.original_filename}</div>
+                      <div className="text-xs text-slate-500">
+                        Confidence {(item.extraction_confidence * 100).toFixed(1)}% • {item.review_required ? "Review recommended" : "Ready to apply"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => applyScannedItem(item)}
+                      className="rounded border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                    >
+                      Apply to form
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">{item.extracted_summary || "No summary available."}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {scanMessage ? <p className="mt-3 text-sm text-slate-700">{scanMessage}</p> : null}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
