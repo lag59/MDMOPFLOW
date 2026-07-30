@@ -6,6 +6,7 @@ import ModulesPage from "./page";
 
 const accessState = {
   roleKey: "project_manager",
+  roleKeys: ["project_manager"],
   isSuperAdmin: false,
 };
 
@@ -20,17 +21,18 @@ vi.mock("@/lib/i18n", () => ({
 
 vi.mock("@/lib/roleAccess", () => ({
   getCurrentRoleAccess: vi.fn(async () => accessState),
-  canAccessModuleRole: vi.fn((context: { roleKey: string; isSuperAdmin: boolean } | null, routeRoleKey: string) => {
+  canAccessModuleRole: vi.fn((context: { roleKey: string; roleKeys: string[]; isSuperAdmin: boolean } | null, routeRoleKey: string) => {
     if (!context) {
       return false;
     }
-    return context.isSuperAdmin || context.roleKey === routeRoleKey;
+    return context.isSuperAdmin || context.roleKeys.includes(routeRoleKey);
   }),
 }));
 
 describe("Modules page workspace visibility", () => {
   beforeEach(() => {
     accessState.roleKey = "project_manager";
+    accessState.roleKeys = ["project_manager"];
     accessState.isSuperAdmin = false;
   });
 
@@ -48,6 +50,7 @@ describe("Modules page workspace visibility", () => {
 
   it("shows all role module cards for super admins", async () => {
     accessState.roleKey = "administrator";
+    accessState.roleKeys = ["administrator"];
     accessState.isSuperAdmin = true;
 
     render(<ModulesPage />);

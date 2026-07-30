@@ -48,10 +48,13 @@ def get_request_context(
     if current_user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN and not x_tenant_id:
         return RequestContext(current_user, None, {"*"}, None)
 
+    tenant_memberships: list[TenantMembership] = []
     if x_tenant_id:
-        membership = next((m for m in memberships if m.tenant_id == x_tenant_id), None)
+        tenant_memberships = [m for m in memberships if m.tenant_id == x_tenant_id]
+        membership = tenant_memberships[0] if tenant_memberships else None
     elif memberships:
         membership = memberships[0]
+        tenant_memberships = [m for m in memberships if m.tenant_id == membership.tenant_id]
 
     if not membership and current_user.platform_role != PlatformRole.PLATFORM_SUPER_ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant membership required")
@@ -64,8 +67,11 @@ def get_request_context(
         return RequestContext(current_user, membership, {"*"}, x_tenant_id)
 
     assert membership is not None
-    role = db.get(Role, membership.role_id)
-    permissions = resolve_permissions(role.name, role.permissions) if role else set()
+    permissions: set[str] = set()
+    for tenant_membership in tenant_memberships or [membership]:
+        role = db.get(Role, tenant_membership.role_id)
+        if role:
+            permissions.update(resolve_permissions(role.name, role.permissions))
     overrides = db.scalars(
         select(UserPermissionOverride).where(
             UserPermissionOverride.tenant_id == membership.tenant_id,

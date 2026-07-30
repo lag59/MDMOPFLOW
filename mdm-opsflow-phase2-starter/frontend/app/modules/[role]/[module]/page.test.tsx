@@ -34,12 +34,12 @@ vi.mock("@/lib/i18n", () => ({
 }));
 
 vi.mock("@/lib/roleAccess", () => ({
-  getCurrentRoleAccess: vi.fn(async () => ({ roleKey: mockParams.role, isSuperAdmin: false })),
-  canAccessModuleRole: vi.fn((context: { roleKey: string; isSuperAdmin: boolean } | null, routeRoleKey: string) => {
+  getCurrentRoleAccess: vi.fn(async () => ({ roleKey: mockParams.role, roleKeys: [mockParams.role], isSuperAdmin: false })),
+  canAccessModuleRole: vi.fn((context: { roleKey: string; roleKeys: string[]; isSuperAdmin: boolean } | null, routeRoleKey: string) => {
     if (!context) {
       return false;
     }
-    return context.isSuperAdmin || context.roleKey === routeRoleKey;
+    return context.isSuperAdmin || context.roleKeys.includes(routeRoleKey);
   }),
 }));
 
@@ -1556,6 +1556,7 @@ describe("Company owner module detail page", () => {
 
     vi.spyOn(roleAccess, "getCurrentRoleAccess").mockResolvedValue({
       roleKey: "dispatcher",
+      roleKeys: ["dispatcher"],
       isSuperAdmin: false,
     });
 

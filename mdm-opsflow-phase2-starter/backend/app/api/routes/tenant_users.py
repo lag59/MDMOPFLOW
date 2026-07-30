@@ -59,14 +59,19 @@ def list_tenant_users(
         )
     ).all()
 
-    items: list[TenantUserSummary] = []
+    grouped: dict[str, TenantUserSummary] = {}
     for membership in memberships:
         user = db.get(User, membership.user_id)
         role = db.get(Role, membership.role_id)
         if not user or not role:
             continue
-        items.append(
-            TenantUserSummary(
+        existing = grouped.get(user.id)
+        if existing:
+            existing_roles = {item.strip() for item in existing.role_name.split(",") if item.strip()}
+            existing_roles.add(role.name)
+            existing.role_name = ", ".join(sorted(existing_roles))
+            continue
+        grouped[user.id] = TenantUserSummary(
                 user_id=user.id,
                 email=user.email,
                 display_name=user.display_name,
@@ -74,9 +79,8 @@ def list_tenant_users(
                 role_name=role.name,
                 status=membership.status.value,
             )
-        )
 
-    return items
+    return list(grouped.values())
 
 
 @router.post(
@@ -134,14 +138,14 @@ def assign_tenant_user(
         select(TenantMembership).where(
             TenantMembership.tenant_id == tenant_id,
             TenantMembership.user_id == user.id,
+            TenantMembership.role_id == role.id,
         )
     )
 
     if existing:
-        existing.role_id = role.id
         existing.status = MembershipStatus.ACTIVE
         membership = existing
-        action = "update_membership"
+        action = "reactivate_membership"
     else:
         membership = TenantMembership(
             tenant_id=tenant_id,
@@ -178,28 +182,34 @@ def assign_tenant_user(
     )
 
 
-def _get_membership_and_role_or_404(db: Session, tenant_id: str, user_id: str) -> tuple[TenantMembership, Role, User]:
-    membership = db.scalar(
+def _get_memberships_and_user_or_404(db: Session, tenant_id: str, user_id: str) -> tuple[list[TenantMembership], User]:
+    memberships = db.scalars(
         select(TenantMembership).where(
             TenantMembership.tenant_id == tenant_id,
             TenantMembership.user_id == user_id,
             TenantMembership.status == MembershipStatus.ACTIVE,
         )
-    )
-    if not membership:
+    ).all()
+    if not memberships:
         raise HTTPException(status_code=404, detail="User is not an active tenant member")
 
-    role = db.get(Role, membership.role_id)
     user = db.get(User, user_id)
-    if not role or not user:
+    if not user:
         raise HTTPException(status_code=404, detail="User is not an active tenant member")
-    return membership, role, user
+    return memberships, user
 
 
 def _build_permissions_response(db: Session, tenant_id: str, user_id: str) -> TenantUserPermissionsResponse:
-    _membership, role, user = _get_membership_and_role_or_404(db, tenant_id, user_id)
+    memberships, user = _get_memberships_and_user_or_404(db, tenant_id, user_id)
 
-    base_permissions = resolve_permissions(role.name, role.permissions)
+    role_names: set[str] = set()
+    base_permissions: set[str] = set()
+    for membership in memberships:
+        role = db.get(Role, membership.role_id)
+        if not role:
+            continue
+        role_names.add(role.name)
+        base_permissions.update(resolve_permissions(role.name, role.permissions))
     base_permissions.discard("*")
     overrides = db.scalars(
         select(UserPermissionOverride).where(
@@ -218,7 +228,7 @@ def _build_permissions_response(db: Session, tenant_id: str, user_id: str) -> Te
     return TenantUserPermissionsResponse(
         user_id=user.id,
         email=user.email,
-        role_name=role.name,
+        role_name=", ".join(sorted(role_names)),
         base_permissions=sorted(base_permissions),
         effective_permissions=sorted(effective_permissions),
         overrides=[
@@ -298,13 +308,17 @@ def update_tenant_user_permissions(
     if not has_admin_write and not is_owner:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    _membership, role, user = _get_membership_and_role_or_404(db, tenant_id, user_id)
+    memberships, user = _get_memberships_and_user_or_404(db, tenant_id, user_id)
 
     invalid = sorted({item.permission for item in payload.overrides if not permission_exists(item.permission)})
     if invalid:
         raise HTTPException(status_code=400, detail=f"Unknown permissions: {', '.join(invalid)}")
 
-    base_permissions = resolve_permissions(role.name, role.permissions)
+    base_permissions: set[str] = set()
+    for membership in memberships:
+        role = db.get(Role, membership.role_id)
+        if role:
+            base_permissions.update(resolve_permissions(role.name, role.permissions))
     existing_overrides = db.scalars(
         select(UserPermissionOverride).where(
             UserPermissionOverride.tenant_id == tenant_id,

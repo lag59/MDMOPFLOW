@@ -4,6 +4,7 @@ import { mapBackendRole, type RoleKey } from "@/lib/roles";
 
 export type RoleAccessContext = {
   roleKey: RoleKey;
+  roleKeys: RoleKey[];
   isSuperAdmin: boolean;
 };
 
@@ -34,8 +35,12 @@ export async function getCurrentRoleAccess(): Promise<RoleAccessContext | null> 
 
   const me = (await response.json()) as MeResponse;
   const normalizedPlatformRole = (me.platform_role || "").toLowerCase();
+  const roleKeys = Array.from(
+    new Set((me.memberships || []).map((membership) => mapBackendRole(me.platform_role, membership.role_name)))
+  );
   return {
-    roleKey: mapBackendRole(me.platform_role, me.memberships?.[0]?.role_name),
+    roleKey: roleKeys[0] || mapBackendRole(me.platform_role, me.memberships?.[0]?.role_name),
+    roleKeys,
     isSuperAdmin: normalizedPlatformRole === "platform_super_admin",
   };
 }
@@ -49,5 +54,5 @@ export function canAccessModuleRole(context: RoleAccessContext | null, routeRole
     return true;
   }
 
-  return context.roleKey === routeRoleKey;
+  return context.roleKeys.includes(routeRoleKey as RoleKey);
 }
