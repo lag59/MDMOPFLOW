@@ -663,6 +663,11 @@ describe("Company owner module detail page", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Project Manager" })).toBeInTheDocument();
+      expect(screen.getByText("Project workflow pipeline")).toBeInTheDocument();
+      expect(screen.getByText(/Foreman submits field data -> Project Manager reviews exceptions -> system updates project performance -> AI identifies risk -> Project Manager creates or assigns an action\./i)).toBeInTheDocument();
+      expect(screen.getByText("Quick navigation")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Workflow" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Action Plan" })).toBeInTheDocument();
       expect(screen.getByText("Portfolio Summary")).toBeInTheDocument();
       expect(screen.getByText("Project Portfolio View")).toBeInTheDocument();
       expect(screen.getByText("Projects Needing Attention")).toBeInTheDocument();

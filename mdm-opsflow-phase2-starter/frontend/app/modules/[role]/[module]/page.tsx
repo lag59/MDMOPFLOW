@@ -1244,6 +1244,7 @@ export default function ModuleDetailPage() {
 
     if (detail.roleKey === "project_manager" && detail.moduleSlug === "projects") {
       const reviewReports = dailyReports.filter((report) => ["submitted", "review", "reviewed", "under_review"].includes((report.status || "").toLowerCase()));
+      const foremanSubmittedReports = dailyReports.filter((report) => ["submitted", "review", "reviewed", "under_review", "approved"].includes((report.status || "").toLowerCase())).length;
       const dueReports = dailyReports.filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase())).length;
       const awaitingApproval = reviewReports.length;
       const openActionTickets = tickets.filter((ticket) => !["resolved", "closed"].includes((ticket.status || "").toLowerCase())).length;
@@ -1286,10 +1287,54 @@ export default function ModuleDetailPage() {
         revenue_shortfall: false,
         ticket_count: 0,
       }));
+      const exceptionsToReview = projectAlerts.length;
+      const projectPerformanceRecords = Array.from(profitability.values()).length;
 
       return (
         <section className="space-y-4">
+          <div id="pm-workflow" className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-900">Project workflow pipeline</h2>
+            <p className="mt-2 text-sm text-blue-900">
+              Foreman submits field data -&gt; Project Manager reviews exceptions -&gt; system updates project performance -&gt; AI identifies risk -&gt; Project Manager creates or assigns an action.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-5">
+              <div className="rounded-lg border border-blue-200 bg-white p-3 text-sm text-slate-800">
+                <div className="font-semibold text-slate-900">1. Foreman submits field data</div>
+                <div className="mt-1">Submitted reports: {foremanSubmittedReports}</div>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-white p-3 text-sm text-slate-800">
+                <div className="font-semibold text-slate-900">2. PM reviews exceptions</div>
+                <div className="mt-1">Exceptions in queue: {exceptionsToReview}</div>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-white p-3 text-sm text-slate-800">
+                <div className="font-semibold text-slate-900">3. System updates performance</div>
+                <div className="mt-1">Projects updated: {projectPerformanceRecords}</div>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-white p-3 text-sm text-slate-800">
+                <div className="font-semibold text-slate-900">4. AI identifies risk</div>
+                <div className="mt-1">Projects at risk: {riskProjects.length}</div>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-white p-3 text-sm text-slate-800">
+                <div className="font-semibold text-slate-900">5. PM creates or assigns action</div>
+                <div className="mt-1">Open action tickets: {openActionTickets}</div>
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Quick navigation</h2>
+            <p className="mt-1 text-sm text-slate-600">Jump directly to the section you need.</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+              <a href="#pm-workflow" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">Workflow</a>
+              <a href="#pm-summary" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">Summary</a>
+              <a href="#pm-portfolio" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">Portfolio</a>
+              <a href="#pm-attention" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">Exceptions</a>
+              <a href="#pm-action-plan" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">Action Plan</a>
+              <a href="#pm-ai-assist" className="rounded-md border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100">AI Assist</a>
+            </div>
+          </div>
+
+          <div id="pm-summary" className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("portfolioSummary")}</h2>
             <div className="mt-4 grid gap-4 md:grid-cols-4 xl:grid-cols-8">
               <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs font-semibold uppercase text-slate-500">{projectManagerText("activeProjects")}</div><div className="mt-2 text-2xl font-bold text-slate-900">{ownerSummary.activeProjects}</div></div>
@@ -1303,7 +1348,7 @@ export default function ModuleDetailPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div id="pm-portfolio" className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("projectPortfolioView")}</h2>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-left text-sm text-slate-700">
@@ -1435,7 +1480,7 @@ export default function ModuleDetailPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div id="pm-attention" className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("projectsNeedingAttention")}</h2>
             <div className="mt-4 space-y-3">
               {projectAlerts.length === 0 ? (
@@ -1506,7 +1551,7 @@ export default function ModuleDetailPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div id="pm-action-plan" className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("actionPlan")}</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <label className="text-sm font-medium text-slate-700">Action title
@@ -1581,7 +1626,7 @@ export default function ModuleDetailPage() {
             })()}
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div id="pm-ai-assist" className="rounded-xl border border-slate-200 bg-white p-4">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{projectManagerText("aiAssist")}</h2>
             <div className="mt-3 flex flex-wrap gap-2">
               {[
