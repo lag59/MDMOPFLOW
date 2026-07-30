@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx";
 
 import AppShell from "@/components/AppShell";
 import { getCustomerPortalBillingStatus, getCustomerPortalDocumentStatus, listCustomerPortalProjects, type CustomerPortalBillingStatus, type CustomerPortalDocumentStatus, type CustomerPortalProjectSummary } from "@/lib/customerPortal";
@@ -952,52 +953,95 @@ export default function ModuleDetailPage() {
     setProjectManagerExportingExcel(true);
     setProjectManagerExportMessage("");
     try {
-      const rows = [
-        [
-          "Project Name",
-          "Project Number",
-          "Status",
-          "Revenue",
-          "Actual Cost",
-          "Profit Margin",
-          "Open Issues",
-          "Latest Daily Report Status",
-        ],
-        ...projects.map((project) => {
-          const projectProfitability = profitability.get(project.id);
-          const latestReport = dailyReports.find((report) => report.project_id === project.id);
-          const openIssues = tickets.filter(
-            (ticket) => ticket.project_id === project.id && !["closed", "resolved"].includes((ticket.status || "").toLowerCase())
-          ).length;
-          return [
-            project.project_name,
-            project.project_number,
-            project.status,
-            String(Number(projectProfitability?.actual_revenue || 0)),
-            String(Number(projectProfitability?.actual_cost || 0)),
-            `${Number(projectProfitability?.profit_margin || 0).toFixed(1)}%`,
-            String(openIssues),
-            latestReport?.status || "Not Started",
-          ];
-        }),
+      const portfolioRows = projects.map((project) => {
+        const projectProfitability = profitability.get(project.id);
+        const latestReport = dailyReports.find((report) => report.project_id === project.id);
+        const openIssues = tickets.filter(
+          (ticket) => ticket.project_id === project.id && !["closed", "resolved"].includes((ticket.status || "").toLowerCase())
+        ).length;
+        return {
+          project_name: project.project_name,
+          project_number: project.project_number,
+          status: project.status,
+          revenue: Number(projectProfitability?.actual_revenue || 0),
+          actual_cost: Number(projectProfitability?.actual_cost || 0),
+          profit_margin_percent: Number(projectProfitability?.profit_margin || 0),
+          open_issues: openIssues,
+          latest_daily_report_status: latestReport?.status || "Not Started",
+        };
+      });
+
+      const alertsRows = [
+        ...dailyReports
+          .filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase()))
+          .map((report) => ({
+            project: projects.find((project) => project.id === report.project_id)?.project_name || "Unknown project",
+            issue: "Daily report not submitted",
+            severity: "High",
+            responsible_person: report.reporting_supervisor || "Superintendent",
+            report_date: report.report_date || "",
+          })),
+        ...Array.from(profitability.values())
+          .filter((item) => item.cost_overrun || item.revenue_shortfall)
+          .map((item) => ({
+            project: item.project_name,
+            issue: item.cost_overrun ? "Cost code over budget" : "Production below target",
+            severity: item.cost_overrun ? "Critical" : "Medium",
+            responsible_person: "Project Manager",
+            report_date: "",
+          })),
       ];
 
-      const csv = rows
-        .map((row) =>
-          row
-            .map((value) => `"${String(value).replaceAll("\"", '""')}"`)
-            .join(",")
-        )
-        .join("\n");
+      const dailyReviewRows = dailyReports.map((report) => ({
+        report_number: report.report_number || report.id,
+        project: projects.find((project) => project.id === report.project_id)?.project_name || "Unknown project",
+        report_date: report.report_date || "",
+        submitted_by: report.reporting_supervisor || "",
+        status: report.status || "",
+        work_performed: report.work_performed || "",
+      }));
 
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `project-manager-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      anchor.click();
-      window.URL.revokeObjectURL(url);
-      setProjectManagerExportMessage("Exported Excel-compatible project report (CSV).");
+      const performanceRows = projects.map((project) => {
+        const item = profitability.get(project.id);
+        return {
+          project_name: project.project_name,
+          project_number: project.project_number,
+          status: project.status,
+          ticket_count: Number(item?.ticket_count || 0),
+          actual_revenue: Number(item?.actual_revenue || 0),
+          actual_cost: Number(item?.actual_cost || 0),
+          gross_profit: Number(item?.gross_profit || 0),
+          profit_margin_percent: Number(item?.profit_margin || 0),
+        };
+      });
+
+      const actionTicketRows = tickets.map((ticket) => ({
+        ticket_number: ticket.ticket_number || ticket.id,
+        project: projects.find((project) => project.id === ticket.project_id)?.project_name || "Unassigned",
+        material: ticket.material || "",
+        driver: ticket.driver || "",
+        truck: ticket.truck || "",
+        destination: ticket.destination || "",
+        status: ticket.status || "",
+      }));
+
+      const workbook = XLSX.utils.book_new();
+      const appendSheet = (name: string, rows: Record<string, string | number>[]) => {
+        const safeRows = rows.length > 0 ? rows : [{ note: "No data available" }];
+        const sheet = XLSX.utils.json_to_sheet(safeRows);
+        XLSX.utils.book_append_sheet(workbook, sheet, name);
+      };
+
+      appendSheet("Portfolio", portfolioRows);
+      appendSheet("Alerts", alertsRows);
+      appendSheet("Daily Review", dailyReviewRows);
+      appendSheet("Performance", performanceRows);
+      appendSheet("Action Tickets", actionTicketRows);
+
+      XLSX.writeFile(workbook, `project-manager-export-${new Date().toISOString().slice(0, 10)}.xlsx`, {
+        compression: true,
+      });
+      setProjectManagerExportMessage("Exported project manager workbook (.xlsx).");
     } catch {
       setProjectManagerExportMessage("Unable to export Excel report right now.");
     } finally {
