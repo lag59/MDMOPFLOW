@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 
 import AppShell from "@/components/AppShell";
 import { getCustomerPortalBillingStatus, getCustomerPortalDocumentStatus, listCustomerPortalProjects, type CustomerPortalBillingStatus, type CustomerPortalDocumentStatus, type CustomerPortalProjectSummary } from "@/lib/customerPortal";
-import { approveEstimate, convertEstimateToProject, createEstimate, createEstimatorTakeoff, createEstimatorVersion, getEstimatorSummary, listEstimates, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, runEstimateAiReview, submitEstimate, uploadEstimateDocuments, validateEstimate, type Estimate, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
+import { approveEstimate, convertEstimateToProject, createEstimate, createEstimatorTakeoff, createEstimatorVersion, getEstimatorSummary, listEstimateDocumentExtractions, listEstimates, listEstimatorBidPipelineItems, listEstimatorTakeoffs, listEstimatorVersions, listEstimatorWinLossRecords, processEstimateDocument, runEstimateAiReview, submitEstimate, uploadEstimateDocuments, validateEstimate, type Estimate, type EstimateDocumentExtractionField, type EstimatorBidPipelineItem, type EstimatorSummary, type EstimatorTakeoff, type EstimatorVersion, type EstimatorWinLossRecord } from "@/lib/estimator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getModuleDetail } from "@/lib/modules";
 import { getPayrollSummary, listPayrollRuns, listPayrollTimecards, type PayrollRun, type PayrollSummary, type PayrollTimecard } from "@/lib/payroll";
@@ -1053,6 +1053,41 @@ export default function ModuleDetailPage() {
     if (activeEstimateId) {
       try {
         const uploaded = await uploadEstimateDocuments(activeEstimateId, uploadFiles);
+        const extractionBatches = await Promise.all(
+          uploaded.map(async (doc) => {
+            try {
+              await processEstimateDocument(doc.id);
+              return await listEstimateDocumentExtractions(doc.id);
+            } catch {
+              return [] as EstimateDocumentExtractionField[];
+            }
+          })
+        );
+        const extractedFields = extractionBatches.flat();
+        const projectNameValue = extractedFields.find((field) => field.field === "project_name")?.extracted_value?.trim() || "";
+        const materialValue = extractedFields.find((field) => field.field === "material")?.extracted_value?.trim() || "";
+        const tonsValue = extractedFields.find((field) => field.field === "tons")?.extracted_value?.trim() || "";
+
+        if (projectNameValue || materialValue || tonsValue) {
+          setEstimatorEstimateInfo((prev) => ({
+            ...prev,
+            projectName: projectNameValue || prev.projectName,
+            estimateName: projectNameValue || prev.estimateName,
+            notes: tonsValue && !prev.notes.toLowerCase().includes("ocr tons")
+              ? `${prev.notes ? `${prev.notes}\n` : ""}OCR tons: ${tonsValue}`
+              : prev.notes,
+          }));
+        }
+
+        if (materialValue) {
+          setEstimateScope((prev) => {
+            if (prev.toLowerCase().includes(materialValue.toLowerCase())) {
+              return prev;
+            }
+            return prev ? `${prev}; Material: ${materialValue}` : `Material: ${materialValue}`;
+          });
+        }
+
         setEstimatorUploadedDocuments((prev) => [
           ...uploaded.map((doc) => ({
             id: doc.id,
@@ -1068,7 +1103,11 @@ export default function ModuleDetailPage() {
           })),
           ...prev,
         ]);
-        setEstimatorUploadMessage(`${uploadFiles.length} document(s) uploaded to estimate workflow.`);
+        setEstimatorUploadMessage(
+          extractedFields.length > 0
+            ? `${uploadFiles.length} document(s) uploaded and OCR auto-filled estimate fields.`
+            : `${uploadFiles.length} document(s) uploaded to estimate workflow.`
+        );
         setEstimates(await listEstimates());
         event.target.value = "";
         return;
@@ -1105,9 +1144,15 @@ export default function ModuleDetailPage() {
     setEstimatorAiRunning(true);
     setEstimatorAiMessage("");
 
-    if (selectedEstimateId) {
+    let activeEstimateId = selectedEstimateId;
+    if (!activeEstimateId) {
+      const created = await createEstimateRecord();
+      activeEstimateId = created?.id || "";
+    }
+
+    if (activeEstimateId) {
       try {
-        const review = await runEstimateAiReview(selectedEstimateId);
+        const review = await runEstimateAiReview(activeEstimateId);
         const warningText = review.warnings.length > 0 ? `Warnings: ${review.warnings.join(" | ")}` : "No critical warnings.";
         const recommendationText = review.recommendations.join(" | ");
         setEstimatorAiMessage(`${warningText} ${recommendationText}`.trim());

@@ -181,6 +181,13 @@ export type EstimateAiReview = {
   recommendations: string[];
 };
 
+export type EstimateDocumentExtractionField = {
+  field: string;
+  extracted_value: string;
+  confidence: string;
+  status: string;
+};
+
 class EstimatorApiError extends Error {
   status: number;
   detail: string;
@@ -372,6 +379,23 @@ export async function uploadEstimateDocuments(estimateId: string, files: File[])
   });
   await throwIfNotOk(response, "Unable to upload estimate documents");
   return (await response.json()) as EstimateDocument[];
+}
+
+export async function processEstimateDocument(documentId: string): Promise<EstimateDocument> {
+  const response = await fetch(`${getApiBaseUrl()}/api/documents/${documentId}/process`, {
+    method: "POST",
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to process estimate document");
+  return (await response.json()) as EstimateDocument;
+}
+
+export async function listEstimateDocumentExtractions(documentId: string): Promise<EstimateDocumentExtractionField[]> {
+  const response = await fetch(`${getApiBaseUrl()}/api/documents/${documentId}/extractions`, {
+    headers: buildAuthHeaders(),
+  });
+  await throwIfNotOk(response, "Unable to load estimate document extractions");
+  return (await response.json()) as EstimateDocumentExtractionField[];
 }
 
 export async function validateEstimate(estimateId: string): Promise<EstimateValidation> {
