@@ -414,6 +414,7 @@ export default function ModuleDetailPage() {
   const [estimatorAiRunning, setEstimatorAiRunning] = useState(false);
   const [estimatorUploadMessage, setEstimatorUploadMessage] = useState("");
   const [estimatorUploadedDocuments, setEstimatorUploadedDocuments] = useState<EstimatorUploadedDocument[]>([]);
+  const [pendingEstimatorUploads, setPendingEstimatorUploads] = useState<File[]>([]);
   const [estimatorEstimateInfo, setEstimatorEstimateInfo] = useState<EstimatorEstimateInfo>({
     estimateName: "",
     estimateNumber: "",
@@ -527,6 +528,60 @@ export default function ModuleDetailPage() {
     }
     setSelectedEstimateId(estimates[0]?.id || "");
   }, [estimates, selectedEstimateId]);
+
+  useEffect(() => {
+    if (!selectedEstimateId || pendingEstimatorUploads.length === 0) {
+      return;
+    }
+
+    let active = true;
+
+    const syncPendingUploads = async () => {
+      try {
+        const queuedFiles = pendingEstimatorUploads;
+        const uploaded = await uploadEstimateDocuments(selectedEstimateId, queuedFiles);
+        if (!active) {
+          return;
+        }
+
+        const queuedNames = new Set(queuedFiles.map((file) => file.name));
+        setEstimatorUploadedDocuments((prev) => {
+          const remainingLocalRows = prev.filter(
+            (row) => !(row.estimateAssociation === "Unassigned" && queuedNames.has(row.fileName))
+          );
+          return [
+            ...uploaded.map((doc) => ({
+              id: doc.id,
+              fileName: doc.filename,
+              documentType: doc.document_type,
+              uploadDate: doc.uploaded_at.slice(0, 10),
+              uploadedBy: doc.uploaded_by,
+              processingStatus: doc.processing_status,
+              confidenceScore: Number(doc.confidence_score || 0),
+              estimateAssociation: doc.estimate_id,
+              version: doc.version_label,
+              reviewStatus: doc.review_status,
+            })),
+            ...remainingLocalRows,
+          ];
+        });
+
+        setPendingEstimatorUploads([]);
+        setEstimatorUploadMessage(`${uploaded.length} queued document(s) synced to estimate workflow.`);
+        setEstimates(await listEstimates());
+      } catch {
+        if (active) {
+          setEstimatorUploadMessage("Queued documents are waiting to sync to the selected estimate.");
+        }
+      }
+    };
+
+    void syncPendingUploads();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedEstimateId, pendingEstimatorUploads]);
 
   const saveBridgeDraft = () => {
     if (!bridgeStorageKey || typeof window === "undefined") {
@@ -1031,6 +1086,7 @@ export default function ModuleDetailPage() {
       reviewStatus: "Review recommended",
     }));
     setEstimatorUploadedDocuments((prev) => [...rows, ...prev]);
+    setPendingEstimatorUploads((prev) => [...prev, ...uploadFiles]);
     setEstimatorUploadMessage(
       selectedEstimateId
         ? `${rows.length} document(s) queued for OCR and review (backend upload unavailable).`
