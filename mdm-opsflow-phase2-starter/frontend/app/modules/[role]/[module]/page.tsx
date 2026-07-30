@@ -985,36 +985,33 @@ export default function ModuleDetailPage() {
       return;
     }
 
-    if (!selectedEstimateId) {
-      setEstimatorUploadMessage("Create or select an estimate before uploading documents.");
-      event.target.value = "";
-      return;
-    }
-
     const uploadFiles = Array.from(files);
-    try {
-      const uploaded = await uploadEstimateDocuments(selectedEstimateId, uploadFiles);
-      setEstimatorUploadedDocuments((prev) => [
-        ...uploaded.map((doc) => ({
-          id: doc.id,
-          fileName: doc.filename,
-          documentType: doc.document_type,
-          uploadDate: doc.uploaded_at.slice(0, 10),
-          uploadedBy: doc.uploaded_by,
-          processingStatus: doc.processing_status,
-          confidenceScore: Number(doc.confidence_score || 0),
-          estimateAssociation: doc.estimate_id,
-          version: doc.version_label,
-          reviewStatus: doc.review_status,
-        })),
-        ...prev,
-      ]);
-      setEstimatorUploadMessage(`${uploadFiles.length} document(s) uploaded to estimate workflow.`);
-      setEstimates(await listEstimates());
-      event.target.value = "";
-      return;
-    } catch {
-      // Fall through to local queue as a non-blocking UX backup.
+
+    if (selectedEstimateId) {
+      try {
+        const uploaded = await uploadEstimateDocuments(selectedEstimateId, uploadFiles);
+        setEstimatorUploadedDocuments((prev) => [
+          ...uploaded.map((doc) => ({
+            id: doc.id,
+            fileName: doc.filename,
+            documentType: doc.document_type,
+            uploadDate: doc.uploaded_at.slice(0, 10),
+            uploadedBy: doc.uploaded_by,
+            processingStatus: doc.processing_status,
+            confidenceScore: Number(doc.confidence_score || 0),
+            estimateAssociation: doc.estimate_id,
+            version: doc.version_label,
+            reviewStatus: doc.review_status,
+          })),
+          ...prev,
+        ]);
+        setEstimatorUploadMessage(`${uploadFiles.length} document(s) uploaded to estimate workflow.`);
+        setEstimates(await listEstimates());
+        event.target.value = "";
+        return;
+      } catch {
+        // Fall through to local queue as a non-blocking UX backup.
+      }
     }
 
     const now = new Date().toISOString().slice(0, 10);
@@ -1027,12 +1024,16 @@ export default function ModuleDetailPage() {
       uploadedBy,
       processingStatus: "Extraction Review",
       confidenceScore: 0.76,
-      estimateAssociation: estimatorEstimateInfo.estimateNumber || estimatorEstimateInfo.estimateName || selectedEstimateId,
+      estimateAssociation: estimatorEstimateInfo.estimateNumber || estimatorEstimateInfo.estimateName || selectedEstimateId || "Unassigned",
       version: "v1",
       reviewStatus: "Review recommended",
     }));
     setEstimatorUploadedDocuments((prev) => [...rows, ...prev]);
-    setEstimatorUploadMessage(`${rows.length} document(s) queued for OCR and review.`);
+    setEstimatorUploadMessage(
+      selectedEstimateId
+        ? `${rows.length} document(s) queued for OCR and review (backend upload unavailable).`
+        : `${rows.length} document(s) queued locally. Create/select an estimate to sync to workflow.`
+    );
     event.target.value = "";
   };
 
@@ -1133,8 +1134,9 @@ export default function ModuleDetailPage() {
       setSelectedEstimateId(created.id);
       setEstimatorEstimateInfo((prev) => ({ ...prev, estimateNumber: created.estimate_number }));
       setEstimateMessage(`Estimate created: ${created.estimate_number}`);
-    } catch {
-      setEstimateMessage("Unable to create estimate right now.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to create estimate right now.";
+      setEstimateMessage(`Unable to create estimate right now. ${detail}`.trim());
     }
   };
 
