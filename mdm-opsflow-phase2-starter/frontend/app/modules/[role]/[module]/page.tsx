@@ -1044,9 +1044,15 @@ export default function ModuleDetailPage() {
 
     const uploadFiles = Array.from(files);
 
-    if (selectedEstimateId) {
+    let activeEstimateId = selectedEstimateId;
+    if (!activeEstimateId) {
+      const created = await createEstimateRecord();
+      activeEstimateId = created?.id || "";
+    }
+
+    if (activeEstimateId) {
       try {
-        const uploaded = await uploadEstimateDocuments(selectedEstimateId, uploadFiles);
+        const uploaded = await uploadEstimateDocuments(activeEstimateId, uploadFiles);
         setEstimatorUploadedDocuments((prev) => [
           ...uploaded.map((doc) => ({
             id: doc.id,
@@ -1081,14 +1087,14 @@ export default function ModuleDetailPage() {
       uploadedBy,
       processingStatus: "Extraction Review",
       confidenceScore: 0.76,
-      estimateAssociation: estimatorEstimateInfo.estimateNumber || estimatorEstimateInfo.estimateName || selectedEstimateId || "Unassigned",
+      estimateAssociation: estimatorEstimateInfo.estimateNumber || estimatorEstimateInfo.estimateName || activeEstimateId || "Unassigned",
       version: "v1",
       reviewStatus: "Review recommended",
     }));
     setEstimatorUploadedDocuments((prev) => [...rows, ...prev]);
     setPendingEstimatorUploads((prev) => [...prev, ...uploadFiles]);
     setEstimatorUploadMessage(
-      selectedEstimateId
+      activeEstimateId
         ? `${rows.length} document(s) queued for OCR and review (backend upload unavailable).`
         : `${rows.length} document(s) queued locally. Create/select an estimate to sync to workflow.`
     );
@@ -1160,7 +1166,7 @@ export default function ModuleDetailPage() {
     }
   };
 
-  const createNewEstimateRecord = async () => {
+  const createEstimateRecord = async (): Promise<Estimate | null> => {
     const generatedNumber = estimatorEstimateInfo.estimateNumber || `EST-${Date.now().toString().slice(-6)}`;
     try {
       const created = await createEstimate({
@@ -1192,10 +1198,16 @@ export default function ModuleDetailPage() {
       setSelectedEstimateId(created.id);
       setEstimatorEstimateInfo((prev) => ({ ...prev, estimateNumber: created.estimate_number }));
       setEstimateMessage(`Estimate created: ${created.estimate_number}`);
+      return created;
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to create estimate right now.";
       setEstimateMessage(`Unable to create estimate right now. ${detail}`.trim());
+      return null;
     }
+  };
+
+  const createNewEstimateRecord = async () => {
+    await createEstimateRecord();
   };
 
   const submitSelectedEstimate = async () => {
