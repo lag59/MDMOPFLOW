@@ -234,6 +234,8 @@ const ESTIMATE_STATUSES = [
   "Archived",
 ] as const;
 
+const ESTIMATOR_UPLOAD_ACCEPT = ".doc,.docx,.ppt,.pptx,.csv,.cvs,.tif,.tiff,.png,.jpg,.jpeg,.pdf,.xls,.xlsx,.zip,*/*";
+
 const ESTIMATOR_HEADER_LABELS: Record<EstimatorLocale, Record<string, string>> = {
   en: {
     title: "AI Project Estimator",
@@ -2593,7 +2595,7 @@ export default function ModuleDetailPage() {
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                 Upload files
-                <input type="file" multiple onChange={handleEstimatorFileUpload} className="hidden" />
+                <input type="file" accept={ESTIMATOR_UPLOAD_ACCEPT} multiple onChange={handleEstimatorFileUpload} className="hidden" />
               </label>
               <span className="text-xs text-slate-600">Supports multi-file upload and OCR extraction review queue.</span>
             </div>
@@ -3116,11 +3118,11 @@ export default function ModuleDetailPage() {
               <button type="button" onClick={createNewEstimateRecord} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800">{estimatorText("create")}</button>
               <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 {estimatorText("upload")}
-                <input type="file" multiple onChange={handleEstimatorFileUpload} className="hidden" />
+                <input type="file" accept={ESTIMATOR_UPLOAD_ACCEPT} multiple onChange={handleEstimatorFileUpload} className="hidden" />
               </label>
               <label className="inline-flex cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 {estimatorText("importSheet")}
-                <input type="file" accept=".csv,.xlsx,.xls" onChange={handleEstimatorFileUpload} className="hidden" />
+                <input type="file" accept={ESTIMATOR_UPLOAD_ACCEPT} onChange={handleEstimatorFileUpload} className="hidden" />
               </label>
               <Link href="/modules/estimator/estimate-versions" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("versions")}</Link>
               <Link href="/tickets" className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">{estimatorText("costLibrary")}</Link>
