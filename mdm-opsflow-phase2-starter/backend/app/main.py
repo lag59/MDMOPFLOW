@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api.routes import admin, auth, ai_assignment, billing, core_platform, customer_portal, daily_field_reports, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
+from app.api.routes import admin, auth, ai_assignment, ai_assist, billing, core_platform, customer_portal, daily_field_reports, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
 from app.core.config import settings
 
 from app.db import SessionLocal
@@ -149,6 +149,7 @@ app.include_router(billing.router)
 app.include_router(payroll.router)
 app.include_router(estimator.router)
 app.include_router(estimator.estimates_router)
+app.include_router(ai_assist.router)
 app.include_router(vendor.router)
 app.include_router(customer_portal.router)
 app.include_router(ai_assignment.router)
