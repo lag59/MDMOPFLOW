@@ -50,6 +50,7 @@ const DEFAULT_ROLE_OPTIONS = [
   "executive",
   "project_manager",
   "estimator",
+  "field_supervisor",
   "dispatcher",
   "accounting",
   "payroll",

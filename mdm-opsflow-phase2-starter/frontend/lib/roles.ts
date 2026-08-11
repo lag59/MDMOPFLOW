@@ -3,6 +3,7 @@ export type RoleKey =
   | "executive"
   | "project_manager"
   | "estimator"
+  | "field_supervisor"
   | "dispatcher"
   | "accounting"
   | "payroll"
@@ -43,6 +44,12 @@ export const ROLE_WORKSPACES: RoleWorkspace[] = [
     label: "Estimator",
     summary: "Build and revise estimates from bid through handoff.",
     modules: ["Takeoff", "Estimate Versions", "Bid Pipeline", "Win/Loss"],
+  },
+  {
+    key: "field_supervisor",
+    label: "Field Supervisor",
+    summary: "Manage daily production, safety, and crew on active job sites.",
+    modules: ["Daily Field Reports", "Safety", "Production", "Crew"],
   },
   {
     key: "dispatcher",
@@ -108,6 +115,9 @@ export function mapBackendRole(platformRole: string, membershipRoleName: string 
   }
   if (role.includes("estimate")) {
     return "estimator";
+  }
+  if (role.includes("field_supervisor") || role.includes("field supervisor") || role.includes("supervisor")) {
+    return "field_supervisor";
   }
   if (role.includes("dispatch")) {
     return "dispatcher";
