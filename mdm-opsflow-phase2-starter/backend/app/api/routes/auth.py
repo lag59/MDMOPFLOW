@@ -82,12 +82,13 @@ def _make_auth_response(user: User, tenant_id: str | None) -> AuthResponse:
     },
 )
 def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
-    existing = db.scalar(select(User).where(User.email == payload.email.lower()))
+    normalized_email = payload.email.lower().strip()
+    existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     user = User(
-        email=payload.email.lower(),
+        email=normalized_email,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
         title="",
@@ -116,9 +117,10 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
     },
 )
 def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
-    user = _ensure_super_admin_identity(db, payload.email, payload.password)
+    normalized_email = payload.email.lower().strip()
+    user = _ensure_super_admin_identity(db, normalized_email, payload.password)
     if user is None:
-        user = db.scalar(select(User).where(User.email == payload.email.lower()))
+        user = db.scalar(select(User).where(User.email == normalized_email))
 
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")

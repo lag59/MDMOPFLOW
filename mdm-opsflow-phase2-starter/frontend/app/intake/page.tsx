@@ -7,6 +7,7 @@ import AppShell from "@/components/AppShell";
 import TicketCalculatorPanel from "@/components/TicketCalculatorPanel";
 import { getAccessToken } from "@/lib/auth";
 import { getLocale, t } from "@/lib/i18n";
+import { getCurrentRoleAccess, type RoleAccessContext } from "@/lib/roleAccess";
 import {
   ReplayTokenApiError,
   ReplayTokenAuditEntry,
@@ -243,6 +244,7 @@ export default function IntakePage() {
   const [draftTicketBusy, setDraftTicketBusy] = useState(false);
   const [draftTicketMessage, setDraftTicketMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [roleAccess, setRoleAccess] = useState<RoleAccessContext | null>(null);
 
   const intakeMetrics = useMemo(() => {
     const totalTokens = items.length;
@@ -267,9 +269,46 @@ export default function IntakePage() {
       return;
     }
 
+    void getCurrentRoleAccess().then((context) => setRoleAccess(context));
+
     void refreshAll();
     void refreshAudit();
   }, []);
+
+  function resolveIntakeWorkflowHref(context: RoleAccessContext | null): string {
+    if (!context) {
+      return "/tickets";
+    }
+    if (context.isSuperAdmin) {
+      return "/extraction-queue";
+    }
+
+    if (context.roleKeys.includes("estimator")) {
+      return "/modules/estimator/takeoff";
+    }
+    if (context.roleKeys.includes("project_manager") || context.roleKeys.includes("company_owner") || context.roleKeys.includes("executive")) {
+      return "/modules/project_manager/projects";
+    }
+    if (context.roleKeys.includes("dispatcher")) {
+      return "/modules/dispatcher/dispatch-board";
+    }
+    if (context.roleKeys.includes("accounting")) {
+      return "/modules/accounting/ap";
+    }
+    if (context.roleKeys.includes("payroll")) {
+      return "/modules/payroll/timecards";
+    }
+    if (context.roleKeys.includes("fleet_manager")) {
+      return "/modules/fleet_manager/fleet";
+    }
+    if (context.roleKeys.includes("safety_manager")) {
+      return "/modules/safety_manager/incidents";
+    }
+    if (context.roleKeys.includes("administrator")) {
+      return "/settings/users";
+    }
+    return "/tickets";
+  }
 
   const byState = useMemo(() => {
     const counts = { issued: 0, consumed: 0, revoked: 0, expired: 0 };
@@ -567,6 +606,7 @@ export default function IntakePage() {
         notes: "Created from Intake calculator panel",
       });
       setDraftTicketMessage("Draft ticket saved with selected calculation outputs.");
+      window.location.href = resolveIntakeWorkflowHref(roleAccess);
     } catch (err) {
       if (err instanceof TicketApiError) {
         setDraftTicketMessage(err.detail);

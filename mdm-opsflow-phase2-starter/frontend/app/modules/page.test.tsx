@@ -36,15 +36,17 @@ describe("Modules page workspace visibility", () => {
     accessState.isSuperAdmin = false;
   });
 
-  it("shows all role cards and marks only the active role for non-super-admin users", async () => {
+  it("shows all assigned role workspaces for non-super-admin users with multiple roles", async () => {
+    accessState.roleKey = "project_manager";
+    accessState.roleKeys = ["project_manager", "estimator"];
+
     render(<ModulesPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Project Manager")).toBeInTheDocument();
       expect(screen.getByText("Estimator")).toBeInTheDocument();
-      expect(screen.getByText("Vendor")).toBeInTheDocument();
       expect(screen.getByText("Current Role")).toBeInTheDocument();
-      expect(screen.getAllByText("Preview").length).toBeGreaterThan(0);
+      expect(screen.getByText("Assigned Role")).toBeInTheDocument();
     });
   });
 

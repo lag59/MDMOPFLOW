@@ -12,6 +12,7 @@ import { type RoleKey } from "@/lib/roles";
 export default function ModulesPage() {
   const locale = getLocale();
   const [activeRole, setActiveRole] = useState<RoleKey>("project_manager");
+  const [assignedRoles, setAssignedRoles] = useState<RoleKey[]>(["project_manager"]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   useEffect(() => {
@@ -22,13 +23,14 @@ export default function ModulesPage() {
         return;
       }
       setActiveRole(context.roleKey);
+      setAssignedRoles(context.roleKeys);
       setIsSuperAdmin(context.isSuperAdmin);
     };
 
     resolveAccess();
   }, []);
 
-  const visibleWorkspaces = getVisibleWorkspacesForRole(activeRole, isSuperAdmin);
+  const visibleWorkspaces = getVisibleWorkspacesForRole(assignedRoles, isSuperAdmin);
 
   return (
     <AppShell titleKey="modules.title">
@@ -48,7 +50,7 @@ export default function ModulesPage() {
                 </span>
               ) : (
                 <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                  Preview
+                  Assigned Role
                 </span>
               )}
             </div>
@@ -75,7 +77,7 @@ export default function ModulesPage() {
                       </div>
                       <p className="text-sm text-slate-600">{MODULE_ROUTE_MAP[module].helperText}</p>
                       {workspace.key !== activeRole && !isSuperAdmin ? (
-                        <p className="text-xs text-slate-500">Switch to this role to open this module workspace.</p>
+                        <p className="text-xs text-slate-500">This workspace is available through your assigned role access.</p>
                       ) : null}
                     </div>
                     );

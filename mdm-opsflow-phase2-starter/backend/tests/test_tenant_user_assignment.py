@@ -146,6 +146,25 @@ def test_owner_can_create_user_with_temporary_password_and_assign_role(client: T
     assert login.status_code == 200
 
 
+def test_assigning_case_variant_reuses_existing_user_account(client: TestClient):
+    owner = register_user(client, "owner-case@acme.com", "Pass12345!", "Owner")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Case", "Acme Case Project")
+    tenant_id = onboarding["tenant_id"]
+
+    existing = register_user(client, "CaseMember@acme.com", "Pass12345!", "Case Member")
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"email": "casemember@acme.com", "role_name": "project_manager"},
+    )
+
+    assert assign.status_code == 201
+    assert assign.json()["email"] == "casemember@acme.com"
+    assert assign.json()["user_id"] == existing["user_id"]
+
+
 def test_owner_can_toggle_user_permissions(client: TestClient):
     owner = register_user(client, "owner3@acme.com", "Pass12345!", "Owner")
     owner_token = owner["tokens"]["access_token"]

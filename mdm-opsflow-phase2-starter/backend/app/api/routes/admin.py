@@ -10,6 +10,7 @@ from app.models import (
     ExtractionIssue,
     IntakeItem,
     IntegrationEvent,
+    MembershipStatus,
     PlatformRole,
     Project,
     Role,
@@ -18,9 +19,10 @@ from app.models import (
     Ticket,
     User,
 )
-from app.rbac import resolve_permissions
+from app.rbac import ROLE_PERMISSIONS, permissions_csv_for_role, resolve_permissions
 from app.security import hash_password
 from app.schemas import (
+    AdminAssignUserTenantMembershipRequest,
     AdminAuditLogEntry,
     AdminOverviewResponse,
     AdminPermissionsPreviewResponse,
@@ -28,7 +30,9 @@ from app.schemas import (
     AdminServiceInsightsResponse,
     AdminTenantServiceSummaryItem,
     AdminTenantServiceSummaryResponse,
+    AdminUpdateUserTenantMembershipRequest,
     AdminTenantUser,
+    AdminUserTenantMembershipItem,
     AdminUpdateUserAccessRequest,
     AdminUserAccessItem,
 )
@@ -40,6 +44,38 @@ def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.platform_role != PlatformRole.PLATFORM_SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Platform super-admin access required")
     return current_user
+
+
+def _get_or_create_role(db: Session, tenant_id: str, role_name: str, actor_user_id: str) -> Role:
+    if role_name not in ROLE_PERMISSIONS or role_name == "platform_super_admin":
+        raise HTTPException(status_code=400, detail="Unknown role")
+
+    role = db.scalar(select(Role).where(Role.tenant_id == tenant_id, Role.name == role_name))
+    if role:
+        return role
+
+    role = Role(
+        tenant_id=tenant_id,
+        name=role_name,
+        permissions=permissions_csv_for_role(role_name),
+        created_by=actor_user_id,
+    )
+    db.add(role)
+    db.flush()
+    return role
+
+
+def _build_membership_item(db: Session, membership: TenantMembership, role: Role | None = None) -> AdminUserTenantMembershipItem:
+    tenant = db.get(Tenant, membership.tenant_id)
+    resolved_role = role or db.get(Role, membership.role_id)
+    return AdminUserTenantMembershipItem(
+        membership_id=membership.id,
+        user_id=membership.user_id,
+        tenant_id=membership.tenant_id,
+        tenant_name=tenant.name if tenant else "Unknown",
+        role_name=resolved_role.name if resolved_role else "unknown",
+        status=membership.status.value,
+    )
 
 
 @router.get(
@@ -193,6 +229,165 @@ def list_users(current_user: User = Depends(require_super_admin), db: Session = 
         }
         for user in users
     ]
+
+
+@router.get(
+    "/roles/catalog",
+    response_model=list[str],
+    operation_id="admin_roles_catalog",
+    summary="List assignable tenant roles",
+    description="Returns all standard tenant roles that super-admin can assign.",
+    responses={200: {"description": "Roles returned successfully."}, 403: {"description": "Super-admin required."}},
+)
+def admin_roles_catalog(current_user: User = Depends(require_super_admin)):
+    _ = current_user
+    return sorted(role_name for role_name in ROLE_PERMISSIONS if role_name != "platform_super_admin")
+
+
+@router.get(
+    "/users/{user_id}/memberships",
+    response_model=list[AdminUserTenantMembershipItem],
+    operation_id="admin_user_memberships_list",
+    summary="List user tenant memberships",
+    description="Returns tenant memberships and assigned roles for a platform user.",
+)
+def list_user_memberships(user_id: str, current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+    _ = current_user
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    memberships = db.scalars(
+        select(TenantMembership).where(TenantMembership.user_id == user_id).order_by(TenantMembership.created_at.asc())
+    ).all()
+    return [_build_membership_item(db, membership) for membership in memberships]
+
+
+@router.post(
+    "/users/{user_id}/memberships",
+    response_model=AdminUserTenantMembershipItem,
+    status_code=201,
+    operation_id="admin_user_membership_assign",
+    summary="Assign tenant role to user",
+    description="Adds or reactivates a tenant membership role for a user.",
+)
+def assign_user_membership(
+    user_id: str,
+    payload: AdminAssignUserTenantMembershipRequest,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    tenant = db.get(Tenant, payload.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    role = _get_or_create_role(db, payload.tenant_id, payload.role_name, current_user.id)
+    membership = db.scalar(
+        select(TenantMembership).where(
+            TenantMembership.user_id == user_id,
+            TenantMembership.tenant_id == payload.tenant_id,
+            TenantMembership.role_id == role.id,
+        )
+    )
+    if membership:
+        membership.status = MembershipStatus.ACTIVE
+        action = "admin_reactivate_user_membership"
+    else:
+        membership = TenantMembership(
+            tenant_id=payload.tenant_id,
+            user_id=user_id,
+            role_id=role.id,
+            status=MembershipStatus.ACTIVE,
+            created_by=current_user.id,
+        )
+        db.add(membership)
+        db.flush()
+        action = "admin_assign_user_membership"
+
+    db.add(
+        AuditLog(
+            tenant_id=payload.tenant_id,
+            actor_user_id=current_user.id,
+            action=action,
+            resource_type="tenant_membership",
+            resource_id=membership.id,
+            details=f"{user.email} -> {role.name}",
+            created_by=current_user.id,
+        )
+    )
+    db.commit()
+    db.refresh(membership)
+    return _build_membership_item(db, membership, role)
+
+
+@router.patch(
+    "/users/{user_id}/memberships/{membership_id}",
+    response_model=AdminUserTenantMembershipItem,
+    operation_id="admin_user_membership_update",
+    summary="Remap tenant membership",
+    description="Moves or updates a user's tenant role membership, including status changes.",
+)
+def update_user_membership(
+    user_id: str,
+    membership_id: str,
+    payload: AdminUpdateUserTenantMembershipRequest,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    membership = db.scalar(select(TenantMembership).where(TenantMembership.id == membership_id, TenantMembership.user_id == user_id))
+    if not membership:
+        raise HTTPException(status_code=404, detail="Membership not found")
+
+    current_role = db.get(Role, membership.role_id)
+    target_tenant_id = payload.tenant_id or membership.tenant_id
+    tenant = db.get(Tenant, target_tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    target_role_name = payload.role_name or (current_role.name if current_role else "")
+    target_role = _get_or_create_role(db, target_tenant_id, target_role_name, current_user.id)
+
+    duplicate = db.scalar(
+        select(TenantMembership).where(
+            TenantMembership.user_id == user_id,
+            TenantMembership.tenant_id == target_tenant_id,
+            TenantMembership.role_id == target_role.id,
+            TenantMembership.id != membership.id,
+        )
+    )
+    if duplicate is not None:
+        duplicate.status = MembershipStatus(payload.status) if payload.status else MembershipStatus.ACTIVE
+        membership.status = MembershipStatus.INACTIVE
+        target_membership = duplicate
+    else:
+        membership.tenant_id = target_tenant_id
+        membership.role_id = target_role.id
+        if payload.status:
+            membership.status = MembershipStatus(payload.status)
+        target_membership = membership
+
+    db.add(
+        AuditLog(
+            tenant_id=target_tenant_id,
+            actor_user_id=current_user.id,
+            action="admin_update_user_membership",
+            resource_type="tenant_membership",
+            resource_id=target_membership.id,
+            details=f"{user.email} -> {target_role.name} ({target_membership.status.value})",
+            created_by=current_user.id,
+        )
+    )
+    db.commit()
+    db.refresh(target_membership)
+    return _build_membership_item(db, target_membership, target_role)
 
 
 @router.patch(

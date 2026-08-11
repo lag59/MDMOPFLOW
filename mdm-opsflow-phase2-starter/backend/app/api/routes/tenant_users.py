@@ -113,20 +113,25 @@ def assign_tenant_user(
     if not has_admin_write and not is_owner:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    normalized_email = payload.email.lower()
+    normalized_email = payload.email.lower().strip()
     user = db.scalar(select(User).where(User.email == normalized_email))
     if not user:
-        inferred_display_name = payload.display_name.strip() or normalized_email.split("@")[0].replace(".", " ").replace("_", " ").title()
-        user = User(
-            email=normalized_email,
-            password_hash=hash_password(payload.temporary_password),
-            display_name=inferred_display_name,
-            title=payload.title.strip(),
-            platform_role=PlatformRole.USER,
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
+        existing_case_variant = db.scalar(select(User).where(User.email.ilike(normalized_email)))
+        if existing_case_variant is not None:
+            existing_case_variant.email = normalized_email
+            user = existing_case_variant
+        else:
+            inferred_display_name = payload.display_name.strip() or normalized_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+            user = User(
+                email=normalized_email,
+                password_hash=hash_password(payload.temporary_password),
+                display_name=inferred_display_name,
+                title=payload.title.strip(),
+                platform_role=PlatformRole.USER,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
 
     role = db.scalar(
         select(Role).where(

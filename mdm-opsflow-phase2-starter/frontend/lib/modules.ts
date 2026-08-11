@@ -658,13 +658,10 @@ export function getModuleDetail(roleKey: string, moduleSlug: string): ModuleDeta
   };
 }
 
-export function getVisibleWorkspacesForRole(roleKey: RoleKey, isSuperAdmin: boolean) {
+export function getVisibleWorkspacesForRole(roleKeys: RoleKey[], isSuperAdmin: boolean) {
   if (isSuperAdmin) {
     return ROLE_WORKSPACES;
   }
 
-  const currentRoleWorkspace = ROLE_WORKSPACES.find((workspace) => workspace.key === roleKey);
-  const otherWorkspaces = ROLE_WORKSPACES.filter((workspace) => workspace.key !== roleKey);
-
-  return currentRoleWorkspace ? [currentRoleWorkspace, ...otherWorkspaces] : ROLE_WORKSPACES;
+  return ROLE_WORKSPACES.filter((workspace) => roleKeys.includes(workspace.key));
 }

@@ -119,10 +119,13 @@ describe("module metadata helpers", () => {
     expect(getModuleDetail("dispatcher", "not-a-real-module")).toBeNull();
   });
 
-  it("filters visible module workspaces by user role", () => {
-    const estimatorVisible = getVisibleWorkspacesForRole("estimator", false);
+  it("filters visible module workspaces to the roles assigned to the user", () => {
+    const estimatorVisible = getVisibleWorkspacesForRole(["estimator"], false);
     expect(estimatorVisible).toHaveLength(1);
     expect(estimatorVisible[0].key).toBe("estimator");
+
+    const multiRoleVisible = getVisibleWorkspacesForRole(["project_manager", "estimator"], false);
+    expect(multiRoleVisible.map((workspace) => workspace.key)).toEqual(["project_manager", "estimator"]);
   });
 
   it("returns full workspace catalog for super admins", () => {

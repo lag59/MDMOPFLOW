@@ -462,7 +462,7 @@ textarea:focus {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 	gap: 12px;
-	align-items: end;
+	align-items: flex-end;
 }
 
 .trend-column {
@@ -472,7 +472,7 @@ textarea:focus {
 
 .trend-bars {
 	display: flex;
-	align-items: end;
+	align-items: flex-end;
 	gap: 6px;
 	height: 140px;
 	padding: 12px;

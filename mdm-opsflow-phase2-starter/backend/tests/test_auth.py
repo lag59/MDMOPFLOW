@@ -68,6 +68,21 @@ def test_super_admin_login_recovers_when_seed_user_is_missing(client: TestClient
     assert response.json()["platform_role"] == "platform_super_admin"
 
 
+def test_login_accepts_case_variant_of_registered_email(client: TestClient):
+    register_response = client.post(
+        "/api/auth/register",
+        json={"email": "CaseUser@example.com", "password": "Pass12345!", "display_name": "Case User"},
+    )
+    assert register_response.status_code == 201
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "caseuser@example.com", "password": "Pass12345!"},
+    )
+    assert login_response.status_code == 200
+    assert login_response.json()["email"] == "caseuser@example.com"
+
+
 def test_platform_admin_is_seeded_and_protected(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
