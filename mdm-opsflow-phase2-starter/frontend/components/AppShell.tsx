@@ -21,6 +21,7 @@ const NAV_ITEMS = [
     { href: "/intake",           label: "Intake Hub",         icon: "📥" },
     { href: "/extraction-queue", label: "Extraction Queue",   icon: "🔍" },
     { href: "/projects",         label: "Projects",           icon: "📁" },
+    { href: "/vendor",           label: "Vendor Portal",      icon: "🚚" },
   ]},
   { group: "Finance", items: [
     { href: "/accounting",       label: "Accounting",         icon: "💰" },
