@@ -49,6 +49,8 @@ export default function FieldSupervisorPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm]         = useState<CreateReportForm>(BLANK);
   const [saving, setSaving]     = useState(false);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
   const [msg, setMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
   const api = getApiBaseUrl();
@@ -61,10 +63,19 @@ export default function FieldSupervisorPage() {
 
   useEffect(() => {
     if (!token) { window.location.href = "/login"; return; }
+    setLoading(true);
+    setError(null);
     Promise.all([
       fetch(`${api}/api/daily-field-reports`, { headers: headers() }).then(r => r.ok ? r.json() : []),
       fetch(`${api}/api/projects`, { headers: headers() }).then(r => r.ok ? r.json() : []),
-    ]).then(([rpts, projs]) => { setReports(rpts); setProjects(projs); });
+    ]).then(([rpts, projs]) => {
+      setReports(rpts);
+      setProjects(projs);
+      setLoading(false);
+    }).catch(() => {
+      setError("Could not load reports. Please refresh.");
+      setLoading(false);
+    });
   }, []);
 
   async function handleCreate(e: React.FormEvent) {
@@ -116,8 +127,17 @@ export default function FieldSupervisorPage() {
 
   return (
     <AppShell titleKey="nav.fieldSupervisor">
+      {loading ? <p className="muted">Loading field reports...</p> : null}
+      {!loading && error ? (
+        <div className="card" style={{ borderColor: "#fecaca", background: "#fef2f2" }}>
+          <p style={{ margin: 0, color: "#991b1b", fontWeight: 600 }}>{error}</p>
+        </div>
+      ) : null}
+
+      {!loading && !error ? (
+      <>
       {/* Metrics */}
-      <div className="grid" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", marginBottom: 20 }}>
         {[
           { label: "Total Reports",   value: reports.length,                                        color: "#64748b" },
           { label: "Draft",           value: reports.filter(r => r.status === "draft").length,      color: "#d97706" },
@@ -138,7 +158,7 @@ export default function FieldSupervisorPage() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,280px) minmax(0,1fr)", gap: 16, alignItems: "flex-start" }}>
         {/* Reports list */}
         <div className="card" style={{ flex: "0 0 280px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -234,7 +254,6 @@ export default function FieldSupervisorPage() {
                 </div>
               </div>
               <ProcessIndicator steps={REPORT_PROCESS} currentKey={selected.status} />
-              <ProcessIndicator steps={REPORT_PROCESS} currentKey={selected.status} />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 16, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
                 {[
                   ["Report Date",    selected.report_date],
@@ -264,6 +283,8 @@ export default function FieldSupervisorPage() {
           )}
         </div>
       </div>
+      </>
+      ) : null}
     </AppShell>
   );
 }

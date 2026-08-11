@@ -33,6 +33,7 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [profitability, setProfitability] = useState<Map<string, ProjectProfitability>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
 
   const summary = useMemo(() => {
     const totalProjects = projects.length;
@@ -47,6 +48,21 @@ export default function ProjectsPage() {
       totalRevenue,
     };
   }, [projects, profitability]);
+
+  const filteredProjects = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    if (!search) return projects;
+    return projects.filter((project) => {
+      const p = profitability.get(project.id);
+      return (
+        project.project_name.toLowerCase().includes(search) ||
+        project.project_number.toLowerCase().includes(search) ||
+        project.status.toLowerCase().includes(search) ||
+        (p?.cost_overrun ? "over budget" : "").includes(search) ||
+        (p?.revenue_shortfall ? "shortfall" : "").includes(search)
+      );
+    });
+  }, [projects, profitability, query]);
 
   useEffect(() => {
     setLocale(getLocale());
@@ -169,11 +185,21 @@ export default function ProjectsPage() {
           </Link>
         </div>
 
+      <label className="text-sm font-medium text-slate-700">
+        Find project
+        <input
+          className="mt-1"
+          placeholder="Search by name, number, status, or risk"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+
       {loading ? (
         <div className="p-4 text-slate-600">Loading projects...</div>
       ) : (
         <div className="space-y-3">
-          {projects.map((project) => {
+          {filteredProjects.map((project) => {
             const prof = profitability.get(project.id);
             return (
               <Link
@@ -245,7 +271,7 @@ export default function ProjectsPage() {
               </Link>
             );
           })}
-          {projects.length === 0 ? <p className="p-4 text-slate-600">No projects yet. Create one to begin.</p> : null}
+          {filteredProjects.length === 0 ? <p className="p-4 text-slate-600">No projects match that filter.</p> : null}
         </div>
       )}
       </div>

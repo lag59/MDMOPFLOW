@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const api = getApiBaseUrl();
   const token = getAccessToken();
@@ -62,7 +63,10 @@ export default function DashboardPage() {
           : 0,
       });
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => {
+      setError("Some dashboard data could not be loaded. Please refresh.");
+      setLoading(false);
+    });
   }, []);
 
   const recentProjects = projects.slice(0, 5);
@@ -73,8 +77,23 @@ export default function DashboardPage() {
 
   return (
     <AppShell titleKey="dashboard.title">
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <p className="muted" style={{ margin: 0 }}>Quick actions to jump into daily work.</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link href="/daily-production" className="link-button">Daily reports</Link>
+            <Link href="/ticket-manager" className="link-button">Assign tickets</Link>
+            <Link href="/modules" className="link-button">All modules</Link>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <p className="muted">Loading dashboard…</p>
+      ) : error ? (
+        <div className="card" style={{ borderColor: "#fecaca", background: "#fef2f2" }}>
+          <p style={{ margin: 0, color: "#991b1b", fontWeight: 600 }}>{error}</p>
+        </div>
       ) : (
         <>
           {/* ── KPI row */}

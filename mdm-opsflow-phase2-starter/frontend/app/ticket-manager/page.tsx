@@ -36,6 +36,7 @@ export default function TicketManagerPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [updating, setUpdating] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unassigned' | 'assigned'>('unassigned');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -143,6 +144,14 @@ export default function TicketManagerPage() {
     if (filter === 'unassigned') return !t.project_id;
     if (filter === 'assigned') return !!t.project_id;
     return true;
+  }).filter((t) => {
+    const search = query.trim().toLowerCase();
+    if (!search) return true;
+    const projectName = getProjectName(t.project_id).toLowerCase();
+    return [t.ticket_number, t.truck, t.driver, t.material, t.destination, t.status, projectName]
+      .join(' ')
+      .toLowerCase()
+      .includes(search);
   });
 
   const unassignedCount = tickets.filter((t) => !t.project_id).length;
@@ -157,9 +166,18 @@ export default function TicketManagerPage() {
             <h1 className="text-3xl font-bold text-slate-900">Ticket Project Assignment</h1>
             <p className="text-slate-600 mt-1">Assign tickets to projects to track costs and profitability</p>
           </div>
-          <Link href="/projects" className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
-            View Projects
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+              onClick={() => void fetchData()}
+            >
+              Refresh
+            </button>
+            <Link href="/projects" className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+              View Projects
+            </Link>
+          </div>
         </div>
 
         {loading && (
@@ -176,6 +194,16 @@ export default function TicketManagerPage() {
 
         {!loading && !error && (
           <>
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <label className="block text-sm font-medium text-slate-700 mb-2">Find ticket quickly</label>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Search by ticket #, driver, truck, material, destination, project"
+              />
+            </div>
+
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <button

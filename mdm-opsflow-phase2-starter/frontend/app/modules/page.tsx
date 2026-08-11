@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getLocale, t } from "@/lib/i18n";
@@ -14,6 +14,7 @@ export default function ModulesPage() {
   const [activeRole, setActiveRole] = useState<RoleKey>("project_manager");
   const [assignedRoles, setAssignedRoles] = useState<RoleKey[]>(["project_manager"]);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     const resolveAccess = async () => {
@@ -31,16 +32,64 @@ export default function ModulesPage() {
   }, []);
 
   const visibleWorkspaces = getVisibleWorkspacesForRole(assignedRoles, isSuperAdmin);
+  const filteredWorkspaces = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    if (!search) return visibleWorkspaces;
+    return visibleWorkspaces
+      .map((workspace) => ({
+        ...workspace,
+        modules: workspace.modules.filter((module) => {
+          const moduleMeta = MODULE_ROUTE_MAP[module];
+          return (
+            module.toLowerCase().includes(search) ||
+            workspace.label.toLowerCase().includes(search) ||
+            (moduleMeta?.helperText || "").toLowerCase().includes(search)
+          );
+        }),
+      }))
+      .filter((workspace) => workspace.modules.length > 0);
+  }, [query, visibleWorkspaces]);
+
+  const liveCount = useMemo(() => visibleWorkspaces.flatMap((workspace) => workspace.modules).filter((module) => MODULE_ROUTE_MAP[module]?.status === "live").length, [visibleWorkspaces]);
+  const bridgeCount = useMemo(() => visibleWorkspaces.flatMap((workspace) => workspace.modules).filter((module) => MODULE_ROUTE_MAP[module]?.status === "bridge").length, [visibleWorkspaces]);
 
   return (
     <AppShell titleKey="modules.title">
       <div className="card">
         <h2>{t(locale, "modules.title")}</h2>
         <p>{t(locale, "modules.subtitle")}</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned Workspaces</div>
+            <div className="mt-1 text-2xl font-bold text-slate-900">{visibleWorkspaces.length}</div>
+          </div>
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+            <div className="text-xs font-semibold uppercase tracking-wide text-green-700">Live Modules</div>
+            <div className="mt-1 text-2xl font-bold">{liveCount}</div>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Bridge Modules</div>
+            <div className="mt-1 text-2xl font-bold">{bridgeCount}</div>
+          </div>
+        </div>
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          Start tip: open your Current Role first, then work from top to bottom in that workspace.
+        </div>
+        <div className="mt-3">
+          <label className="text-sm font-medium text-slate-700">
+            Find a module quickly
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className="mt-1"
+              placeholder="Search by module name, workspace, or helper text"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="grid">
-        {visibleWorkspaces.map((workspace) => (
+        {filteredWorkspaces.map((workspace) => (
           <div className="card" key={workspace.key}>
             <div className="flex items-center justify-between gap-2">
               <span className="auth-eyebrow">{workspace.label}</span>
@@ -94,6 +143,12 @@ export default function ModulesPage() {
             </ul>
           </div>
         ))}
+        {filteredWorkspaces.length === 0 ? (
+          <div className="card">
+            <h3 className="text-base font-semibold text-slate-900">No matching modules</h3>
+            <p className="mt-1 text-sm text-slate-600">Try a shorter search term or clear the search box to show all modules.</p>
+          </div>
+        ) : null}
       </div>
     </AppShell>
   );
