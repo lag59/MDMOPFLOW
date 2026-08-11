@@ -3,6 +3,7 @@ from decimal import Decimal
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
