@@ -1,3 +1,4 @@
+# MDM OpsFlow backend dependencies -- build 20260811
 fastapi>=0.115
 uvicorn[standard]>=0.34
 pydantic-settings>=2.7

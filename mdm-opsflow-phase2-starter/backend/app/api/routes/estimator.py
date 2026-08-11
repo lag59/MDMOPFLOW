@@ -1,16 +1,13 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 import hashlib
 import json
-import logging
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
 from app.models import (
@@ -1105,6 +1102,7 @@ def ai_assist_estimate(
     context: RequestContext = Depends(require_permissions("estimate_read")),
     db: Session = Depends(get_db),
 ) -> dict:
+    from app.core.config import settings
     tenant_id = _require_tenant(context)
     estimate = _require_estimate(db, tenant_id, estimate_id)
 
