@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr &
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+# cache-bust: 20260811-2
 RUN chmod +x /app/start.sh
 EXPOSE 8080
 CMD ["/app/start.sh"]
