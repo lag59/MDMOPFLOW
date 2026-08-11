@@ -131,6 +131,10 @@ In CI, fast-guardrail output is saved as the `backend-fast-guardrails-output` ar
 
 See `docs/replay-token-observability-runbook.md` for endpoint contracts, cursor/sort usage, alert-threshold tuning, and bulk revoke governance behavior.
 
+## Release Notes
+
+See `docs/release-notes.md` for concise deployment and incident-closure notes.
+
 ## Validation Baseline
 
 Use these commands as the canonical local validation flow:
@@ -150,6 +154,14 @@ Optional fail-closed canary check (intentionally injects a known bad fragment in
 ```powershell
 & .\.venv311\Scripts\python.exe .\backend\scripts\verify_streamlit_guardrail_canary.py
 ```
+
+Lightweight production deploy canary (checks `/api/daily-field-reports/assist` and `/api/tickets`):
+
+```powershell
+& .\.venv311\Scripts\python.exe .\backend\scripts\verify_production_deploy_canary.py
+```
+
+CI runs this automatically on pushes to `main` after backend tests.
 
 ## PR Checklist
 

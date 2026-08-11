@@ -124,3 +124,7 @@ jobs:
       - name: Run backend tests
         working-directory: backend
         run: pytest -q -m "not guardrail"
+
+      - name: Run production deploy canary
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: python backend/scripts/verify_production_deploy_canary.py
