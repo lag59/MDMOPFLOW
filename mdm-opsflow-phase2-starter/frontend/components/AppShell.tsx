@@ -65,15 +65,6 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
           <div className="top-actions">
             <button
               onClick={() => {
-                const next = locale === "en" ? "es" : "en";
-                setLocale(next);
-                setLocaleState(next);
-              }}
-            >
-              {locale === "en" ? labels.spanish : labels.english}
-            </button>
-            <button
-              onClick={() => {
                 clearSession();
                 window.location.href = "/login";
               }}
