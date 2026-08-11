@@ -26,6 +26,9 @@
     "users": "User Settings",
     "estimator": "Estimator",
     "projectManager": "Project Manager",
+    "fieldSupervisor": "Field Supervisor",
+    "owner": "Owner Dashboard",
+    "accounting": "Accounting",
     "platformAdmin": "Platform Admin"
   },
   "auth": {

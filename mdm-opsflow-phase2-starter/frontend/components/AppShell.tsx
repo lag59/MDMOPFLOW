@@ -10,22 +10,27 @@ import { Locale, getLocale, t } from "@/lib/i18n";
 
 const NAV_ITEMS = [
   { group: "Workspace", items: [
-    { href: "/dashboard",       label: "Dashboard",        icon: "⊞" },
-    { href: "/modules",         label: "Modules",           icon: "⬡" },
+    { href: "/dashboard",        label: "Dashboard",         icon: "⊞" },
+    { href: "/modules",          label: "Modules",            icon: "⬡" },
   ]},
   { group: "Operations", items: [
-    { href: "/intake",           label: "Intake Hub",        icon: "📥" },
-    { href: "/extraction-queue", label: "Extraction Queue",  icon: "🔍" },
-    { href: "/tickets",          label: "Tickets",           icon: "🎫" },
-    { href: "/projects",         label: "Projects",          icon: "📁" },
-    { href: "/project-manager",  label: "Project Manager",   icon: "🛠" },
-    { href: "/estimator",        label: "Estimator",         icon: "📊" },
+    { href: "/project-manager",  label: "Project Manager",    icon: "🛠" },
+    { href: "/estimator",        label: "Estimator",          icon: "📊" },
+    { href: "/field-supervisor", label: "Field Supervisor",   icon: "📝" },
+    { href: "/tickets",          label: "Tickets",            icon: "🎫" },
+    { href: "/intake",           label: "Intake Hub",         icon: "📥" },
+    { href: "/extraction-queue", label: "Extraction Queue",   icon: "🔍" },
+    { href: "/projects",         label: "Projects",           icon: "📁" },
   ]},
-  { group: "Setup", items: [
-    { href: "/onboarding",      label: "Onboarding",        icon: "🚀" },
-    { href: "/settings/company",label: "Company Settings",  icon: "🏢" },
-    { href: "/settings/users",  label: "User Settings",     icon: "👥" },
-    { href: "/platform-admin",  label: "Platform Admin",    icon: "🛡" },
+  { group: "Finance", items: [
+    { href: "/accounting",       label: "Accounting",         icon: "💰" },
+  ]},
+  { group: "Management", items: [
+    { href: "/owner",            label: "Owner Dashboard",    icon: "🏢" },
+    { href: "/onboarding",       label: "Onboarding",         icon: "🚀" },
+    { href: "/settings/company", label: "Company Settings",   icon: "⚙️" },
+    { href: "/settings/users",   label: "User Settings",      icon: "👥" },
+    { href: "/platform-admin",   label: "Platform Admin",     icon: "🛡" },
   ]},
 ];
 

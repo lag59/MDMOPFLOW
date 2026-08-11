@@ -76,7 +76,7 @@ const BLANK_FORM: CreateProjectForm = {
 };
 
 type View = "list" | "create" | "detail";
-type DetailTab = "overview" | "tickets" | "costs";
+type DetailTab = "overview" | "tickets" | "costs" | "change-log";
 
 // ── component ────────────────────────────────────────────────────────────────
 
@@ -355,12 +355,12 @@ export default function ProjectManagerPage() {
 
               {/* Tab bar */}
               <div style={{ display: "flex", gap: 4, margin: "16px 0 0", borderBottom: "1px solid #e2e8f0" }}>
-                {(["overview","tickets","costs"] as DetailTab[]).map(t => (
+                {(["overview","tickets","costs","change-log"] as DetailTab[]).map(t => (
                   <button key={t} onClick={() => setTab(t)} className={tab === t ? "" : "btn-ghost"}
                     style={{ fontSize: 12, padding: "6px 14px", borderRadius: "8px 8px 0 0",
                       borderBottom: tab === t ? "2px solid #f97316" : "2px solid transparent",
                       textTransform: "capitalize" }}>
-                    {t}
+                    {t.replace("-"," ")}
                   </button>
                 ))}
               </div>
@@ -461,6 +461,29 @@ export default function ProjectManagerPage() {
                         )}
                       </div>
                     </>
+                  )}
+                </div>
+              )}
+
+              {/* Change log tab */}
+              {tab === "change-log" && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ marginBottom: 12, padding: "10px 14px", background: "#eff6ff", borderRadius: 8, fontSize: 13, color: "#1e3a8a", border: "1px solid #bfdbfe" }}>
+                    RFIs, submittals, and change orders are tracked here as they are submitted through the intake workflow. Use the <strong>Intake Hub</strong> to submit new RFIs or change order requests for this project.
+                  </div>
+                  {tickets.filter(t => ["rfi","change_order","submittal"].some(k => t.material?.toLowerCase().includes(k))).length === 0 ? (
+                    <p className="muted" style={{ fontSize: 13 }}>No RFIs, submittals, or change orders recorded yet for this project.</p>
+                  ) : (
+                    <div className="list" style={{ marginTop: 0 }}>
+                      {tickets
+                        .filter(t => ["rfi","change_order","submittal"].some(k => t.material?.toLowerCase().includes(k)))
+                        .map(t => (
+                          <div key={t.id} className="list-item">
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{t.ticket_number}</div>
+                            <div className="muted" style={{ fontSize: 12 }}>{t.material} · {t.status}</div>
+                          </div>
+                        ))}
+                    </div>
                   )}
                 </div>
               )}
