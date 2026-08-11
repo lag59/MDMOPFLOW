@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import AppShell from '@/components/AppShell';
-import { getAccessToken, getTenantId } from '@/lib/auth';
+import { getAccessToken, getTenantId, refreshSession } from '@/lib/auth';
 import { getApiBaseUrl } from '@/lib/i18n';
 import ExtractionReview from '@/components/ExtractionReview';
 
@@ -42,26 +42,56 @@ export default function ExtractionQueuePage() {
   const fetchExtractions = async () => {
     try {
       setLoading(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
+      setError(null);
       const baseUrl = getApiBaseUrl();
 
-      const response = await fetch(
-        `${baseUrl}/api/extractions?status_filter=${statusFilter}&limit=50`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Tenant-ID': tenantId,
-          },
-        }
-      );
+      const buildHeaders = (token: string, tenantId: string) => ({
+        'Authorization': `Bearer ${token}`,
+        'X-Tenant-ID': tenantId,
+      });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch extractions');
+      const requestExtractions = (token: string, tenantId: string) =>
+        fetch(`${baseUrl}/api/extractions?status_filter=${statusFilter}&limit=50`, {
+          headers: buildHeaders(token, tenantId),
+        });
+
+      let token = getAccessToken();
+      let tenantId = getTenantId();
+
+      if (!token || !tenantId) {
+        throw new Error('Not authenticated. Please sign in again.');
       }
 
-      const data = await response.json();
-      setExtractions(data.items);
+      let response = await requestExtractions(token, tenantId);
+
+      if (response.status === 401) {
+        const refreshed = await refreshSession(baseUrl);
+        if (refreshed) {
+          token = getAccessToken();
+          tenantId = getTenantId();
+          response = await requestExtractions(token, tenantId);
+        }
+      }
+
+      if (response.status === 403) {
+        throw new Error('You do not have access to the extraction queue for this role.');
+      }
+
+      if (!response.ok) {
+        let detail = `Failed to fetch extractions (${response.status})`;
+        try {
+          const payload = await response.json() as { detail?: string };
+          if (payload?.detail) {
+            detail = `Failed to fetch extractions (${response.status}): ${payload.detail}`;
+          }
+        } catch {
+          // Keep fallback message when response body is not JSON.
+        }
+        throw new Error(detail);
+      }
+
+      const data = await response.json() as { items?: ExtractionListItem[] };
+      setExtractions(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -215,7 +245,7 @@ export default function ExtractionQueuePage() {
           </div>
         )}
 
-        {!loading && extractions.length === 0 && (
+        {!loading && !error && extractions.length === 0 && (
           <div className="bg-white rounded-lg shadow p-12 text-center">
             <p className="text-gray-500 text-lg">No extractions found</p>
             <p className="text-gray-400 text-sm mt-2">Check back later or change the filter</p>
