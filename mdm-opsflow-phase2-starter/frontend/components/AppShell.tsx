@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import React from "react";
 import { useEffect, useMemo, useState } from "react";
 
-import { clearSession } from "@/lib/auth";
-import { Locale, getLocale, t } from "@/lib/i18n";
+import { clearSession, getAccessToken, getTenantId, setTenantId } from "@/lib/auth";
+import { Locale, getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 const NAV_ITEMS = [
   { group: "Workspace", items: [
@@ -37,6 +37,15 @@ const NAV_ITEMS = [
 
 type AppShellProps = { titleKey: string; children: React.ReactNode };
 
+type AuthMeMembership = {
+  tenant_id?: string;
+};
+
+type AuthMeResponse = {
+  tenant_id?: string | null;
+  memberships?: AuthMeMembership[];
+};
+
 export default function AppShell({ titleKey, children }: AppShellProps) {
   const [locale, setLocaleState] = useState<Locale>("en");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -45,6 +54,30 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
   const currentPath = pathname || "";
 
   useEffect(() => { setLocaleState(getLocale()); }, []);
+
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token || getTenantId()) {
+      return;
+    }
+
+    void fetch(`${getApiBaseUrl()}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((me: AuthMeResponse | null) => {
+        if (!me) {
+          return;
+        }
+        const resolvedTenantId = me.tenant_id || me.memberships?.[0]?.tenant_id || "";
+        if (resolvedTenantId) {
+          setTenantId(resolvedTenantId);
+        }
+      })
+      .catch(() => {
+        // Ignore hydration failures and let page-level requests show explicit errors.
+      });
+  }, []);
 
   const title = useMemo(() => t(locale, titleKey), [locale, titleKey]);
 

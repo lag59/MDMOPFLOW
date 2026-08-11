@@ -22,6 +22,8 @@ from app.models import (
 from app.rbac import ROLE_PERMISSIONS, permissions_csv_for_role, resolve_permissions
 from app.security import hash_password
 from app.schemas import (
+    AdminCreateTenantRequest,
+    AdminCreateTenantResponse,
     AdminAssignUserTenantMembershipRequest,
     AdminAuditLogEntry,
     AdminOverviewResponse,
@@ -244,6 +246,66 @@ def admin_roles_catalog(current_user: User = Depends(require_super_admin)):
     return sorted(role_name for role_name in ROLE_PERMISSIONS if role_name != "platform_super_admin")
 
 
+@router.post(
+    "/tenants",
+    response_model=AdminCreateTenantResponse,
+    status_code=201,
+    operation_id="admin_tenant_create",
+    summary="Create tenant",
+    description="Creates a tenant workspace and seeds standard tenant roles.",
+    responses={200: {"description": "Tenant created successfully."}, 403: {"description": "Super-admin required."}},
+)
+def create_tenant(
+    payload: AdminCreateTenantRequest,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    normalized_name = payload.tenant_name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="Tenant name is required")
+
+    existing = db.scalar(select(Tenant).where(Tenant.name == normalized_name))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Tenant name already exists")
+
+    tenant = Tenant(
+        name=normalized_name,
+        company_type=payload.company_type.strip(),
+        preferred_language=payload.preferred_language.strip() or "en",
+        selected_modules=",".join(item.strip() for item in payload.selected_modules if item.strip()),
+    )
+    db.add(tenant)
+    db.flush()
+
+    for role_name in ROLE_PERMISSIONS:
+        if role_name == "platform_super_admin":
+            continue
+        db.add(
+            Role(
+                tenant_id=tenant.id,
+                name=role_name,
+                permissions=permissions_csv_for_role(role_name),
+                created_by=current_user.id,
+            )
+        )
+
+    db.add(
+        AuditLog(
+            tenant_id=tenant.id,
+            actor_user_id=current_user.id,
+            action="admin_create_tenant",
+            resource_type="tenant",
+            resource_id=tenant.id,
+            details=f"Created tenant {tenant.name}",
+            created_by=current_user.id,
+        )
+    )
+
+    db.commit()
+    db.refresh(tenant)
+    return AdminCreateTenantResponse(tenant_id=tenant.id, tenant_name=tenant.name)
+
+
 @router.get(
     "/users/{user_id}/memberships",
     response_model=list[AdminUserTenantMembershipItem],
@@ -307,6 +369,9 @@ def assign_user_membership(
         db.add(membership)
         db.flush()
         action = "admin_assign_user_membership"
+
+    if not user.is_active:
+        user.is_active = True
 
     db.add(
         AuditLog(
@@ -373,6 +438,9 @@ def update_user_membership(
         if payload.status:
             membership.status = MembershipStatus(payload.status)
         target_membership = membership
+
+    if target_membership.status == MembershipStatus.ACTIVE and not user.is_active:
+        user.is_active = True
 
     db.add(
         AuditLog(

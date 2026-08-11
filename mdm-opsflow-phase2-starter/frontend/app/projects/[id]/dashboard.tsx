@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+import { getAccessToken, getTenantId } from '@/lib/auth';
+import { getApiBaseUrl } from '@/lib/i18n';
+
+const BASE_URL = getApiBaseUrl();
 
 interface ProjectCosts {
   total_tickets: number;
@@ -48,8 +51,8 @@ export function ProjectDashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const token = localStorage.getItem('access_token');
-        const tenantId = localStorage.getItem('tenant_id');
+        const token = getAccessToken();
+        const tenantId = getTenantId();
 
         const headers: HeadersInit = {
           'Content-Type': 'application/json',
@@ -58,13 +61,13 @@ export function ProjectDashboard() {
         if (tenantId) headers['X-Tenant-ID'] = tenantId;
 
         // Fetch profitability
-        const profRes = await fetch(`${BASE_URL}/projects/${projectId}/profitability`, { headers });
+        const profRes = await fetch(`${BASE_URL}/api/projects/${projectId}/profitability`, { headers });
         if (!profRes.ok) throw new Error(`Profitability fetch failed: ${profRes.status}`);
         const profData = await profRes.json();
         setProfitability(profData);
 
         // Fetch costs
-        const costsRes = await fetch(`${BASE_URL}/projects/${projectId}/costs`, { headers });
+        const costsRes = await fetch(`${BASE_URL}/api/projects/${projectId}/costs`, { headers });
         if (!costsRes.ok) throw new Error(`Costs fetch failed: ${costsRes.status}`);
         const costsData = await costsRes.json();
         setCosts(costsData);

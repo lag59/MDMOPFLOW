@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PlatformRole, Role, Tenant, TenantMembership, User, UserPermissionOverride
+from app.models import MembershipStatus, PlatformRole, Role, Tenant, TenantMembership, User, UserPermissionOverride
 from app.rbac import resolve_permissions
 from app.security import TokenError, decode_token
 
@@ -42,7 +42,12 @@ def get_request_context(
     db: Session = Depends(get_db),
     x_tenant_id: str | None = Header(default=None, alias="X-Tenant-ID"),
 ) -> RequestContext:
-    memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == current_user.id)).all()
+    memberships = db.scalars(
+        select(TenantMembership).where(
+            TenantMembership.user_id == current_user.id,
+            TenantMembership.status == MembershipStatus.ACTIVE,
+        )
+    ).all()
     membership = None
 
     if current_user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN and not x_tenant_id:

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import PlatformRole, Role, Tenant, TenantMembership, User
+from app.models import MembershipStatus, PlatformRole, Role, Tenant, TenantMembership, User
 from app.schemas import AuthLoginRequest, AuthRegisterRequest, AuthResponse, MeMembership, MeResponse, MeUpdateRequest, RefreshRequest, TokenPair
 from app.security import create_token, hash_password, verify_password
 
@@ -126,8 +126,24 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     tenant_id = payload.tenant_id
-    if not tenant_id:
-        membership = db.scalar(select(TenantMembership).where(TenantMembership.user_id == user.id))
+    if tenant_id:
+        if user.platform_role != PlatformRole.PLATFORM_SUPER_ADMIN:
+            membership = db.scalar(
+                select(TenantMembership).where(
+                    TenantMembership.user_id == user.id,
+                    TenantMembership.tenant_id == tenant_id,
+                    TenantMembership.status == MembershipStatus.ACTIVE,
+                )
+            )
+            if membership is None:
+                raise HTTPException(status_code=403, detail="Tenant membership required")
+    else:
+        membership = db.scalar(
+            select(TenantMembership).where(
+                TenantMembership.user_id == user.id,
+                TenantMembership.status == MembershipStatus.ACTIVE,
+            )
+        )
         tenant_id = membership.tenant_id if membership else None
 
     response = _make_auth_response(user, tenant_id=tenant_id)
@@ -148,7 +164,12 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     },
 )
 def me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == current_user.id)).all()
+    memberships = db.scalars(
+        select(TenantMembership).where(
+            TenantMembership.user_id == current_user.id,
+            TenantMembership.status == MembershipStatus.ACTIVE,
+        )
+    ).all()
 
     membership_data: list[MeMembership] = []
     for membership in memberships:

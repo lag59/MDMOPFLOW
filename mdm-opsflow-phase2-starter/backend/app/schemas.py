@@ -461,6 +461,38 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class AdminCreateTenantRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenant_name": "North Ridge Civil",
+                "company_type": "Heavy Civil",
+                "preferred_language": "en",
+                "selected_modules": ["Projects", "Budget", "Safety"],
+            }
+        }
+    )
+
+    tenant_name: str = Field(min_length=2, max_length=255)
+    company_type: str = Field(default="General Contractor", min_length=2, max_length=255)
+    preferred_language: str = Field(default="en", min_length=2, max_length=10)
+    selected_modules: list[str] = Field(default_factory=lambda: ["Projects", "Budget", "Safety"])
+
+
+class AdminCreateTenantResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
+                "tenant_name": "North Ridge Civil",
+            }
+        }
+    )
+
+    tenant_id: str
+    tenant_name: str
+
+
 class AdminTenantServiceSummaryItem(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

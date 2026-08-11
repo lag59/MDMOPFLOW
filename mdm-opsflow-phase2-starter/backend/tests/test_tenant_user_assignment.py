@@ -231,3 +231,44 @@ def test_permission_toggle_rejects_unknown_permissions(client: TestClient):
     )
     assert update.status_code == 400
     assert "Unknown permissions" in update.json()["detail"]
+
+
+def test_super_admin_can_manage_tenant_users_without_membership(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    owner = register_user(client, "owner-superadmin-tenant@acme.com", "Pass12345!", "Owner Superadmin Tenant")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Superadmin", "Acme Superadmin Project")
+    tenant_id = onboarding["tenant_id"]
+
+    list_members = client.get(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {admin_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert list_members.status_code == 200
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {admin_token}", "X-Tenant-ID": tenant_id},
+        json={
+            "email": "superadmin-created-estimator@acme.com",
+            "role_name": "estimator",
+            "display_name": "Created By Super Admin",
+            "temporary_password": "ChangeMe123!",
+        },
+    )
+    assert assign.status_code == 201, assign.text
+    assigned_user_id = assign.json()["user_id"]
+
+    update_permissions = client.put(
+        f"/api/tenant-users/{assigned_user_id}/permissions",
+        headers={"Authorization": f"Bearer {admin_token}", "X-Tenant-ID": tenant_id},
+        json={"overrides": [{"permission": "billing_read", "enabled": True}]},
+    )
+    assert update_permissions.status_code == 200
+    assert "billing_read" in update_permissions.json()["effective_permissions"]

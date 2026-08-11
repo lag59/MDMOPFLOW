@@ -4,7 +4,7 @@ import React from "react";
 import { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { getAccessToken, getTenantId, refreshSession } from "@/lib/auth";
+import { getAccessToken, getTenantId, refreshSession, setTenantId } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 type UserMembership = {
@@ -182,11 +182,7 @@ export default function UserSettingsPage() {
     if (typeof window === "undefined") {
       return;
     }
-    if (selectedTenantId) {
-      window.localStorage.setItem("opsflow_tenant_id", selectedTenantId);
-    } else {
-      window.localStorage.removeItem("opsflow_tenant_id");
-    }
+    setTenantId(selectedTenantId || null);
   }, [selectedTenantId]);
 
   async function loadMembers(): Promise<void> {
@@ -316,6 +312,12 @@ export default function UserSettingsPage() {
     void loadRoleCatalog();
   }, [selectedTenantId]);
 
+  useEffect(() => {
+    if (!selectedTenantId && tenantOptions.length > 0) {
+      setSelectedTenantId(tenantOptions[0].tenant_id);
+    }
+  }, [selectedTenantId, tenantOptions]);
+
   async function assignUser(): Promise<void> {
     setMessage("");
     if (!email.trim()) {
@@ -428,7 +430,7 @@ export default function UserSettingsPage() {
         <p className="muted">
           {selectedTenantId
             ? "You are managing users and function access for the selected tenant."
-            : "Select a tenant to manage users and service functions."}
+            : "Select a tenant first. Super Admin users can manage users and function access for any tenant from this selector."}
         </p>
       </div>
 

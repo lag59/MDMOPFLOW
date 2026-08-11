@@ -18,6 +18,13 @@ from app.schemas import (
 router = APIRouter(prefix="/api/tenant-users", tags=["Tenant Users"])
 
 
+def _tenant_id_from_context_or_400(context: RequestContext) -> str:
+    tenant_id = context.membership.tenant_id if context.membership else context.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
+    return tenant_id
+
+
 @router.get(
     "/roles/catalog",
     response_model=list[str],
@@ -50,12 +57,11 @@ def list_tenant_users(
     context: RequestContext = Depends(require_permissions("admin_read")),
     db: Session = Depends(get_db),
 ):
-    if not context.membership:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
+    tenant_id = _tenant_id_from_context_or_400(context)
 
     memberships = db.scalars(
         select(TenantMembership).where(
-            TenantMembership.tenant_id == context.membership.tenant_id,
+            TenantMembership.tenant_id == tenant_id,
             TenantMembership.status == MembershipStatus.ACTIVE,
         )
     ).all()
@@ -103,11 +109,8 @@ def assign_tenant_user(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    if not context.membership:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
-
-    tenant_id = context.membership.tenant_id
-    current_role = db.get(Role, context.membership.role_id)
+    tenant_id = _tenant_id_from_context_or_400(context)
+    current_role = db.get(Role, context.membership.role_id) if context.membership else None
     has_admin_write = "*" in context.permissions or "admin_write" in context.permissions
     is_owner = current_role is not None and current_role.name == "owner"
     if not has_admin_write and not is_owner:
@@ -173,6 +176,10 @@ def assign_tenant_user(
         )
         db.add(membership)
         action = "assign_user"
+
+    # Membership activation should also enable the account for tenant access.
+    if not user.is_active:
+        user.is_active = True
 
     db.flush()
     db.add(
@@ -269,8 +276,7 @@ def _build_permissions_response(db: Session, tenant_id: str, user_id: str) -> Te
 def list_permission_catalog(
     context: RequestContext = Depends(require_permissions("admin_read")),
 ):
-    if not context.membership:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
+    _tenant_id_from_context_or_400(context)
     return ALL_KNOWN_PERMISSIONS
 
 
@@ -291,9 +297,8 @@ def get_tenant_user_permissions(
     context: RequestContext = Depends(require_permissions("admin_read")),
     db: Session = Depends(get_db),
 ):
-    if not context.membership:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
-    return _build_permissions_response(db, context.membership.tenant_id, user_id)
+    tenant_id = _tenant_id_from_context_or_400(context)
+    return _build_permissions_response(db, tenant_id, user_id)
 
 
 @router.put(
@@ -314,12 +319,9 @@ def update_tenant_user_permissions(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    if not context.membership:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
+    tenant_id = _tenant_id_from_context_or_400(context)
 
-    tenant_id = context.membership.tenant_id
-
-    current_role = db.get(Role, context.membership.role_id)
+    current_role = db.get(Role, context.membership.role_id) if context.membership else None
     has_admin_write = "*" in context.permissions or "admin_write" in context.permissions
     is_owner = current_role is not None and current_role.name == "owner"
     if not has_admin_write and not is_owner:

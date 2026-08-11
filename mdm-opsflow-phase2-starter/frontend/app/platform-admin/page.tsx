@@ -39,7 +39,21 @@ type ServiceInsights = {
   opportunities: string[];
 };
 
-const ROLE_OPTIONS = ["owner", "estimator", "project_manager", "field_supervisor", "billing_manager", "customer_portal_member"];
+const DEFAULT_ROLE_OPTIONS = [
+  "owner",
+  "executive",
+  "project_manager",
+  "estimator",
+  "field_supervisor",
+  "dispatcher",
+  "accounting",
+  "payroll",
+  "safety_manager",
+  "fleet_manager",
+  "administrator",
+  "customer",
+  "vendor",
+];
 
 export default function PlatformAdminPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
@@ -51,8 +65,11 @@ export default function PlatformAdminPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [newTenantId, setNewTenantId] = useState("");
-  const [newRoleName, setNewRoleName] = useState(ROLE_OPTIONS[0]);
+  const [roleOptions, setRoleOptions] = useState<string[]>(DEFAULT_ROLE_OPTIONS);
+  const [newRoleName, setNewRoleName] = useState(DEFAULT_ROLE_OPTIONS[0]);
   const [newPassword, setNewPassword] = useState("");
+  const [newTenantName, setNewTenantName] = useState("");
+  const [newTenantType, setNewTenantType] = useState("General Contractor");
   const [editRole, setEditRole] = useState<"platform_super_admin" | "user">("user");
   const [editActive, setEditActive] = useState(true);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -77,6 +94,24 @@ export default function PlatformAdminPage() {
     }
   }
 
+  async function loadRoleCatalog() {
+    const res = await fetch(`${api}/api/admin/roles/catalog`, { headers: authHeaders() });
+    if (!res.ok) {
+      setRoleOptions(DEFAULT_ROLE_OPTIONS);
+      if (!DEFAULT_ROLE_OPTIONS.includes(newRoleName)) {
+        setNewRoleName(DEFAULT_ROLE_OPTIONS[0]);
+      }
+      return;
+    }
+
+    const catalog = (await res.json()) as string[];
+    const options = catalog.length > 0 ? catalog : DEFAULT_ROLE_OPTIONS;
+    setRoleOptions(options);
+    if (!options.includes(newRoleName)) {
+      setNewRoleName(options[0] || DEFAULT_ROLE_OPTIONS[0]);
+    }
+  }
+
   async function loadAdminData() {
     const [ovRes, insRes] = await Promise.all([
       fetch(`${api}/api/admin/overview`, { headers: authHeaders() }),
@@ -86,6 +121,7 @@ export default function PlatformAdminPage() {
     if (insRes.ok) setInsights(await insRes.json());
     await loadUsers();
     await loadTenants();
+    await loadRoleCatalog();
   }
 
   async function selectUser(user: AdminUser) {
@@ -176,6 +212,37 @@ export default function PlatformAdminPage() {
     }
   }
 
+  async function createTenant() {
+    setMessage(null);
+    if (!newTenantName.trim()) {
+      setMessage({ text: "Enter a tenant name first.", ok: false });
+      return;
+    }
+
+    const res = await fetch(`${api}/api/admin/tenants`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        tenant_name: newTenantName.trim(),
+        company_type: newTenantType,
+        preferred_language: "en",
+        selected_modules: ["Projects", "Budget", "Safety"],
+      }),
+    });
+
+    if (!res.ok) {
+      const d = await res.json().catch(() => null);
+      setMessage({ text: d?.detail || "Failed to create tenant.", ok: false });
+      return;
+    }
+
+    const payload = (await res.json()) as { tenant_id: string; tenant_name: string };
+    setNewTenantName("");
+    setMessage({ text: `Tenant "${payload.tenant_name}" created. You can now assign users to it.`, ok: true });
+    await loadTenants();
+    await loadAdminData();
+  }
+
   useEffect(() => {
     setLocale(getLocale());
     fetch(`${api}/api/auth/me`, { headers: authHeaders() })
@@ -209,6 +276,25 @@ export default function PlatformAdminPage() {
               {t(locale, "platformAdmin.projects")}
               <div className="metric">{overview?.projects ?? 0}</div>
               <div className="metric-note">Tracked live projects</div>
+            </div>
+          </div>
+
+          {/* Tenant creation */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <h3 style={{ marginTop: 0 }}>Create Tenant</h3>
+            <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+              Super Admin can create a new tenant workspace, then assign user memberships and roles.
+            </p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 240 }}>
+                Tenant name
+                <input value={newTenantName} onChange={(e) => setNewTenantName(e.target.value)} placeholder="New tenant name" />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 220 }}>
+                Company type
+                <input value={newTenantType} onChange={(e) => setNewTenantType(e.target.value)} placeholder="General Contractor" />
+              </label>
+              <button onClick={createTenant}>Create Tenant</button>
             </div>
           </div>
 
@@ -313,7 +399,7 @@ export default function PlatformAdminPage() {
 
                     {/* Existing memberships */}
                     {memberships.filter((m) => m.status === "active").length === 0 ? (
-                      <p className="muted" style={{ fontSize: 13 }}>No active tenant memberships.</p>
+                      <p className="muted" style={{ fontSize: 13 }}>No active tenant memberships. Use Tenant and Role/Module below to assign this user.</p>
                     ) : (
                       <div className="list" style={{ marginBottom: 12 }}>
                         {memberships.filter((m) => m.status === "active").map((m) => (
@@ -347,7 +433,7 @@ export default function PlatformAdminPage() {
                       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
                         Role / Module
                         <select value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)}>
-                          {ROLE_OPTIONS.map((r) => (
+                          {roleOptions.map((r) => (
                             <option key={r} value={r}>{r}</option>
                           ))}
                         </select>

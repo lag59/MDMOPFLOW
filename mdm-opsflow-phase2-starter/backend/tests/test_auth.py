@@ -150,3 +150,172 @@ def test_super_admin_can_manage_user_access_and_reset_password(client: TestClien
         json={"email": "managed-user@example.com", "password": "ResetPass123!"},
     )
     assert new_login.status_code == 200
+
+
+def test_super_admin_can_create_tenant_and_assign_user_membership(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    create_tenant = client.post(
+        "/api/admin/tenants",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "tenant_name": "Tenant Created By Super Admin",
+            "company_type": "Heavy Civil",
+            "preferred_language": "en",
+            "selected_modules": ["Projects", "Budget"],
+        },
+    )
+    assert create_tenant.status_code == 201, create_tenant.text
+    tenant_id = create_tenant.json()["tenant_id"]
+
+    managed_user = client.post(
+        "/api/auth/register",
+        json={"email": "tenant-assigned@example.com", "password": "Pass12345!", "display_name": "Tenant Assigned"},
+    )
+    assert managed_user.status_code == 201
+    managed_user_id = managed_user.json()["user_id"]
+
+    assign = client.post(
+        f"/api/admin/users/{managed_user_id}/memberships",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"tenant_id": tenant_id, "role_name": "owner"},
+    )
+    assert assign.status_code == 201, assign.text
+    assert assign.json()["status"] == "active"
+
+
+def test_membership_activation_reenables_user_login(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    owner = client.post(
+        "/api/auth/register",
+        json={"email": "owner-activation@acme.com", "password": "Pass12345!", "display_name": "Owner Activation"},
+    )
+    assert owner.status_code == 201
+    owner_token = owner.json()["tokens"]["access_token"]
+
+    onboarding = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "company_name": "Activation Tenant",
+            "company_types": ["Heavy Civil"],
+            "language": "en",
+            "modules": ["Projects", "Budget"],
+            "invite_emails": [],
+            "first_project_name": "Activation Project",
+        },
+    )
+    assert onboarding.status_code == 201
+    tenant_id = onboarding.json()["tenant_id"]
+
+    member = client.post(
+        "/api/auth/register",
+        json={"email": "inactive-member@acme.com", "password": "Pass12345!", "display_name": "Inactive Member"},
+    )
+    assert member.status_code == 201
+    member_id = member.json()["user_id"]
+
+    deactivate = client.patch(
+        f"/api/admin/users/{member_id}/access",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"is_active": False},
+    )
+    assert deactivate.status_code == 200
+    assert deactivate.json()["is_active"] is False
+
+    assign = client.post(
+        f"/api/admin/users/{member_id}/memberships",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"tenant_id": tenant_id, "role_name": "estimator"},
+    )
+    assert assign.status_code == 201
+
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "inactive-member@acme.com", "password": "Pass12345!", "tenant_id": tenant_id},
+    )
+    assert login.status_code == 200
+
+
+def test_login_rejects_inactive_membership_tenant_context(client: TestClient):
+    owner = client.post(
+        "/api/auth/register",
+        json={"email": "owner-inactive-membership@acme.com", "password": "Pass12345!", "display_name": "Owner Inactive Membership"},
+    )
+    assert owner.status_code == 201
+    owner_token = owner.json()["tokens"]["access_token"]
+
+    onboarding = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "company_name": "Inactive Membership Tenant",
+            "company_types": ["Heavy Civil"],
+            "language": "en",
+            "modules": ["Projects", "Budget"],
+            "invite_emails": [],
+            "first_project_name": "Inactive Membership Project",
+        },
+    )
+    assert onboarding.status_code == 201
+    tenant_id = onboarding.json()["tenant_id"]
+
+    member = client.post(
+        "/api/auth/register",
+        json={"email": "inactive-membership-user@acme.com", "password": "Pass12345!", "display_name": "Inactive Membership User"},
+    )
+    assert member.status_code == 201
+    member_token = member.json()["tokens"]["access_token"]
+
+    assign_member = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"email": "inactive-membership-user@acme.com", "role_name": "project_manager"},
+    )
+    assert assign_member.status_code == 201
+    membership_id = assign_member.json()["user_id"]
+
+    memberships = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert memberships.status_code == 200
+    assert any(item["tenant_id"] == tenant_id for item in memberships.json()["memberships"])
+
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    member_rows = client.get(
+        f"/api/admin/users/{assign_member.json()['user_id']}/memberships",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert member_rows.status_code == 200
+    row = next(item for item in member_rows.json() if item["tenant_id"] == tenant_id and item["status"] == "active")
+
+    deactivate_membership = client.patch(
+        f"/api/admin/users/{assign_member.json()['user_id']}/memberships/{row['membership_id']}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"tenant_id": tenant_id, "role_name": "project_manager", "status": "inactive"},
+    )
+    assert deactivate_membership.status_code == 200
+
+    denied = client.post(
+        "/api/auth/login",
+        json={"email": "inactive-membership-user@acme.com", "password": "Pass12345!", "tenant_id": tenant_id},
+    )
+    assert denied.status_code == 403

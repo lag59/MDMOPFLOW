@@ -129,7 +129,7 @@ describe("module metadata helpers", () => {
   });
 
   it("returns full workspace catalog for super admins", () => {
-    const allVisible = getVisibleWorkspacesForRole("project_manager", true);
+    const allVisible = getVisibleWorkspacesForRole(["project_manager"], true);
     expect(allVisible.length).toBeGreaterThan(1);
   });
 });
