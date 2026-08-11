@@ -24,6 +24,7 @@
     "onboarding": "Onboarding",
     "company": "Company Settings",
     "users": "User Settings",
+    "estimator": "Estimator",
     "platformAdmin": "Platform Admin"
   },
   "auth": {

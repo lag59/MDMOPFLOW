@@ -18,6 +18,7 @@ const NAV_ITEMS = [
     { href: "/extraction-queue",label: "Extraction Queue",  icon: "🔍" },
     { href: "/tickets",         label: "Tickets",           icon: "🎫" },
     { href: "/projects",        label: "Projects",          icon: "📁" },
+    { href: "/estimator",       label: "Estimator",         icon: "📊" },
   ]},
   { group: "Setup", items: [
     { href: "/onboarding",      label: "Onboarding",        icon: "🚀" },
