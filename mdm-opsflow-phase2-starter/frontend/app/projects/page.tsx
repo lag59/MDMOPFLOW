@@ -28,6 +28,16 @@ type ProjectProfitability = {
   ticket_count: number;
 };
 
+function dedupeProjects(items: Project[]): Project[] {
+  const byId = new Map<string, Project>();
+  for (const item of items) {
+    if (!byId.has(item.id)) {
+      byId.set(item.id, item);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 export default function ProjectsPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -82,11 +92,12 @@ export default function ProjectsPage() {
         // Fetch projects list
         const res = await fetch(`${getApiBaseUrl()}/api/projects`, { headers });
         const data = (res.ok ? await res.json() : []) as Project[];
-        setProjects(data);
+        const uniqueProjects = dedupeProjects(data);
+        setProjects(uniqueProjects);
 
         // Fetch profitability for each project
         const profitMap = new Map<string, ProjectProfitability>();
-        for (const project of data) {
+        for (const project of uniqueProjects) {
           try {
             const profRes = await fetch(
               `${getApiBaseUrl()}/api/projects/${project.id}/profitability`,

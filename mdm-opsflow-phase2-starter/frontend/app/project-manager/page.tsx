@@ -79,6 +79,16 @@ const BLANK_FORM: CreateProjectForm = {
 type View = "list" | "create" | "detail";
 type DetailTab = "overview" | "tickets" | "costs" | "change-log";
 
+function dedupeProjects(items: Project[]): Project[] {
+  const byId = new Map<string, Project>();
+  for (const item of items) {
+    if (!byId.has(item.id)) {
+      byId.set(item.id, item);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 // ── component ────────────────────────────────────────────────────────────────
 
 export default function ProjectManagerPage() {
@@ -104,7 +114,10 @@ export default function ProjectManagerPage() {
 
   async function loadProjects() {
     const r = await fetch(`${api}/api/projects`, { headers: headers() });
-    if (r.ok) setProjects(await r.json());
+    if (r.ok) {
+      const items = (await r.json()) as Project[];
+      setProjects(dedupeProjects(items));
+    }
   }
 
   async function loadProjectDetail(project: Project) {
@@ -162,7 +175,7 @@ export default function ProjectManagerPage() {
     setSaving(false);
     if (r.ok) {
       const created: Project = await r.json();
-      setProjects(prev => [created, ...prev]);
+      setProjects(prev => dedupeProjects([created, ...prev]));
       setForm(BLANK_FORM);
       await loadProjectDetail(created);
       setMsg({ text: "Project created.", ok: true });
