@@ -5,9 +5,11 @@ from datetime import datetime
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 from uuid import uuid4
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -212,11 +214,11 @@ def _build_productivity_assist(
     *,
     payload: DailyFieldReportAssistRequest,
     project: Project,
-    project_tickets: list[Ticket],
+    project_tickets: list[dict[str, Any]],
     weather_context: dict[str, object],
 ) -> DailyFieldReportAssistResponse:
-    open_tickets = [ticket for ticket in project_tickets if (ticket.status or "").lower() not in {"closed", "resolved", "complete"}]
-    assigned_dispatch = [ticket for ticket in open_tickets if (ticket.truck or "").strip() and (ticket.driver or "").strip()]
+    open_tickets = [ticket for ticket in project_tickets if str(ticket.get("status") or "").lower() not in {"closed", "resolved", "complete"}]
+    assigned_dispatch = [ticket for ticket in open_tickets if str(ticket.get("truck") or "").strip() and str(ticket.get("driver") or "").strip()]
     workers = payload.total_workers or 0
     equipment_count = len(payload.equipment_used)
     precip = float(weather_context.get("precipitation_mm") or 0)
@@ -331,6 +333,11 @@ def _build_pdf_bytes(item: DailyFieldReport) -> bytes:
     return bytes(pdf_bytes)
 
 
+def _ensure_daily_field_reports_table(db: Session) -> None:
+    # Production environments can occasionally lag migrations; this protects read/write flows.
+    DailyFieldReport.__table__.create(bind=db.get_bind(), checkfirst=True)
+
+
 def _find_duplicate_report(
     db: Session,
     tenant_id: str,
@@ -340,6 +347,7 @@ def _find_duplicate_report(
     shift_start_time: str,
     shift_end_time: str,
 ) -> DailyFieldReport | None:
+    _ensure_daily_field_reports_table(db)
     normalized_supervisor = (supervisor or "").strip().lower()
     if not normalized_supervisor:
         return None
@@ -363,6 +371,7 @@ def list_daily_field_reports(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     query = select(DailyFieldReport).where(DailyFieldReport.tenant_id == tenant_id)
     if project_id:
         query = query.where(DailyFieldReport.project_id == project_id)
@@ -379,12 +388,21 @@ def assist_daily_field_report(
     tenant_id = _tenant_id_from_context(context)
     project = _ensure_project_access(db, tenant_id, payload.project_id)
 
-    project_tickets = db.scalars(
-        select(Ticket).where(
-            Ticket.tenant_id == tenant_id,
-            Ticket.project_id == payload.project_id,
-        )
-    ).all()
+    def _load_ticket_context_rows() -> list[dict[str, Any]]:
+        rows = db.execute(
+            select(Ticket.status, Ticket.truck, Ticket.driver).where(
+                Ticket.tenant_id == tenant_id,
+                Ticket.project_id == payload.project_id,
+            )
+        ).all()
+        return [{"status": row[0], "truck": row[1], "driver": row[2]} for row in rows]
+
+    try:
+        project_tickets = _load_ticket_context_rows()
+    except ProgrammingError:
+        # Older schemas may miss optional ticket columns referenced by ORM mappings.
+        db.rollback()
+        project_tickets = []
 
     weather_context = payload.weather.copy() if isinstance(payload.weather, dict) else {}
     if not weather_context:
@@ -408,6 +426,7 @@ def create_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     _ensure_project_access(db, tenant_id, payload.project_id)
 
     report_date = payload.report_date
@@ -482,6 +501,7 @@ def get_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -496,6 +516,7 @@ def update_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -530,6 +551,7 @@ def submit_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -560,6 +582,7 @@ def review_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -590,6 +613,7 @@ def return_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -620,6 +644,7 @@ def export_daily_field_report_pdf(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
@@ -639,6 +664,7 @@ def approve_daily_field_report(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context(context)
+    _ensure_daily_field_reports_table(db)
     item = db.get(DailyFieldReport, report_id)
     if not item or item.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Daily field report not found")
