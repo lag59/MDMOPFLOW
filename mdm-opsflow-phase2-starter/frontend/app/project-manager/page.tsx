@@ -103,6 +103,7 @@ export default function ProjectManagerPage() {
   const [msg, setMsg]               = useState<{ text: string; ok: boolean } | null>(null);
   const [search, setSearch]         = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [nextStatus, setNextStatus] = useState("planning");
 
   const api    = getApiBaseUrl();
   const token  = getAccessToken();
@@ -122,6 +123,7 @@ export default function ProjectManagerPage() {
 
   async function loadProjectDetail(project: Project) {
     setSelected(project);
+    setNextStatus(project.status);
     setView("detail");
     setTab("overview");
     setMsg(null);
@@ -198,6 +200,17 @@ export default function ProjectManagerPage() {
     } else {
       setMsg({ text: "Status update failed.", ok: false });
     }
+  }
+
+  async function applyStatusTransition() {
+    if (!selected) {
+      return;
+    }
+    if (nextStatus === selected.status) {
+      setMsg({ text: "Project is already in that status.", ok: false });
+      return;
+    }
+    await updateStatus(selected.id, nextStatus);
   }
 
   const statusPill = (status: string) => (
@@ -365,6 +378,40 @@ export default function ProjectManagerPage() {
                     </button>
                   )}
                 </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  marginBottom: 12,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  padding: "8px 10px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  background: "#f8fafc",
+                }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Transition status:</span>
+                <select
+                  value={nextStatus}
+                  onChange={(e) => setNextStatus(e.target.value)}
+                  style={{ fontSize: 12, padding: "6px 10px", minWidth: 140 }}
+                >
+                  <option value="planning">Planning</option>
+                  <option value="active">Active</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="complete">Complete</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <button
+                  onClick={applyStatusTransition}
+                  style={{ fontSize: 12, padding: "6px 12px" }}
+                >
+                  Apply Transition
+                </button>
               </div>
 
               {/* Status progress bar */}
