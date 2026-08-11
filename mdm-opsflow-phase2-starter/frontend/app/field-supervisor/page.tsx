@@ -8,14 +8,15 @@ import { getApiBaseUrl } from "@/lib/i18n";
 
 type DailyReport = {
   id: string;
-  report_number: string;
-  project_id: string | null;
+  report_number?: string;
+  project_id: string;
   report_date: string;
   reporting_supervisor: string;
   status: string;
   work_performed: string;
-  weather_conditions: string;
-  total_workers: number | null;
+  weather?: Record<string, unknown> | null;
+  crew_members?: Array<Record<string, unknown>>;
+  safety_observations?: Array<Record<string, unknown>>;
   created_at: string;
 };
 
@@ -24,10 +25,25 @@ type CreateReportForm = {
   report_date: string;
   reporting_supervisor: string;
   weather_conditions: string;
+  temperature_max_c: string;
   work_performed: string;
   total_workers: string;
   safety_incidents: string;
   notes: string;
+  equipment_used: string;
+};
+
+type AssistResponse = {
+  project_id: string;
+  report_date: string;
+  ai_generated: boolean;
+  productivity_score: number;
+  productivity_summary: string;
+  suggested_work_performed: string;
+  suggested_delay_notes: string[];
+  suggested_safety_observations: string[];
+  ticket_context: Record<string, unknown>;
+  weather_context: Record<string, unknown>;
 };
 
 type Project = { id: string; project_name: string; project_number: string };
@@ -39,7 +55,8 @@ const STATUS_COLORS: Record<string, string> = {
 const BLANK: CreateReportForm = {
   project_id: "", report_date: new Date().toISOString().slice(0,10),
   reporting_supervisor: "", weather_conditions: "Clear",
-  work_performed: "", total_workers: "", safety_incidents: "0", notes: "",
+  temperature_max_c: "",
+  work_performed: "", total_workers: "", safety_incidents: "0", notes: "", equipment_used: "",
 };
 
 export default function FieldSupervisorPage() {
@@ -51,6 +68,8 @@ export default function FieldSupervisorPage() {
   const [saving, setSaving]     = useState(false);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [assisting, setAssisting] = useState(false);
+  const [assist, setAssist] = useState<AssistResponse | null>(null);
   const [msg, setMsg]           = useState<{ text: string; ok: boolean } | null>(null);
 
   const api = getApiBaseUrl();
@@ -78,19 +97,145 @@ export default function FieldSupervisorPage() {
     });
   }, []);
 
+  const selectedProject = projects.find((project) => project.id === form.project_id);
+
+  function parseEquipmentRows(input: string): Array<Record<string, unknown>> {
+    return input
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((name) => ({ name, hours: 8 }));
+  }
+
+  function parseTemperature(value: string): number | null {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  async function runAssist() {
+    if (!form.project_id) {
+      setMsg({ text: "Select a project first.", ok: false });
+      return;
+    }
+    if (!form.reporting_supervisor.trim()) {
+      setMsg({ text: "Enter reporting supervisor before running AI assist.", ok: false });
+      return;
+    }
+
+    setAssisting(true);
+    setMsg(null);
+
+    const weatherPayload: Record<string, unknown> = {
+      condition: form.weather_conditions,
+    };
+    const temp = parseTemperature(form.temperature_max_c);
+    if (temp !== null) weatherPayload.temperature_max_c = temp;
+
+    const response = await fetch(`${api}/api/daily-field-reports/assist`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({
+        project_id: form.project_id,
+        report_date: form.report_date,
+        reporting_supervisor: form.reporting_supervisor,
+        total_workers: form.total_workers ? Number(form.total_workers) : null,
+        weather: weatherPayload,
+        work_performed: form.work_performed,
+        equipment_used: parseEquipmentRows(form.equipment_used),
+      }),
+    });
+
+    setAssisting(false);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      setMsg({ text: detail?.detail || "Failed to generate assist recommendations.", ok: false });
+      return;
+    }
+
+    const payload = (await response.json()) as AssistResponse;
+    setAssist(payload);
+    setForm((prev) => {
+      const newNotes = [prev.notes.trim(), ...payload.suggested_delay_notes].filter(Boolean).join("\n");
+      const next = { ...prev, work_performed: payload.suggested_work_performed, notes: newNotes };
+
+      const condition = String(payload.weather_context?.condition || "").trim();
+      if (condition) next.weather_conditions = condition;
+
+      const suggestedTemp = payload.weather_context?.temperature_max_c;
+      if (suggestedTemp !== undefined && suggestedTemp !== null && Number.isFinite(Number(suggestedTemp))) {
+        next.temperature_max_c = String(Number(suggestedTemp));
+      }
+      return next;
+    });
+
+    setMsg({ text: "AI assist applied. Review and submit when ready.", ok: true });
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.report_date || !form.reporting_supervisor.trim()) {
-      setMsg({ text: "Date and supervisor name are required.", ok: false }); return;
+    if (!form.project_id || !form.report_date || !form.reporting_supervisor.trim()) {
+      setMsg({ text: "Project, date, and supervisor name are required.", ok: false }); return;
     }
     setSaving(true); setMsg(null);
+
+    const weather: Record<string, unknown> = {
+      condition: form.weather_conditions,
+    };
+    const temperature = parseTemperature(form.temperature_max_c);
+    if (temperature !== null) {
+      weather.temperature_max_c = temperature;
+    }
+
+    const workerCount = form.total_workers ? Number(form.total_workers) : 0;
+    const crewMembers = workerCount > 0
+      ? [{ role: "Crew", count: workerCount, hours: 8 }]
+      : [];
+
+    const safetyObservations: Array<Record<string, unknown>> = [];
+    const incidents = Number(form.safety_incidents || 0);
+    if (incidents > 0) {
+      safetyObservations.push({
+        observation_type: "incident",
+        description: `${incidents} safety incident(s) reported.`,
+        severity: incidents > 1 ? "high" : "medium",
+      });
+    }
+    for (const note of assist?.suggested_safety_observations || []) {
+      safetyObservations.push({ observation_type: "recommendation", description: note, severity: "low" });
+    }
+
+    const delayRows = (assist?.suggested_delay_notes || [])
+      .map((text) => ({ category: "Operational", description: text, duration_hours: 1 }));
+
+    const workPerformed = [form.work_performed.trim(), assist?.productivity_summary?.trim() || ""]
+      .filter(Boolean)
+      .join("\n\n");
+
     const r = await fetch(`${api}/api/daily-field-reports`, {
       method: "POST", headers: headers(),
       body: JSON.stringify({
-        ...form,
-        project_id: form.project_id || null,
-        total_workers: form.total_workers ? Number(form.total_workers) : null,
-        safety_incidents: Number(form.safety_incidents || 0),
+        project_id: form.project_id,
+        report_date: form.report_date,
+        reporting_supervisor: form.reporting_supervisor,
+        company_name: selectedProject?.project_name || "",
+        shift_start_time: "06:00",
+        shift_end_time: "14:00",
+        weather,
+        crew_members: crewMembers,
+        equipment_used: parseEquipmentRows(form.equipment_used),
+        deliveries: [],
+        visitors: [],
+        delays: delayRows,
+        photos: [],
+        production_quantities: [],
+        safety_observations: safetyObservations,
+        work_performed: workPerformed,
+        work_planned_for_tomorrow: form.notes,
+        prepared_by: form.reporting_supervisor,
+        electronic_signature: form.reporting_supervisor,
+        status: "draft",
       }),
     });
     setSaving(false);
@@ -98,6 +243,7 @@ export default function FieldSupervisorPage() {
       const created = await r.json();
       setReports(prev => [created, ...prev]);
       setShowCreate(false); setForm(BLANK);
+      setAssist(null);
       setSelected(created);
       setMsg({ text: "Report created.", ok: true });
     } else {
@@ -188,8 +334,19 @@ export default function FieldSupervisorPage() {
             <form onSubmit={handleCreate}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <h3 style={{ margin: 0 }}>New Daily Field Report</h3>
-                <button type="button" className="btn-ghost" onClick={() => setShowCreate(false)} style={{ fontSize: 12 }}>✕ Cancel</button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="btn-ghost" onClick={() => void runAssist()} disabled={assisting} style={{ fontSize: 12 }}>
+                    {assisting ? "Running AI..." : "AI Assist"}
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={() => setShowCreate(false)} style={{ fontSize: 12 }}>✕ Cancel</button>
+                </div>
               </div>
+              {assist ? (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900" style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700 }}>AI productivity score: {assist.productivity_score}/100</div>
+                  <div style={{ marginTop: 4 }}>{assist.productivity_summary}</div>
+                </div>
+              ) : null}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
                   Report Date *
@@ -213,8 +370,16 @@ export default function FieldSupervisorPage() {
                   </select>
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                  Temp Max (C)
+                  <input value={form.temperature_max_c} onChange={e => setForm(p => ({ ...p, temperature_max_c: e.target.value }))} placeholder="e.g. 31" />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
                   Total Workers on Site
                   <input type="number" min="0" value={form.total_workers} onChange={e => setForm(p => ({ ...p, total_workers: e.target.value }))} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                  Equipment Used (comma-separated)
+                  <input value={form.equipment_used} onChange={e => setForm(p => ({ ...p, equipment_used: e.target.value }))} placeholder="Excavator 12, Dump Truck 7" />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
                   Safety Incidents
@@ -258,8 +423,8 @@ export default function FieldSupervisorPage() {
                 {[
                   ["Report Date",    selected.report_date],
                   ["Supervisor",     selected.reporting_supervisor],
-                  ["Weather",        selected.weather_conditions],
-                  ["Workers on Site",selected.total_workers ?? "—"],
+                  ["Weather",        String(selected.weather?.condition || "—")],
+                  ["Workers on Site",String((selected.crew_members || [])[0]?.count || "—")],
                   ["Status",         selected.status],
                   ["Created",        selected.created_at?.slice(0,10)],
                 ].map(([label, value]) => (

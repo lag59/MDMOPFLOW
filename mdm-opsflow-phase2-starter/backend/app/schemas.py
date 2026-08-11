@@ -1403,6 +1403,29 @@ class DailyFieldReportResponse(DailyFieldReportBase):
     updated_at: datetime
 
 
+class DailyFieldReportAssistRequest(BaseModel):
+    project_id: str
+    report_date: datetime
+    reporting_supervisor: str = ""
+    total_workers: int | None = None
+    weather: dict[str, object] | None = None
+    work_performed: str = ""
+    equipment_used: list[dict[str, object]] = Field(default_factory=list)
+
+
+class DailyFieldReportAssistResponse(BaseModel):
+    project_id: str
+    report_date: datetime
+    ai_generated: bool
+    productivity_score: int
+    productivity_summary: str
+    suggested_work_performed: str
+    suggested_delay_notes: list[str]
+    suggested_safety_observations: list[str]
+    ticket_context: dict[str, object]
+    weather_context: dict[str, object]
+
+
 class AIWorkflowRouteRequest(BaseModel):
     note: str = Field(min_length=1, max_length=8000)
     company_name: str | None = None

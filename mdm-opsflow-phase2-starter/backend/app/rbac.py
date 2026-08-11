@@ -85,7 +85,7 @@ ROLE_PERMISSIONS = {
         "extraction_review",
     ],
     "estimator": ["estimate_read", "estimate_write", "project_read", "intake_read", "intake_review", "extraction_read"],
-    "field_supervisor": ["project_read", "intake_read", "intake_write", "safety_read", "safety_write", "dispatch_read", "extraction_read", "admin_read"],
+    "field_supervisor": ["project_read", "project_write", "intake_read", "intake_write", "safety_read", "safety_write", "dispatch_read", "extraction_read", "admin_read"],
     "dispatcher": ["dispatch_read", "dispatch_write", "project_read", "fleet_read", "intake_read", "extraction_read"],
     "accounting": ["finance_read", "finance_write", "billing_read", "billing_write", "project_read", "estimate_read", "intake_read", "extraction_read"],
     "payroll": ["payroll_read", "payroll_write", "project_read", "intake_read", "extraction_read"],

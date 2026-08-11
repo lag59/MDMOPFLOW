@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from urllib.parse import quote_plus
+from urllib.request import urlopen
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -10,8 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
-from app.models import AuditLog, DailyFieldReport, Project
+from app.models import AuditLog, DailyFieldReport, Project, Ticket
 from app.schemas import (
+    DailyFieldReportAssistRequest,
+    DailyFieldReportAssistResponse,
     DailyFieldReportCreate,
     DailyFieldReportResponse,
     DailyFieldReportUpdate,
@@ -132,6 +136,150 @@ def _compute_rollups(item: DailyFieldReport) -> tuple[float, float, float, float
     return labor_hours, machine_hours, material_used, fuel_gallons
 
 
+def _fetch_weather_context(location: str, report_date: datetime) -> dict[str, object]:
+    location_text = (location or "").strip()
+    if not location_text:
+        return {"source": "none", "available": False, "reason": "missing_project_address"}
+
+    try:
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={quote_plus(location_text)}&count=1"
+        with urlopen(geo_url, timeout=4) as response:
+            geo_payload = json.loads(response.read().decode("utf-8"))
+        results = geo_payload.get("results") or []
+        if not results:
+            return {"source": "open-meteo", "available": False, "reason": "location_not_found", "query": location_text}
+
+        first = results[0]
+        latitude = first.get("latitude")
+        longitude = first.get("longitude")
+        if latitude is None or longitude is None:
+            return {"source": "open-meteo", "available": False, "reason": "missing_coordinates", "query": location_text}
+
+        date_value = report_date.strftime("%Y-%m-%d")
+        weather_url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={latitude}&longitude={longitude}&start_date={date_value}&end_date={date_value}"
+            "&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max"
+            "&timezone=auto"
+        )
+        with urlopen(weather_url, timeout=4) as response:
+            weather_payload = json.loads(response.read().decode("utf-8"))
+
+        daily = weather_payload.get("daily") or {}
+        weathercode_values = daily.get("weathercode") or []
+        condition = "Unknown"
+        if weathercode_values:
+            code = int(weathercode_values[0])
+            weather_code_map = {
+                0: "Clear",
+                1: "Mostly clear",
+                2: "Partly cloudy",
+                3: "Overcast",
+                45: "Fog",
+                48: "Fog",
+                51: "Light drizzle",
+                53: "Drizzle",
+                55: "Heavy drizzle",
+                61: "Light rain",
+                63: "Rain",
+                65: "Heavy rain",
+                71: "Light snow",
+                73: "Snow",
+                75: "Heavy snow",
+                95: "Thunderstorm",
+            }
+            condition = weather_code_map.get(code, f"Weather code {code}")
+
+        return {
+            "source": "open-meteo",
+            "available": True,
+            "query": location_text,
+            "resolved_location": first.get("name") or location_text,
+            "latitude": latitude,
+            "longitude": longitude,
+            "date": date_value,
+            "condition": condition,
+            "temperature_max_c": (daily.get("temperature_2m_max") or [None])[0],
+            "temperature_min_c": (daily.get("temperature_2m_min") or [None])[0],
+            "precipitation_mm": (daily.get("precipitation_sum") or [None])[0],
+            "wind_kph": (daily.get("windspeed_10m_max") or [None])[0],
+        }
+    except Exception:
+        return {"source": "open-meteo", "available": False, "reason": "weather_service_unavailable", "query": location_text}
+
+
+def _build_productivity_assist(
+    *,
+    payload: DailyFieldReportAssistRequest,
+    project: Project,
+    project_tickets: list[Ticket],
+    weather_context: dict[str, object],
+) -> DailyFieldReportAssistResponse:
+    open_tickets = [ticket for ticket in project_tickets if (ticket.status or "").lower() not in {"closed", "resolved", "complete"}]
+    assigned_dispatch = [ticket for ticket in open_tickets if (ticket.truck or "").strip() and (ticket.driver or "").strip()]
+    workers = payload.total_workers or 0
+    equipment_count = len(payload.equipment_used)
+    precip = float(weather_context.get("precipitation_mm") or 0)
+    wind = float(weather_context.get("wind_kph") or 0)
+
+    score = 78
+    score += min(8, workers)
+    score += min(6, equipment_count * 2)
+    score -= min(20, len(open_tickets) * 2)
+    if precip >= 8:
+        score -= 10
+    elif precip > 0:
+        score -= 4
+    if wind >= 35:
+        score -= 6
+    score = max(25, min(99, score))
+
+    delays: list[str] = []
+    if len(open_tickets) >= 4:
+        delays.append("High number of open dispatch tickets may reduce production flow.")
+    if precip >= 8:
+        delays.append("Heavy precipitation may slow earthwork and hauling output.")
+    if wind >= 35:
+        delays.append("High wind conditions may impact equipment and staging safety.")
+
+    safety_observations: list[str] = [
+        "Verify spotter coverage for backing and loading zones.",
+        "Re-check traffic control at haul routes and entry points.",
+    ]
+    if precip > 0:
+        safety_observations.append("Inspect slip hazards and muddy access routes due to precipitation.")
+
+    dispatch_coverage = f"{len(assigned_dispatch)}/{max(1, len(open_tickets))}" if open_tickets else "0/0"
+    suggested_work_performed = payload.work_performed.strip() if payload.work_performed.strip() else (
+        f"Executed daily production scope for {project.project_name} with {workers or 'crew'} workers and "
+        f"{equipment_count} equipment entries. Managed {len(open_tickets)} open dispatch tickets "
+        f"(assigned coverage {dispatch_coverage}) while maintaining schedule and safety controls."
+    )
+
+    summary = (
+        f"Productivity score {score}/100 based on crew size ({workers}), equipment entries ({equipment_count}), "
+        f"open tickets ({len(open_tickets)}), and weather conditions ({weather_context.get('condition') or 'unknown'})."
+    )
+
+    return DailyFieldReportAssistResponse(
+        project_id=payload.project_id,
+        report_date=payload.report_date,
+        ai_generated=True,
+        productivity_score=score,
+        productivity_summary=summary,
+        suggested_work_performed=suggested_work_performed,
+        suggested_delay_notes=delays,
+        suggested_safety_observations=safety_observations,
+        ticket_context={
+            "total_project_tickets": len(project_tickets),
+            "open_tickets": len(open_tickets),
+            "assigned_dispatch": len(assigned_dispatch),
+            "unassigned_dispatch": max(0, len(open_tickets) - len(assigned_dispatch)),
+        },
+        weather_context=weather_context,
+    )
+
+
 SECTION_FIELDS = ("crew_members", "equipment_used", "deliveries", "visitors", "delays", "photos", "production_quantities", "safety_observations")
 
 
@@ -220,6 +368,37 @@ def list_daily_field_reports(
         query = query.where(DailyFieldReport.project_id == project_id)
     items = db.scalars(query.order_by(DailyFieldReport.report_date.desc())).all()
     return [_prepare_report_for_response(item) for item in items]
+
+
+@router.post("/assist", response_model=DailyFieldReportAssistResponse, operation_id="daily_field_reports_assist", summary="Generate AI and weather assist for a daily field report")
+def assist_daily_field_report(
+    payload: DailyFieldReportAssistRequest,
+    context: RequestContext = Depends(require_permissions("project_write")),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context(context)
+    project = _ensure_project_access(db, tenant_id, payload.project_id)
+
+    project_tickets = db.scalars(
+        select(Ticket).where(
+            Ticket.tenant_id == tenant_id,
+            Ticket.project_id == payload.project_id,
+        )
+    ).all()
+
+    weather_context = payload.weather.copy() if isinstance(payload.weather, dict) else {}
+    if not weather_context:
+        weather_context = _fetch_weather_context(project.address, payload.report_date)
+    else:
+        weather_context.setdefault("source", "user_input")
+        weather_context.setdefault("available", True)
+
+    return _build_productivity_assist(
+        payload=payload,
+        project=project,
+        project_tickets=project_tickets,
+        weather_context=weather_context,
+    )
 
 
 @router.post("", response_model=DailyFieldReportResponse, status_code=status.HTTP_201_CREATED, operation_id="daily_field_reports_create", summary="Create daily field report")

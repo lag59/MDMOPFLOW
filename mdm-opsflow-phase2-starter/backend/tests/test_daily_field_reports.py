@@ -215,3 +215,59 @@ def test_daily_field_reports_block_duplicate_reports_for_same_shift(client: Test
     )
 
     assert duplicate_response.status_code == 409
+
+
+def test_daily_field_reports_assist_returns_productivity_and_weather_context(client: TestClient, monkeypatch) -> None:
+    from app.api.routes import daily_field_reports as route_module
+
+    headers = _auth_headers(client, "dailyreport-assist@example.com")
+
+    project_response = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "project_name": "Valley Grade",
+            "project_number": "PRJ-9010",
+            "customer": "Valley Construction",
+            "address": "500 Cedar Street",
+            "project_manager": "Taylor Brooks",
+            "status": "active",
+        },
+    )
+    assert project_response.status_code == 201
+    project_id = project_response.json()["id"]
+
+    monkeypatch.setattr(
+        route_module,
+        "_fetch_weather_context",
+        lambda location, report_date: {
+            "source": "open-meteo",
+            "available": True,
+            "condition": "Partly cloudy",
+            "temperature_max_c": 30,
+            "precipitation_mm": 0,
+            "wind_kph": 16,
+        },
+    )
+
+    assist_response = client.post(
+        "/api/daily-field-reports/assist",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "report_date": date.today().isoformat(),
+            "reporting_supervisor": "Jordan Lee",
+            "total_workers": 6,
+            "work_performed": "",
+            "equipment_used": [{"name": "Excavator 12", "hours": 8}],
+        },
+    )
+
+    assert assist_response.status_code == 200
+    payload = assist_response.json()
+    assert payload["project_id"] == project_id
+    assert payload["ai_generated"] is True
+    assert isinstance(payload["productivity_score"], int)
+    assert payload["productivity_score"] > 0
+    assert payload["weather_context"]["condition"] == "Partly cloudy"
+    assert "suggested_work_performed" in payload
