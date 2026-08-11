@@ -70,8 +70,11 @@ export default function PlatformAdminPage() {
   }
 
   async function loadTenants() {
-    const res = await fetch(`${api}/api/core-platform/tenants`, { headers: authHeaders() });
-    if (res.ok) setTenants(await res.json());
+    const res = await fetch(`${api}/api/admin/tenant-service-summary`, { headers: authHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      setTenants((data.items ?? []).map((t: { tenant_id: string; tenant_name: string }) => ({ id: t.tenant_id, name: t.tenant_name })));
+    }
   }
 
   async function loadAdminData() {
