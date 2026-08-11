@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { ProcessIndicator, REPORT_PROCESS } from "@/components/ProcessIndicator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl } from "@/lib/i18n";
 
@@ -232,6 +233,8 @@ export default function FieldSupervisorPage() {
                   )}
                 </div>
               </div>
+              <ProcessIndicator steps={REPORT_PROCESS} currentKey={selected.status} />
+              <ProcessIndicator steps={REPORT_PROCESS} currentKey={selected.status} />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 16, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
                 {[
                   ["Report Date",    selected.report_date],

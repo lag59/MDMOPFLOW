@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { ProcessIndicator, PROJECT_PROCESS } from "@/components/ProcessIndicator";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl } from "@/lib/i18n";
 
@@ -352,6 +353,13 @@ export default function ProjectManagerPage() {
                   )}
                 </div>
               </div>
+
+              {/* Status progress bar */}
+              <ProcessIndicator
+                steps={PROJECT_PROCESS}
+                currentKey={selected.status}
+                errorKeys={["cancelled"]}
+              />
 
               {/* Tab bar */}
               <div style={{ display: "flex", gap: 4, margin: "16px 0 0", borderBottom: "1px solid #e2e8f0" }}>

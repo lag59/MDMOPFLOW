@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
