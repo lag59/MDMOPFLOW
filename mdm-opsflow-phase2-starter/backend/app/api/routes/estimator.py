@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import RequestContext, require_permissions
+from app.dependencies import RequestContext, require_permissions, resolve_tenant_scope
 from app.models import (
     AuditLog,
     DocumentExtraction,
@@ -79,10 +79,7 @@ ESTIMATE_STATUSES = {
 
 
 def _require_tenant(context: RequestContext) -> str:
-    tenant_id = context.membership.tenant_id if context.membership else context.tenant_id
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
-    return tenant_id
+    return resolve_tenant_scope(context)
 
 
 def _log_estimate_audit(
@@ -1003,8 +1000,8 @@ def convert_estimate_to_project(
 ):
     tenant_id = _require_tenant(context)
     estimate = _require_estimate(db, tenant_id, estimate_id)
-    if estimate.status not in {"Awarded", "Approved for Submission", "Submitted"}:
-        raise HTTPException(status_code=400, detail="Estimate must be awarded or approved before conversion")
+    if estimate.status != "Awarded":
+        raise HTTPException(status_code=400, detail="Estimate must be Awarded before conversion")
 
     converted_project = Project(
         tenant_id=tenant_id,

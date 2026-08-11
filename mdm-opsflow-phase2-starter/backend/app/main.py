@@ -8,13 +8,15 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from app.api.routes import admin, auth, ai_assignment, ai_assist, billing, core_platform, customer_portal, daily_field_reports, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
+from app.api.routes import admin, auth, ai_assignment, ai_assist, billing, core_platform, customer_portal, daily_field_reports, dashboard, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
 from app.core.config import settings
 
 from app.db import SessionLocal
+from app.migration_safety import assert_schema_is_current
 from app.models import PlatformRole, User
+from app.observability import bind_request_context, classify_status, clear_request_context, configure_logging
 from app.security import hash_password
 
 
@@ -22,14 +24,18 @@ logger = logging.getLogger(__name__)
 rate_limit_lock = asyncio.Lock()
 rate_limit_windows: dict[str, deque[float]] = defaultdict(deque)
 
-if not logging.getLogger().handlers:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+configure_logging()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     for _ in range(30):
         try:
+            if settings.MIGRATION_ENFORCE_SCHEMA_ON_STARTUP:
+                from app.db import engine
+
+                assert_schema_is_current(engine)
+
             with SessionLocal() as db:
                 founder = db.query(User).filter(User.email == settings.SUPER_ADMIN_EMAIL.lower()).first()
                 if founder is None:
@@ -154,6 +160,7 @@ app.include_router(vendor.router)
 app.include_router(customer_portal.router)
 app.include_router(ai_assignment.router)
 app.include_router(extractions.router)
+app.include_router(dashboard.router)
 
 
 _RATE_LIMIT_EXEMPT_PATHS = {
@@ -178,20 +185,32 @@ def _get_retry_after_header(request_timestamp: float, window_seconds: int) -> st
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
     request_id = request.headers.get("X-Request-ID") or uuid4().hex
+    request.state.request_id = request_id
+    bind_request_context(request_id=request_id, method=request.method, path=request.url.path)
     start_time = time.perf_counter()
     try:
         response = await call_next(request)
-    except Exception:
+    except Exception as exc:
         elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        logger.exception(
-            "request_failed",
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "elapsed_ms": elapsed_ms,
-            },
-        )
+        if isinstance(exc, SQLAlchemyError):
+            logger.exception(
+                "database_request_failed",
+                extra={
+                    "error_classification": "database_error",
+                    "status_code": 500,
+                    "latency_ms": elapsed_ms,
+                },
+            )
+        else:
+            logger.exception(
+                "request_failed",
+                extra={
+                    "error_classification": "internal_error",
+                    "status_code": 500,
+                    "latency_ms": elapsed_ms,
+                },
+            )
+        clear_request_context()
         return JSONResponse(
             status_code=500,
             content={"detail": "Internal server error", "request_id": request_id},
@@ -203,13 +222,12 @@ async def request_logging_middleware(request: Request, call_next):
     logger.info(
         "request_completed",
         extra={
-            "request_id": request_id,
-            "method": request.method,
-            "path": request.url.path,
             "status_code": response.status_code,
-            "elapsed_ms": elapsed_ms,
+            "error_classification": classify_status(response.status_code),
+            "latency_ms": elapsed_ms,
         },
     )
+    clear_request_context()
     return response
 
 

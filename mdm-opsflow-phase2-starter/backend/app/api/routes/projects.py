@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import add_audit_log, get_request_id
 from app.db import get_db
-from app.dependencies import RequestContext, get_request_context, require_permissions
-from app.models import AuditLog, Project, Ticket
+from app.dependencies import RequestContext, ensure_tenant_resource_access, require_permissions, resolve_tenant_scope
+from app.models import Project, Ticket
 from app.schemas import (
     ProjectCreate,
     ProjectResponse,
@@ -41,8 +42,8 @@ def list_projects(
             return db.scalars(select(Project).where(Project.tenant_id == tenant_id)).all()
         return db.scalars(select(Project)).all()
 
-    assert context.membership is not None
-    return db.scalars(select(Project).where(Project.tenant_id == context.membership.tenant_id)).all()
+    scoped_tenant_id = resolve_tenant_scope(context, tenant_id)
+    return db.scalars(select(Project).where(Project.tenant_id == scoped_tenant_id)).all()
 
 
 @router.post(
@@ -60,15 +61,11 @@ def list_projects(
 )
 def create_project(
     payload: ProjectCreate,
+    request: Request,
     context: RequestContext = Depends(require_permissions("project_write")),
     db: Session = Depends(get_db),
 ):
-    if not context.membership and "*" not in context.permissions:
-        raise HTTPException(status_code=403, detail="Tenant membership required")
-
-    tenant_id = context.tenant_id
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
+    tenant_id = resolve_tenant_scope(context)
 
     item = Project(
         tenant_id=tenant_id,
@@ -87,16 +84,20 @@ def create_project(
     )
     db.add(item)
     db.flush()
-    db.add(
-        AuditLog(
-            tenant_id=item.tenant_id,
-            actor_user_id=context.user.id,
-            action="create_project",
-            resource_type="project",
-            resource_id=item.id,
-            details=item.project_name,
-            created_by=context.user.id,
-        )
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="create_project",
+        entity_type="project",
+        entity_id=item.id,
+        tenant_id=item.tenant_id,
+        request_id=get_request_id(request),
+        details=item.project_name,
+        after={
+            "project_name": item.project_name,
+            "project_number": item.project_number,
+            "status": item.status.value,
+        },
     )
     db.commit()
     db.refresh(item)
@@ -122,8 +123,7 @@ def get_project(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
     return item
 
 
@@ -141,28 +141,40 @@ def get_project(
 def update_project(
     project_id: str,
     payload: ProjectUpdate,
+    request: Request,
     context: RequestContext = Depends(require_permissions("project_write")),
     db: Session = Depends(get_db),
 ):
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
 
+    before = {
+        "project_name": item.project_name,
+        "project_number": item.project_number,
+        "status": item.status.value,
+        "description": item.description,
+    }
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(item, key, value)
 
-    db.add(
-        AuditLog(
-            tenant_id=item.tenant_id,
-            actor_user_id=context.user.id,
-            action="update_project",
-            resource_type="project",
-            resource_id=item.id,
-            details="Updated project",
-            created_by=context.user.id,
-        )
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="update_project",
+        entity_type="project",
+        entity_id=item.id,
+        tenant_id=item.tenant_id,
+        request_id=get_request_id(request),
+        details="Updated project",
+        before=before,
+        after={
+            "project_name": item.project_name,
+            "project_number": item.project_number,
+            "status": item.status.value,
+            "description": item.description,
+        },
     )
     db.commit()
     db.refresh(item)
@@ -182,25 +194,29 @@ def update_project(
 )
 def delete_project(
     project_id: str,
+    request: Request,
     context: RequestContext = Depends(require_permissions("project_write")),
     db: Session = Depends(get_db),
 ):
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
 
-    db.add(
-        AuditLog(
-            tenant_id=item.tenant_id,
-            actor_user_id=context.user.id,
-            action="delete_project",
-            resource_type="project",
-            resource_id=item.id,
-            details=item.project_name,
-            created_by=context.user.id,
-        )
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="delete_project",
+        entity_type="project",
+        entity_id=item.id,
+        tenant_id=item.tenant_id,
+        request_id=get_request_id(request),
+        details=item.project_name,
+        before={
+            "project_name": item.project_name,
+            "project_number": item.project_number,
+            "status": item.status.value,
+        },
     )
     db.delete(item)
     db.commit()
@@ -227,8 +243,7 @@ def get_project_costs(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
 
     costs = ProjectCostAggregation.get_project_costs(db, project_id)
     return ProjectCostResponse(**costs)
@@ -254,8 +269,7 @@ def get_project_profitability(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
 
     try:
         profitability = ProjectCostAggregation.get_project_profitability(db, project_id)

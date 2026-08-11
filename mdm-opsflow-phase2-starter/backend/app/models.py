@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,12 +44,24 @@ class IngestionBatchStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class TenantType(str, enum.Enum):
+    PRODUCTION = "production"
+    DEMO = "demo"
+    TEST = "test"
+    CANARY = "canary"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     company_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    tenant_type: Mapped[TenantType] = mapped_column(Enum(TenantType), default=TenantType.PRODUCTION, nullable=False)
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    created_by_automation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    test_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     preferred_language: Mapped[str] = mapped_column(String(5), default="en", nullable=False)
     selected_modules: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -68,6 +80,10 @@ class User(Base):
     title: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     platform_role: Mapped[PlatformRole] = mapped_column(Enum(PlatformRole), default=PlatformRole.USER, nullable=False)
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    created_by_automation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    test_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     refresh_token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     refresh_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -237,13 +253,17 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
-    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=True)
     actor_user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(120), nullable=False)
     resource_type: Mapped[str] = mapped_column(String(120), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(80), index=True, nullable=True)
+    before_values_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    after_values_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
     details: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -839,6 +859,18 @@ class DocumentExtraction(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+
+@event.listens_for(AuditLog, "before_update", propagate=True)
+def _prevent_audit_log_update(mapper, connection, target):
+    _ = mapper, connection, target
+    raise ValueError("AuditLog is append-only and cannot be updated")
+
+
+@event.listens_for(AuditLog, "before_delete", propagate=True)
+def _prevent_audit_log_delete(mapper, connection, target):
+    _ = mapper, connection, target
+    raise ValueError("AuditLog is append-only and cannot be deleted")
 
 
 class ExtractionIssue(Base):

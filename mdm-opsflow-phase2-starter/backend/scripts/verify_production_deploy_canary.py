@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib import error, request
 
@@ -57,6 +57,10 @@ def run_canary(base_url: str, password: str) -> tuple[int, dict[str, Any]]:
             "email": email,
             "password": password,
             "display_name": "Deploy Canary User",
+            "is_test": True,
+            "created_by_automation": True,
+            "test_run_id": f"deploy-canary-{suffix}",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         },
     )
     results["register"] = status
@@ -78,6 +82,11 @@ def run_canary(base_url: str, password: str) -> tuple[int, dict[str, Any]]:
             "modules": ["Projects"],
             "invite_emails": [],
             "first_project_name": "Deploy Canary Project",
+            "tenant_type": "canary",
+            "is_test": True,
+            "created_by_automation": True,
+            "test_run_id": f"deploy-canary-{suffix}",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         },
         headers=auth_headers,
     )

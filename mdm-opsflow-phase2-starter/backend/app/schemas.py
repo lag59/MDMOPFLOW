@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models import IngestionBatchStatus, IntakeStatus, PlatformRole, ProjectStatus
+from app.models import IngestionBatchStatus, IntakeStatus, PlatformRole, ProjectStatus, TenantType
 
 
 class TokenPair(BaseModel):
@@ -36,6 +36,10 @@ class AuthRegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     display_name: str = Field(min_length=2, max_length=255)
+    is_test: bool = False
+    created_by_automation: bool = False
+    test_run_id: str | None = Field(default=None, max_length=120)
+    expires_at: datetime | None = None
 
 
 class AuthLoginRequest(BaseModel):
@@ -254,6 +258,39 @@ class HealthResponse(BaseModel):
     environment: str
 
 
+class DashboardRoleLink(BaseModel):
+    label: str
+    href: str
+
+
+class DashboardRoleExperienceResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "role_key": "estimator",
+                "role_label": "Estimator",
+                "kpi_order": ["estimates", "draft_estimates", "awarded_estimates", "intake_pending_review"],
+                "modules": [
+                    {"label": "Takeoff", "href": "/modules/estimator/takeoff"},
+                    {"label": "Bid Pipeline", "href": "/modules/estimator/bid-pipeline"},
+                ],
+                "quick_actions": [
+                    {"label": "Open estimator workspace", "href": "/estimator"},
+                    {"label": "Review ticket inputs", "href": "/tickets"},
+                ],
+                "alerts": ["3 estimates are still in draft."],
+            }
+        }
+    )
+
+    role_key: str
+    role_label: str
+    kpi_order: list[str]
+    modules: list[DashboardRoleLink]
+    quick_actions: list[DashboardRoleLink]
+    alerts: list[str]
+
+
 class AdminOverviewResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -262,8 +299,18 @@ class AdminOverviewResponse(BaseModel):
                 "status": "foundation-ready",
                 "role": "platform_super_admin",
                 "tenants": 4,
+                "production_tenants": 2,
+                "demo_tenants": 1,
+                "test_tenants": 1,
+                "canary_tenants": 0,
+                "test_and_canary_tenants": 1,
                 "users": 18,
+                "active_users": 16,
+                "inactive_users": 2,
                 "projects": 12,
+                "role_count": 14,
+                "expiring_test_tenants": 1,
+                "expiring_test_users": 2,
             }
         }
     )
@@ -272,8 +319,18 @@ class AdminOverviewResponse(BaseModel):
     status: str
     role: str
     tenants: int
+    production_tenants: int
+    demo_tenants: int
+    test_tenants: int
+    canary_tenants: int
+    test_and_canary_tenants: int
     users: int
+    active_users: int
+    inactive_users: int
     projects: int
+    role_count: int
+    expiring_test_tenants: int
+    expiring_test_users: int
 
 
 class AdminTenantUser(BaseModel):
@@ -303,6 +360,10 @@ class AdminAuditLogEntry(BaseModel):
                 "action": "create_project",
                 "resource_type": "project",
                 "resource_id": "b9c8f6d7-6a9c-4ea5-b5fb-801d343bdb48",
+                "request_id": "req-2f8bde38a0d04b01a5f95f6a8d5c0b84",
+                "before_values_json": "{\"status\": \"planning\"}",
+                "after_values_json": "{\"status\": \"active\"}",
+                "occurred_at": "2026-07-25T15:32:16.935131Z",
                 "created_at": "2026-07-25T15:32:16.935131Z",
                 "actor_user_id": "7e4e28dc-5038-4025-8e4c-a64fd3b76156",
             }
@@ -314,6 +375,10 @@ class AdminAuditLogEntry(BaseModel):
     action: str
     resource_type: str
     resource_id: str
+    request_id: str | None = None
+    before_values_json: str = ""
+    after_values_json: str = ""
+    occurred_at: datetime
     created_at: datetime
     actor_user_id: str
 
@@ -371,6 +436,7 @@ class AdminUserAccessItem(BaseModel):
                 "title": "Operations Manager",
                 "platform_role": "user",
                 "is_active": True,
+                "user_status": "active",
             }
         }
     )
@@ -381,6 +447,11 @@ class AdminUserAccessItem(BaseModel):
     title: str
     platform_role: PlatformRole
     is_active: bool
+    user_status: str
+    is_test: bool = False
+    created_by_automation: bool = False
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
 
 
 class AdminUserTenantMembershipItem(BaseModel):
@@ -475,6 +546,11 @@ class AdminCreateTenantRequest(BaseModel):
 
     tenant_name: str = Field(min_length=2, max_length=255)
     company_type: str = Field(default="General Contractor", min_length=2, max_length=255)
+    tenant_type: TenantType = TenantType.PRODUCTION
+    is_test: bool = False
+    created_by_automation: bool = False
+    test_run_id: str | None = Field(default=None, max_length=120)
+    expires_at: datetime | None = None
     preferred_language: str = Field(default="en", min_length=2, max_length=10)
     selected_modules: list[str] = Field(default_factory=lambda: ["Projects", "Budget", "Safety"])
 
@@ -491,6 +567,11 @@ class AdminCreateTenantResponse(BaseModel):
 
     tenant_id: str
     tenant_name: str
+    tenant_type: TenantType
+    is_test: bool
+    created_by_automation: bool
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
 
 
 class AdminTenantServiceSummaryItem(BaseModel):
@@ -499,7 +580,10 @@ class AdminTenantServiceSummaryItem(BaseModel):
             "example": {
                 "tenant_id": "f2a4f8f1-8439-4fa4-b9d0-5dcf8a5f9a8d",
                 "tenant_name": "Acme Civil",
+                "tenant_status_filter": "active",
                 "users": 12,
+                "active_users": 11,
+                "inactive_users": 1,
                 "projects": 8,
                 "tickets": 152,
                 "intake_items": 247,
@@ -511,7 +595,15 @@ class AdminTenantServiceSummaryItem(BaseModel):
 
     tenant_id: str
     tenant_name: str
+    tenant_type: TenantType
+    tenant_status_filter: str = "all"
+    is_test: bool
+    created_by_automation: bool
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
     users: int
+    active_users: int
+    inactive_users: int
     projects: int
     tickets: int
     intake_items: int
@@ -520,7 +612,40 @@ class AdminTenantServiceSummaryItem(BaseModel):
 
 
 class AdminTenantServiceSummaryResponse(BaseModel):
+    tenant_type_filter: TenantType | None = None
+    tenant_status_filter: str = "all"
     items: list[AdminTenantServiceSummaryItem]
+
+
+class AdminTenantCountTriplet(BaseModel):
+    users: int
+    projects: int
+    tickets: int
+
+
+class AdminTenantCountDiscrepancyItem(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    expected: AdminTenantCountTriplet
+    actual: AdminTenantCountTriplet
+    discrepancies: list[str]
+    is_reconciled: bool
+
+
+class AdminDataCountSessionValidation(BaseModel):
+    expected_total_tenants: int | None = None
+    actual_total_tenants: int
+    expected_total_users: int | None = None
+    actual_total_users: int
+    discrepancies: list[str]
+
+
+class AdminDataCountReconciliationResponse(BaseModel):
+    generated_at: datetime
+    total_tenants: int
+    mismatched_tenants: int
+    items: list[AdminTenantCountDiscrepancyItem]
+    session_validation: AdminDataCountSessionValidation
 
 
 class AdminServiceInsightsResponse(BaseModel):
@@ -531,6 +656,17 @@ class AdminServiceInsightsResponse(BaseModel):
                 "users": 18,
                 "projects": 12,
                 "tickets": 235,
+                "production_tenants": 2,
+                "demo_tenants": 1,
+                "test_tenants": 1,
+                "canary_tenants": 0,
+                "test_and_canary_tenants": 1,
+                "active_users": 16,
+                "inactive_users": 2,
+                "role_count": 14,
+                "expiring_test_tenants": 1,
+                "expiring_test_users": 2,
+                "customer_growth_tenants": 2,
                 "intake_items": 420,
                 "intake_needs_review": 16,
                 "extractions_pending_review": 9,
@@ -548,8 +684,19 @@ class AdminServiceInsightsResponse(BaseModel):
 
     tenants: int
     users: int
+    active_users: int
+    inactive_users: int
     projects: int
     tickets: int
+    production_tenants: int
+    demo_tenants: int
+    test_tenants: int
+    canary_tenants: int
+    test_and_canary_tenants: int
+    role_count: int
+    expiring_test_tenants: int
+    expiring_test_users: int
+    customer_growth_tenants: int
     intake_items: int
     intake_needs_review: int
     extractions_pending_review: int
@@ -558,6 +705,76 @@ class AdminServiceInsightsResponse(BaseModel):
     integration_events_pending: int
     integration_events_failed: int
     opportunities: list[str]
+
+
+class PermissionCatalogResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "permissions": {
+                    "project.view": "View project records and project-level metrics.",
+                    "project.manage": "Create, edit, and delete projects.",
+                },
+                "role_matrix": {
+                    "owner": ["project.view", "project.manage", "membership.assign"],
+                    "estimator": ["estimate.view", "estimate.create", "estimate.edit"],
+                },
+                "legacy_aliases": {
+                    "project_read": ["project.view"],
+                    "estimate_write": ["estimate.create", "estimate.edit"],
+                },
+            }
+        }
+    )
+
+    permissions: dict[str, str]
+    role_matrix: dict[str, list[str]]
+    legacy_aliases: dict[str, list[str]]
+
+
+class AdminTestDataCleanupRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "dry_run": True,
+            }
+        }
+    )
+
+    dry_run: bool = True
+
+
+class AdminTestDataCleanupTenantAction(BaseModel):
+    tenant_id: str
+    tenant_name: str
+    tenant_type: TenantType
+    is_test: bool
+    created_by_automation: bool
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
+    memberships_to_deactivate: int
+
+
+class AdminTestDataCleanupUserAction(BaseModel):
+    user_id: str
+    email: str
+    is_test: bool
+    created_by_automation: bool
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
+    memberships_to_deactivate: int
+
+
+class AdminTestDataCleanupResponse(BaseModel):
+    dry_run: bool
+    executed_at: datetime
+    eligible_tenants: int
+    eligible_users: int
+    deactivated_memberships: int
+    deactivated_users: int
+    preserved_audit_logs: bool = True
+    tenant_actions: list[AdminTestDataCleanupTenantAction]
+    user_actions: list[AdminTestDataCleanupUserAction]
 
 
 class OnboardingRequest(BaseModel):
@@ -580,6 +797,11 @@ class OnboardingRequest(BaseModel):
     modules: list[str] = Field(default_factory=list)
     invite_emails: list[EmailStr] = Field(default_factory=list)
     first_project_name: str = Field(min_length=2, max_length=255)
+    tenant_type: TenantType = TenantType.PRODUCTION
+    is_test: bool = False
+    created_by_automation: bool = False
+    test_run_id: str | None = Field(default=None, max_length=120)
+    expires_at: datetime | None = None
 
 
 class OnboardingResponse(BaseModel):
@@ -594,6 +816,11 @@ class OnboardingResponse(BaseModel):
 
     tenant_id: str
     project_id: str
+    tenant_type: TenantType
+    is_test: bool
+    created_by_automation: bool
+    test_run_id: str | None = None
+    expires_at: datetime | None = None
 
 
 class CustomerBase(BaseModel):
@@ -875,10 +1102,12 @@ class EstimateBase(BaseModel):
 
 
 class EstimateCreate(EstimateBase):
-    status: str = "New"
+    status: str = "Draft"
 
 
 class EstimateUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     project_id: str | None = None
     estimate_name: str | None = None
     estimate_number: str | None = None
@@ -900,7 +1129,6 @@ class EstimateUpdate(BaseModel):
     default_overhead_percent: Decimal | None = None
     default_contingency_percent: Decimal | None = None
     notes: str | None = None
-    status: str | None = None
 
 
 class EstimateResponse(EstimateBase):
@@ -919,8 +1147,12 @@ class EstimateResponse(EstimateBase):
 
 
 class EstimateStatusUpdateRequest(BaseModel):
-    status: str = Field(min_length=2, max_length=40)
+    target_status: str = Field(min_length=2, max_length=40)
     details: str = ""
+
+
+class EstimateUnlockRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
 
 
 class EstimateDocumentResponse(BaseModel):

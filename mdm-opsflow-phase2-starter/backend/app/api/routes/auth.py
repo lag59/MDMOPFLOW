@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import add_audit_log, get_request_id
 from app.core.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
@@ -81,7 +82,7 @@ def _make_auth_response(user: User, tenant_id: str | None) -> AuthResponse:
         400: {"description": "Email is already registered."},
     },
 )
-def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
+def register(payload: AuthRegisterRequest, request: Request, db: Session = Depends(get_db)):
     normalized_email = payload.email.lower().strip()
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
@@ -92,9 +93,25 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
         password_hash=hash_password(payload.password),
         display_name=payload.display_name,
         title="",
+        is_test=payload.is_test,
+        created_by_automation=payload.created_by_automation,
+        test_run_id=payload.test_run_id,
+        expires_at=payload.expires_at,
     )
     db.add(user)
     db.flush()
+
+    add_audit_log(
+        db,
+        actor_user_id=user.id,
+        action="auth_register",
+        entity_type="user",
+        entity_id=user.id,
+        tenant_id=None,
+        request_id=get_request_id(request),
+        details=f"Registered user {user.email}",
+        after={"email": user.email, "platform_role": user.platform_role.value, "is_active": user.is_active},
+    )
 
     result = _make_auth_response(user, tenant_id=None)
     db.commit()
@@ -116,7 +133,7 @@ def register(payload: AuthRegisterRequest, db: Session = Depends(get_db)):
         401: {"description": "Invalid email or password."},
     },
 )
-def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
+def login(payload: AuthLoginRequest, request: Request, db: Session = Depends(get_db)):
     normalized_email = payload.email.lower().strip()
     user = _ensure_super_admin_identity(db, normalized_email, payload.password)
     if user is None:
@@ -124,6 +141,8 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
 
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Account is inactive")
 
     tenant_id = payload.tenant_id
     if tenant_id:
@@ -147,6 +166,17 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
         tenant_id = membership.tenant_id if membership else None
 
     response = _make_auth_response(user, tenant_id=tenant_id)
+    add_audit_log(
+        db,
+        actor_user_id=user.id,
+        action="auth_login",
+        entity_type="user",
+        entity_id=user.id,
+        tenant_id=tenant_id,
+        request_id=get_request_id(request),
+        details=f"Login for {user.email}",
+        after={"tenant_id": tenant_id, "platform_role": user.platform_role.value},
+    )
     db.commit()
     db.refresh(user)
     return response
@@ -244,6 +274,8 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
     user = db.get(User, data.get("sub"))
     if not user or not user.refresh_token_hash or not verify_password(payload.refresh_token, user.refresh_token_hash):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="Account is inactive")
 
     expires_at = user.refresh_token_expires_at
     if expires_at and expires_at.tzinfo is None:
@@ -271,8 +303,21 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         401: {"description": "Authentication required."},
     },
 )
-def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def logout(request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    before_refresh_expires = current_user.refresh_token_expires_at
     current_user.refresh_token_hash = None
     current_user.refresh_token_expires_at = None
+    add_audit_log(
+        db,
+        actor_user_id=current_user.id,
+        action="auth_logout",
+        entity_type="user",
+        entity_id=current_user.id,
+        tenant_id=None,
+        request_id=get_request_id(request),
+        details=f"Logout for {current_user.email}",
+        before={"refresh_token_expires_at": before_refresh_expires},
+        after={"refresh_token_expires_at": None},
+    )
     db.commit()
     return None

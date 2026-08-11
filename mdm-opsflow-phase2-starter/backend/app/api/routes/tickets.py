@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import RequestContext, require_permissions
+from app.dependencies import RequestContext, ensure_tenant_resource_access, require_permissions, resolve_tenant_scope
 from app.models import MaterialDensityPreset, Ticket
 from app.schemas import (
     TicketCalculatorPrefillResponse,
@@ -271,11 +271,7 @@ def delete_material_density_preset(
 
 
 def _tenant_id_from_context(context: RequestContext) -> str:
-    if context.tenant_id:
-        return context.tenant_id
-    if context.membership:
-        return context.membership.tenant_id
-    raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
+    return resolve_tenant_scope(context)
 
 
 @router.post(
@@ -655,8 +651,8 @@ def list_tickets(
             return db.scalars(select(Ticket).where(Ticket.tenant_id == tenant_id)).all()
         return db.scalars(select(Ticket)).all()
 
-    assert context.membership is not None
-    return db.scalars(select(Ticket).where(Ticket.tenant_id == context.membership.tenant_id)).all()
+    scoped_tenant_id = resolve_tenant_scope(context, tenant_id)
+    return db.scalars(select(Ticket).where(Ticket.tenant_id == scoped_tenant_id)).all()
 
 
 @router.post(
@@ -728,11 +724,7 @@ def get_ticket(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or ticket.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_tenant_resource_access(resource_tenant_id=ticket.tenant_id, context=context, not_found_detail="Ticket not found")
 
     return ticket
 
@@ -752,11 +744,7 @@ def update_ticket(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or ticket.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_tenant_resource_access(resource_tenant_id=ticket.tenant_id, context=context, not_found_detail="Ticket not found")
 
     updates = payload.model_dump(exclude_unset=True)
     proposed_ticket_number = updates.get("ticket_number", ticket.ticket_number)
@@ -806,11 +794,7 @@ def delete_ticket(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
-    if "*" not in context.permissions and (
-        not context.membership or ticket.tenant_id != context.membership.tenant_id
-    ):
-        raise HTTPException(status_code=404, detail="Ticket not found")
+    ensure_tenant_resource_access(resource_tenant_id=ticket.tenant_id, context=context, not_found_detail="Ticket not found")
 
     db.delete(ticket)
     db.commit()

@@ -6,6 +6,7 @@ from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
 from app.models import (
     AuditLog,
+    Project,
     VendorComplianceDocument,
     VendorDeliveryRecord,
     VendorInvoiceSubmission,
@@ -32,6 +33,22 @@ def _require_tenant(context: RequestContext) -> str:
     return tenant_id
 
 
+def _require_project_in_tenant(db: Session, tenant_id: str, project_id: str | None) -> None:
+    if not project_id:
+        return
+    project = db.get(Project, project_id)
+    if not project or project.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
+def _require_purchase_order_in_tenant(db: Session, tenant_id: str, purchase_order_id: str | None) -> None:
+    if not purchase_order_id:
+        return
+    purchase_order = db.get(VendorPurchaseOrder, purchase_order_id)
+    if not purchase_order or purchase_order.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+
 @router.get(
     "/purchase-orders",
     response_model=list[VendorPurchaseOrderResponse],
@@ -39,7 +56,7 @@ def _require_tenant(context: RequestContext) -> str:
     summary="List vendor purchase orders",
 )
 def list_purchase_orders(
-    context: RequestContext = Depends(require_permissions("project_read")),
+    context: RequestContext = Depends(require_permissions("portal_vendor_write")),
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
@@ -64,6 +81,7 @@ def create_purchase_order(
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
+    _require_project_in_tenant(db, tenant_id, payload.project_id)
     item = VendorPurchaseOrder(
         tenant_id=tenant_id,
         project_id=payload.project_id,
@@ -99,7 +117,7 @@ def create_purchase_order(
     summary="List vendor invoice submissions",
 )
 def list_invoice_submissions(
-    context: RequestContext = Depends(require_permissions("project_read")),
+    context: RequestContext = Depends(require_permissions("portal_vendor_write")),
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
@@ -124,6 +142,8 @@ def create_invoice_submission(
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
+    _require_project_in_tenant(db, tenant_id, payload.project_id)
+    _require_purchase_order_in_tenant(db, tenant_id, payload.purchase_order_id)
     item = VendorInvoiceSubmission(
         tenant_id=tenant_id,
         project_id=payload.project_id,
@@ -160,7 +180,7 @@ def create_invoice_submission(
     summary="List vendor delivery records",
 )
 def list_delivery_records(
-    context: RequestContext = Depends(require_permissions("project_read")),
+    context: RequestContext = Depends(require_permissions("portal_vendor_write")),
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
@@ -185,6 +205,8 @@ def create_delivery_record(
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
+    _require_project_in_tenant(db, tenant_id, payload.project_id)
+    _require_purchase_order_in_tenant(db, tenant_id, payload.purchase_order_id)
     item = VendorDeliveryRecord(
         tenant_id=tenant_id,
         project_id=payload.project_id,
@@ -221,7 +243,7 @@ def create_delivery_record(
     summary="List vendor compliance documents",
 )
 def list_compliance_documents(
-    context: RequestContext = Depends(require_permissions("project_read")),
+    context: RequestContext = Depends(require_permissions("portal_vendor_write")),
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
@@ -246,6 +268,7 @@ def create_compliance_document(
     db: Session = Depends(get_db),
 ):
     tenant_id = _require_tenant(context)
+    _require_project_in_tenant(db, tenant_id, payload.project_id)
     item = VendorComplianceDocument(
         tenant_id=tenant_id,
         project_id=payload.project_id,

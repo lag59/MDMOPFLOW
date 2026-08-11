@@ -248,7 +248,7 @@ def test_membership_activation_reenables_user_login(client: TestClient):
     assert login.status_code == 200
 
 
-def test_login_rejects_inactive_membership_tenant_context(client: TestClient):
+def test_membership_deactivation_revokes_tenant_access_and_reactivation_restores_it(client: TestClient):
     owner = client.post(
         "/api/auth/register",
         json={"email": "owner-inactive-membership@acme.com", "password": "Pass12345!", "display_name": "Owner Inactive Membership"},
@@ -284,7 +284,49 @@ def test_login_rejects_inactive_membership_tenant_context(client: TestClient):
         json={"email": "inactive-membership-user@acme.com", "role_name": "project_manager"},
     )
     assert assign_member.status_code == 201
-    membership_id = assign_member.json()["user_id"]
+
+    member_headers = {"Authorization": f"Bearer {member_token}", "X-Tenant-ID": tenant_id}
+    owner_headers = {"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id}
+
+    projects_before = client.get(
+        "/api/projects",
+        headers=member_headers,
+    )
+    assert projects_before.status_code == 200
+    project_id = projects_before.json()[0]["id"]
+
+    create_estimate = client.post(
+        "/api/estimates",
+        headers=member_headers,
+        json={
+            "project_id": project_id,
+            "estimate_name": "Membership Transition Estimate",
+            "estimate_number": "MT-EST-001",
+            "customer_name": "Transition Customer",
+            "project_name": "Inactive Membership Project",
+            "project_address": "100 Transition Way",
+            "project_type": "Civil",
+            "estimator_name": "Inactive Membership User",
+            "status": "Draft Estimate",
+        },
+    )
+    assert create_estimate.status_code == 201, create_estimate.text
+    estimate_id = create_estimate.json()["id"]
+
+    create_ticket = client.post(
+        "/api/tickets",
+        headers=member_headers,
+        json={
+            "project_id": project_id,
+            "ticket_number": "MT-TCK-001",
+            "truck": "TR-001",
+            "driver": "Alex Driver",
+            "material": "Aggregate Base",
+            "status": "draft",
+        },
+    )
+    assert create_ticket.status_code == 201, create_ticket.text
+    ticket_id = create_ticket.json()["id"]
 
     memberships = client.get(
         "/api/auth/me",
@@ -314,8 +356,86 @@ def test_login_rejects_inactive_membership_tenant_context(client: TestClient):
     )
     assert deactivate_membership.status_code == 200
 
-    denied = client.post(
-        "/api/auth/login",
-        json={"email": "inactive-membership-user@acme.com", "password": "Pass12345!", "tenant_id": tenant_id},
+    denied = client.get(
+        "/api/projects",
+        headers=member_headers,
     )
     assert denied.status_code == 403
+
+    memberships_after_deactivation = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert memberships_after_deactivation.status_code == 200
+    assert all(item["tenant_id"] != tenant_id for item in memberships_after_deactivation.json()["memberships"])
+
+    owner_project = client.get(f"/api/projects/{project_id}", headers=owner_headers)
+    assert owner_project.status_code == 200
+
+    owner_estimate = client.get(f"/api/estimates/{estimate_id}", headers=owner_headers)
+    assert owner_estimate.status_code == 200
+    assert owner_estimate.json()["project_id"] == project_id
+
+    owner_ticket = client.get(f"/api/tickets/{ticket_id}", headers=owner_headers)
+    assert owner_ticket.status_code == 200
+    assert owner_ticket.json()["project_id"] == project_id
+
+    audit_logs = client.get(
+        "/api/admin/audit-logs",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert audit_logs.status_code == 200
+    assert any(
+        entry["action"] == "admin_update_user_membership" and entry["resource_id"] == row["membership_id"]
+        for entry in audit_logs.json()
+    )
+
+    reactivate_membership = client.patch(
+        f"/api/admin/users/{assign_member.json()['user_id']}/memberships/{row['membership_id']}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"tenant_id": tenant_id, "role_name": "project_manager", "status": "active"},
+    )
+    assert reactivate_membership.status_code == 200
+
+    allowed_after_reactivation = client.get(
+        "/api/projects",
+        headers=member_headers,
+    )
+    assert allowed_after_reactivation.status_code == 200
+
+    memberships_after_reactivation = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert memberships_after_reactivation.status_code == 200
+    assert any(item["tenant_id"] == tenant_id for item in memberships_after_reactivation.json()["memberships"])
+
+
+def test_inactive_user_cannot_login(client: TestClient):
+    register_response = client.post(
+        "/api/auth/register",
+        json={"email": "inactive-login@example.com", "password": "Pass12345!", "display_name": "Inactive Login"},
+    )
+    assert register_response.status_code == 201
+    user_id = register_response.json()["user_id"]
+
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    deactivate = client.patch(
+        f"/api/admin/users/{user_id}/access",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"is_active": False},
+    )
+    assert deactivate.status_code == 200
+
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "inactive-login@example.com", "password": "Pass12345!"},
+    )
+    assert login.status_code == 401
+    assert login.json()["detail"] == "Account is inactive"

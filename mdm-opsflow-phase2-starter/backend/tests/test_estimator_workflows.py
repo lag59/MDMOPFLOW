@@ -241,3 +241,73 @@ def test_estimator_domain_workflows_and_permissions(client: TestClient) -> None:
         },
     )
     assert create_takeoff_forbidden.status_code == 403, create_takeoff_forbidden.text
+
+
+def test_estimate_conversion_requires_awarded_status(client: TestClient) -> None:
+    owner_register_response = client.post(
+        "/api/auth/register",
+        json={"email": "estimator.owner.convert@example.com", "password": "Pass12345!", "display_name": "Estimator Owner Convert"},
+    )
+    assert owner_register_response.status_code == 201, owner_register_response.text
+    owner_token = owner_register_response.json()["tokens"]["access_token"]
+
+    estimator_register_response = client.post(
+        "/api/auth/register",
+        json={"email": "estimator.member.convert@example.com", "password": "Pass12345!", "display_name": "Estimator Member Convert"},
+    )
+    assert estimator_register_response.status_code == 201, estimator_register_response.text
+    estimator_token = estimator_register_response.json()["tokens"]["access_token"]
+
+    onboarding_response = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "company_name": "Estimator Convert Co",
+            "company_types": ["General Contractor"],
+            "language": "en",
+            "modules": ["Projects", "Tickets"],
+            "invite_emails": [],
+            "first_project_name": "Estimator Convert Project",
+        },
+    )
+    assert onboarding_response.status_code == 201, onboarding_response.text
+    tenant_id = onboarding_response.json()["tenant_id"]
+    owner_headers = {"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id}
+
+    assign_estimator = client.post(
+        "/api/tenant-users",
+        headers=owner_headers,
+        json={"email": "estimator.member.convert@example.com", "role_name": "estimator"},
+    )
+    assert assign_estimator.status_code == 201, assign_estimator.text
+
+    estimator_headers = {"Authorization": f"Bearer {estimator_token}", "X-Tenant-ID": tenant_id}
+    project_response = client.get("/api/projects", headers=owner_headers)
+    assert project_response.status_code == 200, project_response.text
+    project_id = project_response.json()[0]["id"]
+
+    estimate_response = client.post(
+        "/api/estimates",
+        headers=estimator_headers,
+        json={
+            "project_id": project_id,
+            "estimate_name": "Conversion Gate Estimate",
+            "estimate_number": "EST-CVG-001",
+            "customer_name": "City Utilities",
+            "project_name": "North Yard",
+            "project_address": "100 Main St",
+            "project_type": "Heavy civil",
+            "estimator_name": "Estimator Member Convert",
+            "status": "Draft Estimate",
+        },
+    )
+    assert estimate_response.status_code == 201, estimate_response.text
+    estimate_id = estimate_response.json()["id"]
+
+    submit_response = client.post(f"/api/estimates/{estimate_id}/submit", headers=estimator_headers)
+    assert submit_response.status_code == 200, submit_response.text
+    assert submit_response.json()["status"] == "Submitted"
+
+    convert_before_award = client.post(f"/api/estimates/{estimate_id}/convert-to-project", headers=owner_headers)
+    assert convert_before_award.status_code == 400
+    assert convert_before_award.json()["detail"] == "Estimate must be Awarded before conversion"

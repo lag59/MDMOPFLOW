@@ -14,7 +14,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import RequestContext, require_permissions
+from app.dependencies import RequestContext, require_permissions, resolve_tenant_scope
 from app.models import (
     AuditLog,
     IngestionBatch,
@@ -97,11 +97,7 @@ _TOKEN_ISSUE_DETAILS_PATTERN = re.compile(r"event_id=(.*?); output=(.*?); limit=
 
 
 def _tenant_id_from_context(context: RequestContext) -> str:
-    if context.tenant_id:
-        return context.tenant_id
-    if context.membership:
-        return context.membership.tenant_id
-    raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
+    return resolve_tenant_scope(context)
 
 
 def _ensure_item_access(item: IntakeItem | None, context: RequestContext) -> IntakeItem:
@@ -192,8 +188,8 @@ def list_intake_items(
             query = query.where(IntakeItem.needs_review.is_(True))
         return db.scalars(query).all()
 
-    assert context.membership is not None
-    query = query.where(IntakeItem.tenant_id == context.membership.tenant_id)
+    scoped_tenant_id = resolve_tenant_scope(context, tenant_id)
+    query = query.where(IntakeItem.tenant_id == scoped_tenant_id)
     if review_queue:
         query = query.where(IntakeItem.needs_review.is_(True))
     return db.scalars(query).all()
@@ -606,8 +602,8 @@ def list_intake_integration_events(
         if tenant_id:
             query = query.where(IntegrationEvent.tenant_id == tenant_id)
     else:
-        assert context.membership is not None
-        query = query.where(IntegrationEvent.tenant_id == context.membership.tenant_id)
+        scoped_tenant_id = resolve_tenant_scope(context, tenant_id)
+        query = query.where(IntegrationEvent.tenant_id == scoped_tenant_id)
 
     if event_status:
         query = query.where(IntegrationEvent.status == event_status)
@@ -769,12 +765,13 @@ def _build_replay_audit_history_query(
         .limit(limit)
     )
 
-    if "*" in context.permissions:
-        if tenant_id:
-            query = query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+    if tenant_id is not None or "*" not in context.permissions:
+        scoped_tenant_id = resolve_tenant_scope(
+            context,
+            tenant_id,
+            cross_tenant_detail="Cannot read replay history for another tenant",
+        )
+        query = query.where(AuditLog.tenant_id == scoped_tenant_id)
 
     if event_id:
         query = query.where(AuditLog.resource_id == event_id)
@@ -806,18 +803,13 @@ def _resolve_replay_export_tenant_scope(
     requested_tenant_id: str | None,
     required_purpose: str = "replay export token generation",
 ) -> str:
-    if "*" in context.permissions:
-        if requested_tenant_id:
-            return requested_tenant_id
-        raise HTTPException(
-            status_code=400,
-            detail=f"tenant_id is required for {required_purpose}",
-        )
-
-    assert context.membership is not None
-    if requested_tenant_id and requested_tenant_id != context.membership.tenant_id:
-        raise HTTPException(status_code=403, detail="Cannot export replay history for another tenant")
-    return context.membership.tenant_id
+    return resolve_tenant_scope(
+        context,
+        requested_tenant_id,
+        require_explicit_for_super_admin=True,
+        missing_tenant_detail=f"tenant_id is required for {required_purpose}",
+        cross_tenant_detail="Cannot export replay history for another tenant",
+    )
 
 
 def _parse_export_token_datetime(
@@ -933,12 +925,13 @@ def _build_replay_export_token_audit_query(
     else:
         query = query.order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
 
-    if "*" in context.permissions:
-        if tenant_id:
-            query = query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+    if tenant_id is not None or "*" not in context.permissions:
+        scoped_tenant_id = resolve_tenant_scope(
+            context,
+            tenant_id,
+            cross_tenant_detail="Cannot read replay export token history for another tenant",
+        )
+        query = query.where(AuditLog.tenant_id == scoped_tenant_id)
 
     if token_id:
         query = query.where(AuditLog.resource_id == token_id)
@@ -1014,12 +1007,13 @@ def _build_replay_export_token_audit_summary_query(
         AuditLog.action.in_(REPLAY_EXPORT_TOKEN_AUDIT_ACTIONS),
     )
 
-    if "*" in context.permissions:
-        if tenant_id:
-            query = query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+    if tenant_id is not None or "*" not in context.permissions:
+        scoped_tenant_id = resolve_tenant_scope(
+            context,
+            tenant_id,
+            cross_tenant_detail="Cannot read replay export token summary for another tenant",
+        )
+        query = query.where(AuditLog.tenant_id == scoped_tenant_id)
 
     if token_id:
         query = query.where(AuditLog.resource_id == token_id)
@@ -1138,12 +1132,13 @@ def _build_replay_export_token_issue_query(
         .where(AuditLog.action == "issue_replay_history_export_token")
     )
 
-    if "*" in context.permissions:
-        if tenant_id:
-            query = query.where(AuditLog.tenant_id == tenant_id)
-    else:
-        assert context.membership is not None
-        query = query.where(AuditLog.tenant_id == context.membership.tenant_id)
+    if tenant_id is not None or "*" not in context.permissions:
+        scoped_tenant_id = resolve_tenant_scope(
+            context,
+            tenant_id,
+            cross_tenant_detail="Cannot read replay export token states for another tenant",
+        )
+        query = query.where(AuditLog.tenant_id == scoped_tenant_id)
 
     if token_id:
         query = query.where(AuditLog.resource_id == token_id)

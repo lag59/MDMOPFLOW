@@ -67,6 +67,11 @@ def complete_onboarding(
     tenant = Tenant(
         name=payload.company_name,
         company_type=",".join(payload.company_types),
+        tenant_type=payload.tenant_type,
+        is_test=payload.is_test,
+        created_by_automation=payload.created_by_automation,
+        test_run_id=payload.test_run_id,
+        expires_at=payload.expires_at,
         preferred_language=payload.language,
         selected_modules=",".join(payload.modules),
     )
@@ -143,4 +148,12 @@ def complete_onboarding(
     )
 
     db.commit()
-    return OnboardingResponse(tenant_id=tenant.id, project_id=first_project.id)
+    return OnboardingResponse(
+        tenant_id=tenant.id,
+        project_id=first_project.id,
+        tenant_type=tenant.tenant_type,
+        is_test=tenant.is_test,
+        created_by_automation=tenant.created_by_automation,
+        test_run_id=tenant.test_run_id,
+        expires_at=tenant.expires_at,
+    )

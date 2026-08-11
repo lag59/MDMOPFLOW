@@ -12,6 +12,7 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_opsflow.db"
 os.environ["SECRET_KEY"] = "test-secret"
 os.environ["SUPER_ADMIN_EMAIL"] = "founder@mdmopsflow.com"
 os.environ["SUPER_ADMIN_PASSWORD"] = "ChangeMe123!"
+os.environ["MIGRATION_ENFORCE_SCHEMA_ON_STARTUP"] = "false"
 
 from app.db import Base, get_db
 from app.main import app

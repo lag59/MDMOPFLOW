@@ -1,16 +1,18 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@500;600;700&display=swap");
+
 /* ── Design tokens ───────────────────────────────────────────── */
 :root {
-	--ink: #0f172a;
-	--soft: #64748b;
-	--accent: #f97316;
-	--accent-strong: #ea580c;
-	--accent-subtle: #fff7ed;
+	--ink: #0b2348;
+	--soft: #4e678e;
+	--accent: #e8791f;
+	--accent-strong: #c65f0a;
+	--accent-subtle: #fff4e6;
 	--ai: #2563eb;
 	--success: #22c55e;
 	--warning: #f59e0b;
 	--danger: #ef4444;
-	--bg: #f1f5f9;
-	--line: #e2e8f0;
+	--bg: #eef3fb;
+	--line: #d4dfef;
 	--surface: #ffffff;
 	--sidebar-w: 240px;
 	--topbar-h: 58px;
@@ -24,7 +26,7 @@
 
 body {
 	margin: 0;
-	font-family: Inter, "Segoe UI", system-ui, sans-serif;
+	font-family: "Manrope", "IBM Plex Sans", "Segoe UI", sans-serif;
 	font-size: 14px;
 	line-height: 1.55;
 	background: var(--bg);

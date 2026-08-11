@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     SUPER_ADMIN_PASSWORD:str="ChangeMe123!"
     FOUNDER_DISPLAY_NAME:str="lag59"
     FOUNDER_TITLE:str="Platform Super Admin"
+    MIGRATION_ENFORCE_SCHEMA_ON_STARTUP: bool = True
+    LOG_LEVEL: str = "INFO"
+    APP_VERSION: str = "0.1.0"
+    DEPLOYMENT_ID: str = "local"
     model_config=SettingsConfigDict(env_file=".env")
 
     @field_validator("DATABASE_URL", mode="before")

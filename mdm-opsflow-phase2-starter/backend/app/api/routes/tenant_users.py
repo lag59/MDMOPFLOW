@@ -1,14 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import add_audit_log, get_request_id
 from app.db import get_db
 from app.dependencies import RequestContext, get_request_context, require_permissions
-from app.models import AuditLog, MembershipStatus, PlatformRole, Role, TenantMembership, User, UserPermissionOverride
-from app.rbac import ALL_KNOWN_PERMISSIONS, ROLE_PERMISSIONS, permission_exists, permissions_csv_for_role, resolve_permissions
+from app.models import MembershipStatus, PlatformRole, Role, TenantMembership, User, UserPermissionOverride
+from app.rbac import (
+    ALL_KNOWN_PERMISSIONS,
+    FORMAL_PERMISSION_CATALOG,
+    LEGACY_PERMISSION_REQUIREMENTS,
+    ROLE_PERMISSION_MATRIX,
+    ROLE_PERMISSIONS,
+    permission_exists,
+    permissions_csv_for_role,
+    resolve_permissions,
+)
 from app.security import hash_password
 from app.schemas import (
     AssignTenantUserRequest,
+    PermissionCatalogResponse,
     TenantUserPermissionsResponse,
     TenantUserSummary,
     UpdateTenantUserPermissionsRequest,
@@ -17,12 +28,44 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api/tenant-users", tags=["Tenant Users"])
 
+ADMINISTRATIVE_ROLES = {"tenant_admin", "administrator"}
+ADMIN_GRADE_PERMISSIONS = {
+    "admin_read",
+    "admin_write",
+    "user.view",
+    "user.manage",
+    "membership.assign",
+}
+
 
 def _tenant_id_from_context_or_400(context: RequestContext) -> str:
     tenant_id = context.membership.tenant_id if context.membership else context.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="X-Tenant-ID is required")
     return tenant_id
+
+
+def _actor_role(context: RequestContext, db: Session) -> str | None:
+    if context.membership is None:
+        return None
+    role = db.get(Role, context.membership.role_id)
+    return role.name if role else None
+
+
+def _ensure_owner_cannot_grant_admin_role(*, actor_role_name: str | None, target_role_name: str) -> None:
+    if actor_role_name == "owner" and target_role_name in ADMINISTRATIVE_ROLES:
+        raise HTTPException(status_code=403, detail="Owner role cannot grant administrative tenant roles")
+
+
+def _ensure_owner_cannot_grant_admin_permissions(*, actor_role_name: str | None, overrides: list[UserPermissionOverrideItem]) -> None:
+    if actor_role_name != "owner":
+        return
+    blocked = sorted({item.permission for item in overrides if item.permission in ADMIN_GRADE_PERMISSIONS})
+    if blocked:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Owner role cannot grant administrative permissions: {', '.join(blocked)}",
+        )
 
 
 @router.get(
@@ -106,15 +149,18 @@ def list_tenant_users(
 )
 def assign_tenant_user(
     payload: AssignTenantUserRequest,
+    request: Request,
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context_or_400(context)
-    current_role = db.get(Role, context.membership.role_id) if context.membership else None
-    has_admin_write = "*" in context.permissions or "admin_write" in context.permissions
-    is_owner = current_role is not None and current_role.name == "owner"
-    if not has_admin_write and not is_owner:
+    actor_role_name = _actor_role(context, db)
+    is_platform_super_admin = context.user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN
+    is_tenant_admin = actor_role_name == "tenant_admin"
+    is_owner = actor_role_name == "owner"
+    if not is_platform_super_admin and not is_tenant_admin and not is_owner:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    _ensure_owner_cannot_grant_admin_role(actor_role_name=actor_role_name, target_role_name=payload.role_name)
 
     normalized_email = payload.email.lower().strip()
     user = db.scalar(select(User).where(User.email == normalized_email))
@@ -182,16 +228,21 @@ def assign_tenant_user(
         user.is_active = True
 
     db.flush()
-    db.add(
-        AuditLog(
-            tenant_id=tenant_id,
-            actor_user_id=context.user.id,
-            action=action,
-            resource_type="tenant_membership",
-            resource_id=membership.id,
-            details=f"{user.email} -> {role.name}",
-            created_by=context.user.id,
-        )
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action=action,
+        entity_type="tenant_membership",
+        entity_id=membership.id,
+        tenant_id=tenant_id,
+        request_id=get_request_id(request),
+        details=f"{user.email} -> {role.name}",
+        after={
+            "user_id": user.id,
+            "email": user.email,
+            "role": role.name,
+            "membership_status": membership.status.value,
+        },
     )
     db.commit()
     db.refresh(membership)
@@ -281,6 +332,31 @@ def list_permission_catalog(
 
 
 @router.get(
+    "/permissions/formal-catalog",
+    response_model=PermissionCatalogResponse,
+    operation_id="tenant_users_permissions_formal_catalog",
+    summary="Get formal permission catalog and role matrix",
+    description="Returns granular permission definitions, role matrix, and legacy aliases.",
+)
+def get_formal_permission_catalog(
+    context: RequestContext = Depends(require_permissions("admin_read")),
+):
+    _tenant_id_from_context_or_400(context)
+    return PermissionCatalogResponse(
+        permissions=FORMAL_PERMISSION_CATALOG,
+        role_matrix={
+            role_name: permissions
+            for role_name, permissions in ROLE_PERMISSION_MATRIX.items()
+            if role_name != "platform_super_admin"
+        },
+        legacy_aliases={
+            key: sorted(value)
+            for key, value in LEGACY_PERMISSION_REQUIREMENTS.items()
+        },
+    )
+
+
+@router.get(
     "/{user_id}/permissions",
     response_model=TenantUserPermissionsResponse,
     operation_id="tenant_users_permissions_get",
@@ -316,16 +392,19 @@ def get_tenant_user_permissions(
 def update_tenant_user_permissions(
     user_id: str,
     payload: UpdateTenantUserPermissionsRequest,
+    request: Request,
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context_or_400(context)
 
-    current_role = db.get(Role, context.membership.role_id) if context.membership else None
-    has_admin_write = "*" in context.permissions or "admin_write" in context.permissions
-    is_owner = current_role is not None and current_role.name == "owner"
-    if not has_admin_write and not is_owner:
+    actor_role_name = _actor_role(context, db)
+    is_platform_super_admin = context.user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN
+    is_tenant_admin = actor_role_name == "tenant_admin"
+    is_owner = actor_role_name == "owner"
+    if not is_platform_super_admin and not is_tenant_admin and not is_owner:
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    _ensure_owner_cannot_grant_admin_permissions(actor_role_name=actor_role_name, overrides=payload.overrides)
 
     memberships, user = _get_memberships_and_user_or_404(db, tenant_id, user_id)
 
@@ -345,6 +424,7 @@ def update_tenant_user_permissions(
         )
     ).all()
     existing_by_permission = {item.permission: item for item in existing_overrides}
+    before_overrides = {item.permission: item.enabled for item in existing_overrides}
 
     for override in payload.overrides:
         desired = override.enabled
@@ -371,16 +451,24 @@ def update_tenant_user_permissions(
             )
 
     db.flush()
-    db.add(
-        AuditLog(
-            tenant_id=tenant_id,
-            actor_user_id=context.user.id,
-            action="update_user_permission_overrides",
-            resource_type="tenant_membership",
-            resource_id=user_id,
-            details=f"Updated function toggles for {user.email}",
-            created_by=context.user.id,
+    refreshed_overrides = db.scalars(
+        select(UserPermissionOverride).where(
+            UserPermissionOverride.tenant_id == tenant_id,
+            UserPermissionOverride.user_id == user_id,
         )
+    ).all()
+    after_overrides = {item.permission: item.enabled for item in refreshed_overrides}
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="update_user_permission_overrides",
+        entity_type="tenant_membership",
+        entity_id=user_id,
+        tenant_id=tenant_id,
+        request_id=get_request_id(request),
+        details=f"Updated function toggles for {user.email}",
+        before={"overrides": before_overrides},
+        after={"overrides": after_overrides},
     )
     db.commit()
 

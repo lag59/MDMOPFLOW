@@ -40,7 +40,10 @@ def test_vendor_portal_records_are_created_and_listed_for_vendor_member(client: 
     assert assign_response.status_code == 201, assign_response.text
 
     vendor_headers = {"Authorization": f"Bearer {vendor_token}", "X-Tenant-ID": tenant_id}
-    project_response = client.get("/api/projects", headers=vendor_headers)
+    vendor_project_response = client.get("/api/projects", headers=vendor_headers)
+    assert vendor_project_response.status_code == 403, vendor_project_response.text
+
+    project_response = client.get("/api/projects", headers=owner_headers)
     assert project_response.status_code == 200, project_response.text
     project_id = project_response.json()[0]["id"]
 
@@ -118,3 +121,118 @@ def test_vendor_portal_records_are_created_and_listed_for_vendor_member(client: 
     compliance_documents_list = client.get("/api/vendor/compliance-documents", headers=vendor_headers)
     assert compliance_documents_list.status_code == 200, compliance_documents_list.text
     assert compliance_documents_list.json()[0]["document_name"] == "Insurance Certificate"
+
+
+def test_vendor_portal_rejects_cross_tenant_project_and_purchase_order_references(client: TestClient) -> None:
+    owner_a = client.post(
+        "/api/auth/register",
+        json={"email": "vendor.owner.a@example.com", "password": "Pass12345!", "display_name": "Vendor Owner A"},
+    )
+    assert owner_a.status_code == 201, owner_a.text
+    owner_a_token = owner_a.json()["tokens"]["access_token"]
+
+    owner_b = client.post(
+        "/api/auth/register",
+        json={"email": "vendor.owner.b@example.com", "password": "Pass12345!", "display_name": "Vendor Owner B"},
+    )
+    assert owner_b.status_code == 201, owner_b.text
+    owner_b_token = owner_b.json()["tokens"]["access_token"]
+
+    vendor_member = client.post(
+        "/api/auth/register",
+        json={"email": "vendor.member.b@example.com", "password": "Pass12345!", "display_name": "Vendor Member B"},
+    )
+    assert vendor_member.status_code == 201, vendor_member.text
+    vendor_member_token = vendor_member.json()["tokens"]["access_token"]
+
+    onboarding_a = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {owner_a_token}"},
+        json={
+            "company_name": "Vendor A",
+            "company_types": ["General Contractor"],
+            "language": "en",
+            "modules": ["Projects"],
+            "invite_emails": [],
+            "first_project_name": "Project A",
+        },
+    )
+    assert onboarding_a.status_code == 201, onboarding_a.text
+    tenant_a = onboarding_a.json()["tenant_id"]
+    owner_a_headers = {"Authorization": f"Bearer {owner_a_token}", "X-Tenant-ID": tenant_a}
+
+    onboarding_b = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {owner_b_token}"},
+        json={
+            "company_name": "Vendor B",
+            "company_types": ["General Contractor"],
+            "language": "en",
+            "modules": ["Projects"],
+            "invite_emails": [],
+            "first_project_name": "Project B",
+        },
+    )
+    assert onboarding_b.status_code == 201, onboarding_b.text
+    tenant_b = onboarding_b.json()["tenant_id"]
+    owner_b_headers = {"Authorization": f"Bearer {owner_b_token}", "X-Tenant-ID": tenant_b}
+
+    project_a_response = client.get("/api/projects", headers=owner_a_headers)
+    assert project_a_response.status_code == 200, project_a_response.text
+    project_a_id = project_a_response.json()[0]["id"]
+
+    assign_vendor = client.post(
+        "/api/tenant-users",
+        headers=owner_b_headers,
+        json={"email": "vendor.member.b@example.com", "role_name": "vendor"},
+    )
+    assert assign_vendor.status_code == 201, assign_vendor.text
+
+    vendor_headers = {"Authorization": f"Bearer {vendor_member_token}", "X-Tenant-ID": tenant_b}
+    create_po_cross_tenant = client.post(
+        "/api/vendor/purchase-orders",
+        headers=vendor_headers,
+        json={
+            "project_id": project_a_id,
+            "po_number": "PO-XTEN-1",
+            "vendor_name": "Cross Tenant Vendor",
+            "description": "Attempt cross-tenant project reference",
+            "status": "open",
+            "total_amount": "100.00",
+        },
+    )
+    assert create_po_cross_tenant.status_code == 404, create_po_cross_tenant.text
+
+    project_b_response = client.get("/api/projects", headers=owner_b_headers)
+    assert project_b_response.status_code == 200, project_b_response.text
+    project_b_id = project_b_response.json()[0]["id"]
+
+    create_po_b = client.post(
+        "/api/vendor/purchase-orders",
+        headers=vendor_headers,
+        json={
+            "project_id": project_b_id,
+            "po_number": "PO-B-1",
+            "vendor_name": "Tenant B Vendor",
+            "description": "Tenant-local PO",
+            "status": "open",
+            "total_amount": "100.00",
+        },
+    )
+    assert create_po_b.status_code == 201, create_po_b.text
+
+    po_b_id = create_po_b.json()["id"]
+    create_invoice_cross_tenant_project = client.post(
+        "/api/vendor/invoice-submissions",
+        headers=vendor_headers,
+        json={
+            "project_id": project_a_id,
+            "purchase_order_id": po_b_id,
+            "invoice_number": "INV-XTEN-1",
+            "vendor_name": "Cross Tenant Vendor",
+            "amount": "10.00",
+            "status": "submitted",
+            "notes": "Cross tenant project tampering",
+        },
+    )
+    assert create_invoice_cross_tenant_project.status_code == 404, create_invoice_cross_tenant_project.text

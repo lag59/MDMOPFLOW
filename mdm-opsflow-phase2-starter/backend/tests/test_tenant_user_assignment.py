@@ -272,3 +272,44 @@ def test_super_admin_can_manage_tenant_users_without_membership(client: TestClie
     )
     assert update_permissions.status_code == 200
     assert "billing_read" in update_permissions.json()["effective_permissions"]
+
+
+def test_owner_cannot_assign_tenant_admin_role(client: TestClient):
+    owner = register_user(client, "owner-no-admin-grant@acme.com", "Pass12345!", "Owner No Admin Grant")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Owner Policy", "Owner Policy Project")
+    tenant_id = onboarding["tenant_id"]
+
+    member = register_user(client, "member-no-admin-grant@acme.com", "Pass12345!", "Member No Admin Grant")
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"email": member["email"], "role_name": "tenant_admin"},
+    )
+    assert assign.status_code == 403
+    assert "cannot grant administrative tenant roles" in assign.json()["detail"]
+
+
+def test_owner_cannot_enable_admin_grade_permissions(client: TestClient):
+    owner = register_user(client, "owner-no-admin-perm@acme.com", "Pass12345!", "Owner No Admin Perm")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Owner Perms", "Owner Perms Project")
+    tenant_id = onboarding["tenant_id"]
+
+    member = register_user(client, "member-no-admin-perm@acme.com", "Pass12345!", "Member No Admin Perm")
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"email": member["email"], "role_name": "project_manager"},
+    )
+    assert assign.status_code == 201
+    user_id = assign.json()["user_id"]
+
+    update = client.put(
+        f"/api/tenant-users/{user_id}/permissions",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"overrides": [{"permission": "admin_write", "enabled": True}]},
+    )
+    assert update.status_code == 403
+    assert "cannot grant administrative permissions" in update.json()["detail"]

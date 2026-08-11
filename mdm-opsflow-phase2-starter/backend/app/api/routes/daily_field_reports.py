@@ -13,7 +13,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.dependencies import RequestContext, require_permissions
+from app.dependencies import RequestContext, require_permissions, resolve_tenant_scope
 from app.models import AuditLog, DailyFieldReport, Project, Ticket
 from app.schemas import (
     DailyFieldReportAssistRequest,
@@ -27,11 +27,7 @@ router = APIRouter(prefix="/api/daily-field-reports", tags=["Daily Field Reports
 
 
 def _tenant_id_from_context(context: RequestContext) -> str:
-    if context.tenant_id:
-        return context.tenant_id
-    if context.membership:
-        return context.membership.tenant_id
-    raise HTTPException(status_code=400, detail="X-Tenant-ID is required for platform admins")
+    return resolve_tenant_scope(context)
 
 
 def _ensure_project_access(db: Session, tenant_id: str, project_id: str) -> Project:
