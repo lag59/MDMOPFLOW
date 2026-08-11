@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import { getAccessToken, getTenantId } from "@/lib/auth";
 import { getApiBaseUrl } from "@/lib/i18n";
 
-type Project = { id: string; project_name: string; project_number: string; contract_amount: string | null; status: string };
+type Project = { id: string; project_name: string; project_number: string; contract_amount: string | null; budget: string | null; status: string };
 type Ticket  = { id: string; ticket_number: string; project_id: string | null; material: string; quantity: string; unit: string; unit_price: string | null; total_price: string | null; status: string; };
 type Invoice = { invoice_number: string; project_id: string; project_name: string; total_amount: string; line_items: { ticket_number: string; material: string; quantity: string; unit: string; unit_price: string; line_total: string }[]; };
 type GenerateForm = { project_id: string; rate_per_ton: string; rate_per_load: string; };
