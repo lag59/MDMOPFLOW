@@ -127,4 +127,12 @@ jobs:
 
       - name: Run production deploy canary
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: python backend/scripts/verify_production_deploy_canary.py
+        run: python backend/scripts/run_production_deploy_canary_with_audit.py
+
+      - name: Upload production deploy canary audit log
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deploy-canary-log
+          path: backend/artifacts/production-deploy-canary.jsonl
+          if-no-files-found: warn

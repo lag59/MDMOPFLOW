@@ -161,7 +161,15 @@ Lightweight production deploy canary (checks `/api/daily-field-reports/assist` a
 & .\.venv311\Scripts\python.exe .\backend\scripts\verify_production_deploy_canary.py
 ```
 
-CI runs this automatically on pushes to `main` after backend tests.
+Audited wrapper (appends timestamped JSONL records with exit code):
+
+```powershell
+& .\.venv311\Scripts\python.exe .\backend\scripts\run_production_deploy_canary_with_audit.py
+```
+
+Log file: `backend/artifacts/production-deploy-canary.jsonl`
+
+CI runs the audited wrapper automatically on pushes to `main` after backend tests and uploads artifact `production-deploy-canary-log`.
 
 ## PR Checklist
 

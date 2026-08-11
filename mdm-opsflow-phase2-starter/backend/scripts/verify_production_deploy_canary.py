@@ -41,9 +41,9 @@ def _call(
         return exc.code, body_payload
 
 
-def main() -> int:
-    base_url = (os.getenv("OPSFLOW_CANARY_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
-    password = os.getenv("OPSFLOW_CANARY_PASSWORD") or DEFAULT_PASSWORD
+def run_canary(base_url: str, password: str) -> tuple[int, dict[str, Any]]:
+    base_url = base_url.rstrip("/")
+    password = password or DEFAULT_PASSWORD
 
     suffix = uuid.uuid4().hex[:10]
     email = f"canary.deploy.{suffix}@example.com"
@@ -62,8 +62,7 @@ def main() -> int:
     results["register"] = status
     if status != 201:
         results["register_payload"] = payload
-        print(json.dumps(results, indent=2))
-        return 1
+        return 1, results
 
     token = payload["tokens"]["access_token"]
     auth_headers = {"Authorization": f"Bearer {token}"}
@@ -85,8 +84,7 @@ def main() -> int:
     results["onboarding"] = status
     if status != 201:
         results["onboarding_payload"] = payload
-        print(json.dumps(results, indent=2))
-        return 1
+        return 1, results
 
     tenant_id = payload["tenant_id"]
     tenant_headers = {
@@ -111,8 +109,7 @@ def main() -> int:
     results["project_create"] = status
     if status != 201:
         results["project_payload"] = payload
-        print(json.dumps(results, indent=2))
-        return 1
+        return 1, results
 
     project_id = payload["id"]
 
@@ -134,19 +131,27 @@ def main() -> int:
     results["assist"] = status
     if status != 200:
         results["assist_payload"] = payload
-        print(json.dumps(results, indent=2))
-        return 1
+        return 1, results
 
     status, payload = _call(base_url, "GET", "/api/tickets", headers=tenant_headers)
     results["tickets_list"] = status
     if status != 200:
         results["tickets_payload"] = payload
-        print(json.dumps(results, indent=2))
-        return 1
+        return 1, results
+
+    return 0, results
+
+
+def main() -> int:
+    base_url = os.getenv("OPSFLOW_CANARY_BASE_URL") or DEFAULT_BASE_URL
+    password = os.getenv("OPSFLOW_CANARY_PASSWORD") or DEFAULT_PASSWORD
+
+    exit_code, results = run_canary(base_url=base_url, password=password)
 
     print(json.dumps(results, indent=2))
-    print("Deploy canary passed: /api/daily-field-reports/assist and /api/tickets are healthy.")
-    return 0
+    if exit_code == 0:
+        print("Deploy canary passed: /api/daily-field-reports/assist and /api/tickets are healthy.")
+    return exit_code
 
 
 if __name__ == "__main__":
