@@ -14,11 +14,12 @@ const NAV_ITEMS = [
     { href: "/modules",         label: "Modules",           icon: "⬡" },
   ]},
   { group: "Operations", items: [
-    { href: "/intake",          label: "Intake Hub",        icon: "📥" },
-    { href: "/extraction-queue",label: "Extraction Queue",  icon: "🔍" },
-    { href: "/tickets",         label: "Tickets",           icon: "🎫" },
-    { href: "/projects",        label: "Projects",          icon: "📁" },
-    { href: "/estimator",       label: "Estimator",         icon: "📊" },
+    { href: "/intake",           label: "Intake Hub",        icon: "📥" },
+    { href: "/extraction-queue", label: "Extraction Queue",  icon: "🔍" },
+    { href: "/tickets",          label: "Tickets",           icon: "🎫" },
+    { href: "/projects",         label: "Projects",          icon: "📁" },
+    { href: "/project-manager",  label: "Project Manager",   icon: "🛠" },
+    { href: "/estimator",        label: "Estimator",         icon: "📊" },
   ]},
   { group: "Setup", items: [
     { href: "/onboarding",      label: "Onboarding",        icon: "🚀" },

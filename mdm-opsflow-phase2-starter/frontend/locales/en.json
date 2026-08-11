@@ -25,6 +25,7 @@
     "company": "Company Settings",
     "users": "User Settings",
     "estimator": "Estimator",
+    "projectManager": "Project Manager",
     "platformAdmin": "Platform Admin"
   },
   "auth": {
