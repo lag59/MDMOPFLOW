@@ -71,6 +71,7 @@ ROLE_PERMISSIONS = {
         "intake_write",
         "intake_review",
         "estimate_read",
+        "estimate_write",
         "dispatch_read",
         "dispatch_write",
         "safety_read",
