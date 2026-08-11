@@ -1,12 +1,14 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import hashlib
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
 from app.models import (
@@ -1085,6 +1087,103 @@ def run_estimate_ai_review(
     )
     db.commit()
     return EstimateAiReviewResponse(estimate_id=estimate.id, warnings=warnings, recommendations=recommendations)
+
+
+@estimates_router.post(
+    "/api/estimates/{estimate_id}/ai-assist",
+    operation_id="estimate_ai_assist",
+    summary="AI-assisted field pre-fill for estimate",
+    description=(
+        "Returns AI-suggested values for estimate fields based on project name, type, and scope. "
+        "All suggestions are labeled as AI-generated. The user must accept and may override each field independently."
+    ),
+)
+def ai_assist_estimate(
+    estimate_id: str,
+    context: RequestContext = Depends(require_permissions("estimate_read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    tenant_id = _require_tenant(context)
+    estimate = _require_estimate(db, tenant_id, estimate_id)
+
+    prompt = (
+        f"You are a construction estimating assistant. "
+        f"Given this estimate context, suggest realistic values for the fields listed below. "
+        f"Respond ONLY with a valid JSON object — no prose, no markdown fences.\n\n"
+        f"Estimate name: {estimate.estimate_name}\n"
+        f"Project name: {estimate.project_name or 'unknown'}\n"
+        f"Project type: {estimate.project_type or 'unknown'}\n"
+        f"Customer: {estimate.customer_name or 'unknown'}\n"
+        f"Contract type: {estimate.contract_type or 'unknown'}\n"
+        f"Notes: {estimate.notes or ''}\n\n"
+        f"Fields to suggest (return only these keys):\n"
+        f"  target_margin_percent   (number as string, e.g. '14')\n"
+        f"  default_overhead_percent (number as string, e.g. '8')\n"
+        f"  default_contingency_percent (number as string, e.g. '5')\n"
+        f"  estimate_type           (one of: Conceptual, Preliminary, Budgetary, Detailed, Bid, Change-order estimate)\n"
+        f"  contract_type           (one of: Lump sum, Unit price, Cost plus, Time and materials, GMP, Design-build)\n"
+        f"  suggested_line_items    (array of up to 5 objects, each with: description, category, unit, quantity, unit_cost)\n"
+        f"  rationale               (one short sentence explaining the suggestions)"
+    )
+
+    suggestions: dict = {}
+    ai_available = bool(settings.OPENAI_API_KEY)
+
+    if ai_available:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+            response = client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=600,
+                temperature=0.3,
+            )
+            raw = response.choices[0].message.content or "{}"
+            suggestions = json.loads(raw)
+        except Exception:
+            ai_available = False
+
+    if not ai_available:
+        # Deterministic fallback based on project_type so it's still useful without AI
+        pt = (estimate.project_type or "").lower()
+        margin = "16" if "civil" in pt else "14" if "site" in pt or "grading" in pt else "15"
+        contingency = "7" if "civil" in pt else "5"
+        suggestions = {
+            "target_margin_percent": margin,
+            "default_overhead_percent": "8",
+            "default_contingency_percent": contingency,
+            "estimate_type": "Bid" if "bid" in (estimate.estimate_type or "").lower() else "Detailed",
+            "contract_type": estimate.contract_type or "Lump sum",
+            "suggested_line_items": [
+                {"description": "Mobilization & site setup", "category": "General", "unit": "LS", "quantity": "1", "unit_cost": "25000"},
+                {"description": "Clearing & grubbing", "category": "Earthwork", "unit": "AC", "quantity": "10", "unit_cost": "3500"},
+                {"description": "Unclassified excavation", "category": "Earthwork", "unit": "CY", "quantity": "5000", "unit_cost": "12"},
+                {"description": "Subgrade preparation", "category": "Earthwork", "unit": "SY", "quantity": "8000", "unit_cost": "4"},
+                {"description": "Erosion control & SWPPP", "category": "Environmental", "unit": "LS", "quantity": "1", "unit_cost": "8000"},
+            ],
+            "rationale": "Fallback suggestions based on project type. AI key not configured.",
+        }
+
+    _log_estimate_audit(
+        db, tenant_id, estimate.id, context.user.id,
+        "ai_assist", estimate.status, estimate.status,
+        "AI assist suggestions generated",
+    )
+    db.commit()
+
+    return {
+        "estimate_id": estimate.id,
+        "ai_generated": ai_available,
+        "suggestions": suggestions,
+        "disclaimer": (
+            "These values were suggested by AI based on the estimate context. "
+            "They are not verified data. Review and edit each field before saving."
+        ) if ai_available else (
+            "These are template defaults based on project type. They were NOT generated by AI. "
+            "Edit each field to match your actual scope before saving."
+        ),
+    }
 
 
 @estimates_router.get(
