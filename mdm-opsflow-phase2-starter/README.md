@@ -54,6 +54,16 @@ Required environment variables:
 - `ALLOWED_ORIGINS`
 - `OPENAI_API_KEY` (optional, required for OCR/AI enrichment)
 
+`DATABASE_URL` must be a valid SQLAlchemy URL. Use this shape in Railway:
+
+- `postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME`
+
+Notes:
+
+- Do not wrap the value in quotes.
+- Do not paste templating placeholders as literal text.
+- If your provider gives `postgres://...` or `postgresql://...`, the app now normalizes it to `postgresql+psycopg://...` automatically.
+
 Expected runtime:
 
 - Binds to `${PORT}` via `uvicorn` in `backend/start.sh`

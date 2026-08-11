@@ -2,16 +2,16 @@ services:
   db:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine3.22}
     environment:
-      POSTGRES_DB: mdm_opsflow
-      POSTGRES_USER: mdm
-      POSTGRES_PASSWORD: mdm_dev_password
+      POSTGRES_DB: opsflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: OpsFlow2026Secure
     ports: ["5432:5432"]
   backend:
     build: ./backend
     environment:
       ENVIRONMENT: development
       SECRET_KEY: change-me
-      DATABASE_URL: postgresql+psycopg://mdm:mdm_dev_password@db:5432/mdm_opsflow
+      DATABASE_URL: postgresql+psycopg://postgres:OpsFlow2026Secure@db:5432/opsflow
       ALLOWED_ORIGINS: http://localhost:3000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PORT: 8080

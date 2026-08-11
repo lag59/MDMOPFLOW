@@ -1,10 +1,33 @@
+from html import unescape
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+
+
+def _normalize_database_url(value: str) -> str:
+    normalized = unescape(value.strip())
+
+    # Common copy/paste issue from dashboards or .env files.
+    if (normalized.startswith('"') and normalized.endswith('"')) or (
+        normalized.startswith("'") and normalized.endswith("'")
+    ):
+        normalized = normalized[1:-1].strip()
+
+    # Railway and some providers expose postgres:// by default.
+    if normalized.startswith("postgres://"):
+        normalized = "postgresql+psycopg://" + normalized[len("postgres://") :]
+    elif normalized.startswith("postgresql://"):
+        normalized = "postgresql+psycopg://" + normalized[len("postgresql://") :]
+
+    return normalized
 
 
 class Settings(BaseSettings):
     ENVIRONMENT:str="development"
     SECRET_KEY:str="change-me"
-    DATABASE_URL:str="sqlite:///./mdm_opsflow.db"
+    DATABASE_URL:str="postgresql+psycopg://postgres:OpsFlow2026Secure@localhost:5432/opsflow"
     RATE_LIMIT_REQUESTS_PER_WINDOW:int=300
     RATE_LIMIT_WINDOW_SECONDS:int=60
     ALLOWED_ORIGINS:str=(
@@ -27,6 +50,27 @@ class Settings(BaseSettings):
     FOUNDER_DISPLAY_NAME:str="lag59"
     FOUNDER_TITLE:str="Platform Super Admin"
     model_config=SettingsConfigDict(env_file=".env")
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def validate_database_url(cls, value: object) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                "DATABASE_URL must be a non-empty SQLAlchemy URL. "
+                "Example: postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME"
+            )
+
+        normalized = _normalize_database_url(value)
+
+        try:
+            make_url(normalized)
+        except ArgumentError as exc:
+            raise ValueError(
+                "DATABASE_URL is invalid. Expected SQLAlchemy format like "
+                "postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME"
+            ) from exc
+
+        return normalized
 
 
 settings=Settings()
