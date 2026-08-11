@@ -53,6 +53,33 @@ type AiAssistResult = {
   };
 };
 
+type EstimateEditForm = {
+  estimate_name: string;
+  estimate_number: string;
+  customer_name: string;
+  project_name: string;
+  project_address: string;
+  project_type: string;
+  bid_due_date: string;
+  estimator_name: string;
+  project_manager_name: string;
+  contract_type: string;
+  estimate_type: string;
+  target_margin_percent: string;
+  default_overhead_percent: string;
+  default_contingency_percent: string;
+  notes: string;
+};
+
+const TERMINAL_EDIT_STATUSES = new Set(["Converted to Project", "Archived", "Not Awarded"]);
+
+function toInputDateValue(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return value.slice(0, 10);
+}
+
 // ── component ────────────────────────────────────────────────────────────────
 
 export default function EstimatorPage() {
@@ -62,6 +89,9 @@ export default function EstimatorPage() {
   const [showCreate, setShowCreate]   = useState(false);
   const [saving, setSaving]           = useState(false);
   const [msg, setMsg]                 = useState<{ text: string; ok: boolean } | null>(null);
+  const [editingEstimate, setEditingEstimate] = useState(false);
+  const [editSaving, setEditSaving]   = useState(false);
+  const [editForm, setEditForm]       = useState<EstimateEditForm | null>(null);
 
   // AI assist state
   const [aiRunning, setAiRunning]     = useState(false);
@@ -242,6 +272,8 @@ export default function EstimatorPage() {
       const updated: Estimate = await r.json();
       setEstimates(prev => prev.map(e => e.id === updated.id ? updated : e));
       setSelected(updated);
+      setEditingEstimate(false);
+      setEditForm(null);
       setMsg({ text: `Status updated to "${next}".`, ok: true });
     } else {
       const d = await r.json().catch(() => null);
@@ -258,6 +290,8 @@ export default function EstimatorPage() {
       const updated: Estimate = await r.json();
       setEstimates(prev => prev.map(e => e.id === updated.id ? updated : e));
       setSelected(updated);
+      setEditingEstimate(false);
+      setEditForm(null);
       setMsg({ text: "Marked as Not Awarded.", ok: true });
     } else {
       setMsg({ text: "Failed to update status.", ok: false });
@@ -281,6 +315,79 @@ export default function EstimatorPage() {
       AI suggested — verify before saving
     </span>
   );
+
+  function canEditEstimate(estimate: Estimate): boolean {
+    return !estimate.is_locked && !TERMINAL_EDIT_STATUSES.has(estimate.status);
+  }
+
+  function beginEditEstimate(estimate: Estimate): void {
+    setEditForm({
+      estimate_name: estimate.estimate_name || "",
+      estimate_number: estimate.estimate_number || "",
+      customer_name: estimate.customer_name || "",
+      project_name: estimate.project_name || "",
+      project_address: estimate.project_address || "",
+      project_type: estimate.project_type || "",
+      bid_due_date: toInputDateValue(estimate.bid_due_date),
+      estimator_name: estimate.estimator_name || "",
+      project_manager_name: estimate.project_manager_name || "",
+      contract_type: estimate.contract_type || "",
+      estimate_type: estimate.estimate_type || "",
+      target_margin_percent: estimate.target_margin_percent || "",
+      default_overhead_percent: estimate.default_overhead_percent || "",
+      default_contingency_percent: estimate.default_contingency_percent || "",
+      notes: estimate.notes || "",
+    });
+    setEditingEstimate(true);
+  }
+
+  async function saveEstimateEdits(): Promise<void> {
+    if (!selected || !editForm) {
+      return;
+    }
+    if (!editForm.estimate_name.trim() || !editForm.estimate_number.trim()) {
+      setMsg({ text: "Estimate name and number are required.", ok: false });
+      return;
+    }
+
+    setEditSaving(true);
+    setMsg(null);
+    const r = await fetch(`${api}/api/estimates/${selected.id}`, {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({
+        estimate_name: editForm.estimate_name.trim(),
+        estimate_number: editForm.estimate_number.trim(),
+        customer_name: editForm.customer_name.trim(),
+        project_name: editForm.project_name.trim(),
+        project_address: editForm.project_address.trim(),
+        project_type: editForm.project_type.trim(),
+        bid_due_date: editForm.bid_due_date ? `${editForm.bid_due_date}T00:00:00Z` : null,
+        estimator_name: editForm.estimator_name.trim(),
+        project_manager_name: editForm.project_manager_name.trim(),
+        contract_type: editForm.contract_type.trim(),
+        estimate_type: editForm.estimate_type.trim(),
+        target_margin_percent: editForm.target_margin_percent || "0",
+        default_overhead_percent: editForm.default_overhead_percent || "0",
+        default_contingency_percent: editForm.default_contingency_percent || "0",
+        notes: editForm.notes,
+      }),
+    });
+    setEditSaving(false);
+
+    if (!r.ok) {
+      const d = await r.json().catch(() => null);
+      setMsg({ text: d?.detail || "Failed to save estimate edits.", ok: false });
+      return;
+    }
+
+    const updated: Estimate = await r.json();
+    setEstimates(prev => prev.map(e => e.id === updated.id ? updated : e));
+    setSelected(updated);
+    setEditingEstimate(false);
+    setEditForm(null);
+    setMsg({ text: "Estimate updated.", ok: true });
+  }
 
   return (
     <AppShell titleKey="nav.estimator">
@@ -342,7 +449,15 @@ export default function EstimatorPage() {
             {estimates.length === 0 && <p className="muted" style={{ fontSize: 13 }}>No estimates yet.</p>}
             {estimates.map(est => (
               <div key={est.id} className="list-item"
-                onClick={() => { setSelected(est); setShowCreate(false); setMsg(null); setAiResult(null); setPendingAiItems([]); }}
+                onClick={() => {
+                  setSelected(est);
+                  setShowCreate(false);
+                  setMsg(null);
+                  setAiResult(null);
+                  setPendingAiItems([]);
+                  setEditingEstimate(false);
+                  setEditForm(null);
+                }}
                 style={{ cursor: "pointer",
                   background: selected?.id === est.id ? "rgba(249,115,22,0.06)" : undefined,
                   borderLeft: selected?.id === est.id ? "3px solid #f97316" : "3px solid transparent",
@@ -468,6 +583,11 @@ export default function EstimatorPage() {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   {pill(selected.status)}
+                  {!editingEstimate && canEditEstimate(selected) && (
+                    <button className="btn-ghost" onClick={() => beginEditEstimate(selected)} style={{ fontSize: 12, padding: "5px 12px" }}>
+                      Edit
+                    </button>
+                  )}
                   {STATUS_FLOW[selected.status] && (
                     <button onClick={() => advanceStatus(selected)} style={{ fontSize: 12, padding: "5px 12px" }}>
                       Advance → {STATUS_FLOW[selected.status]}
@@ -480,6 +600,78 @@ export default function EstimatorPage() {
                   )}
                 </div>
               </div>
+
+              {editingEstimate && editForm && (
+                <div style={{ marginTop: 16, border: "1px solid #e2e8f0", borderRadius: 8, padding: 12, background: "#f8fafc" }}>
+                  <h4 style={{ marginTop: 0, marginBottom: 10 }}>Edit Estimate</h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Estimate name
+                      <input value={editForm.estimate_name} onChange={(e) => setEditForm({ ...editForm, estimate_name: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Estimate number
+                      <input value={editForm.estimate_number} onChange={(e) => setEditForm({ ...editForm, estimate_number: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Customer
+                      <input value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Project
+                      <input value={editForm.project_name} onChange={(e) => setEditForm({ ...editForm, project_name: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Project address
+                      <input value={editForm.project_address} onChange={(e) => setEditForm({ ...editForm, project_address: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Bid due date
+                      <input type="date" value={editForm.bid_due_date} onChange={(e) => setEditForm({ ...editForm, bid_due_date: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Contract type
+                      <input value={editForm.contract_type} onChange={(e) => setEditForm({ ...editForm, contract_type: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Estimate type
+                      <input value={editForm.estimate_type} onChange={(e) => setEditForm({ ...editForm, estimate_type: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Target margin %
+                      <input value={editForm.target_margin_percent} onChange={(e) => setEditForm({ ...editForm, target_margin_percent: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Overhead %
+                      <input value={editForm.default_overhead_percent} onChange={(e) => setEditForm({ ...editForm, default_overhead_percent: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Contingency %
+                      <input value={editForm.default_contingency_percent} onChange={(e) => setEditForm({ ...editForm, default_contingency_percent: e.target.value })} />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                      Project type
+                      <input value={editForm.project_type} onChange={(e) => setEditForm({ ...editForm, project_type: e.target.value })} />
+                    </label>
+                  </div>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, marginTop: 10 }}>
+                    Notes
+                    <textarea rows={3} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                  </label>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <button type="button" onClick={() => void saveEstimateEdits()} disabled={editSaving}>
+                      {editSaving ? "Saving…" : "Save Edits"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => { setEditingEstimate(false); setEditForm(null); }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Status progress bar */}
               <div style={{ marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap" }}>

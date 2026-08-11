@@ -881,6 +881,7 @@ class EstimateCreate(EstimateBase):
 class EstimateUpdate(BaseModel):
     project_id: str | None = None
     estimate_name: str | None = None
+    estimate_number: str | None = None
     customer_name: str | None = None
     project_name: str | None = None
     project_address: str | None = None
@@ -899,6 +900,7 @@ class EstimateUpdate(BaseModel):
     default_overhead_percent: Decimal | None = None
     default_contingency_percent: Decimal | None = None
     notes: str | None = None
+    status: str | None = None
 
 
 class EstimateResponse(EstimateBase):

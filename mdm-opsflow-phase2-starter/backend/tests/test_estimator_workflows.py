@@ -159,6 +159,15 @@ def test_estimator_domain_workflows_and_permissions(client: TestClient) -> None:
     assert estimate_response.status_code == 201, estimate_response.text
     estimate_id = estimate_response.json()["id"]
 
+    patch_pre_submit_response = client.patch(
+        f"/api/estimates/{estimate_id}",
+        headers=estimator_headers,
+        json={"status": "Pending Review", "notes": "Updated before submit"},
+    )
+    assert patch_pre_submit_response.status_code == 200, patch_pre_submit_response.text
+    assert patch_pre_submit_response.json()["status"] == "Pending Review"
+    assert patch_pre_submit_response.json()["notes"] == "Updated before submit"
+
     estimate_item_response = client.post(
         f"/api/estimates/{estimate_id}/items",
         headers=estimator_headers,
