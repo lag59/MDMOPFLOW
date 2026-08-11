@@ -17,6 +17,7 @@
   "nav": {
     "dashboard": "Panel principal",
     "modules": "Modulos",
+    "projectManager": "Gerente de proyecto",
     "intake": "Centro de ingreso",
     "extractionQueue": "Cola de extraccion",
     "tickets": "Tickets",
