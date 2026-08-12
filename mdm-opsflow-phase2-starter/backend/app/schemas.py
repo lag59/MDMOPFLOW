@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -1108,6 +1109,7 @@ class EstimateCreate(EstimateBase):
 class EstimateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    status: str | None = None
     project_id: str | None = None
     estimate_name: str | None = None
     estimate_number: str | None = None
@@ -1949,6 +1951,45 @@ class IntakePlacementSuggestionRequest(BaseModel):
     item_ids: list[str] = Field(min_length=1, max_length=50)
 
 
+class IntakeDocumentIntelligenceResponse(BaseModel):
+    primary_document_type: str
+    subtype: str
+    project_name: str = ""
+    project_number: str = ""
+    vendor_subcontractor: str = ""
+    document_date: str = ""
+    document_reference_number: str = ""
+    recommended_module: str
+    confidence: float
+    classification_family: str = ""
+    revision_chain_detected: bool = False
+    ticket_block_reason: str = ""
+    estimator_intent_score: float = 0.0
+    precedence_basis: str = ""
+    supporting_evidence: list[str] = Field(default_factory=list)
+    conflicting_evidence: list[str] = Field(default_factory=list)
+
+
+class IntakeProjectMatchAlternativeResponse(BaseModel):
+    project_id: str
+    project_name: str
+    project_number: str
+    confidence: float
+    evidence: list[str] = Field(default_factory=list)
+
+
+class IntakeProjectMatchResponse(BaseModel):
+    matched_project_id: str | None = None
+    match_confidence: float = 0.0
+    matching_evidence: list[str] = Field(default_factory=list)
+    alternative_matches: list[IntakeProjectMatchAlternativeResponse] = Field(default_factory=list)
+    auto_associate: bool = False
+    ambiguity_flag: bool = False
+    confidence_gap_to_next: float = 0.0
+    match_strategy: str = ""
+    human_confirmation_required: bool = False
+
+
 class IntakePlacementSuggestionResponse(BaseModel):
     item_id: str
     destination_key: str
@@ -1957,6 +1998,8 @@ class IntakePlacementSuggestionResponse(BaseModel):
     confidence: float
     reason: str
     signal_source: str
+    document_intelligence: IntakeDocumentIntelligenceResponse | None = None
+    project_match: IntakeProjectMatchResponse | None = None
 
 
 class IntakePlacementSuggestionListResponse(BaseModel):
@@ -2544,6 +2587,15 @@ class DocumentExtractionResponse(BaseModel):
     material_confidence: float
     tons: Decimal | None = None
     invoice_total: Decimal | None = None
+    canonical_profile: str | None = None
+    canonical_revision: int | None = None
+    canonical_payload: dict[str, Any] | None = None
+    canonical_discrepancies: list[dict[str, Any]] | None = None
+    canonical_source_facts: list[dict[str, str | float | int | None]] | None = None
+    precedence_decisions: list[dict[str, str | float | int | None]] | None = None
+    discrepancy_summary: dict[str, int | float | str | None] | None = None
+    estimate_mapping_preview: dict[str, Any] | None = None
+    geotech_profile: list[dict[str, str | float | int | None]] | None = None
     review_notes: str
     created_at: datetime
     created_by: str
