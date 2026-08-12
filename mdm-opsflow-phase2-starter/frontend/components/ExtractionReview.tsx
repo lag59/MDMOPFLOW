@@ -39,6 +39,115 @@ interface Extraction {
   created_at: string;
 }
 
+interface PlacementSuggestionItem {
+  item_id: string;
+  destination_key: string;
+  destination_label: string;
+  destination_href: string;
+  confidence: number;
+  reason: string;
+  signal_source: string;
+}
+
+interface ConflictCandidate {
+  item_id: string;
+  field_name: string;
+  value: number;
+  unit: string;
+  document_type: string;
+  document_subtype: string;
+  source_text: string;
+  page: number | null;
+  confidence: number;
+  created_at: string;
+}
+
+interface ConflictSuggestion {
+  field_name: string;
+  candidates: ConflictCandidate[];
+  recommended: ConflictCandidate;
+  reason: string;
+}
+
+interface FieldConfig {
+  key: string;
+  label: string;
+  confidence: number;
+  value: (item: Extraction) => string | null;
+}
+
+const DEFAULT_FIELD_CONFIDENCE = 0.75;
+
+const FIELD_CONFIGS: Record<string, FieldConfig> = {
+  company_name: {
+    key: 'company_name',
+    label: 'Company',
+    confidence: 0.85,
+    value: (item) => item.company_name || null,
+  },
+  ticket_number: {
+    key: 'ticket_number',
+    label: 'Ticket Number',
+    confidence: 0.92,
+    value: (item) => item.ticket_number || null,
+  },
+  destination: {
+    key: 'destination',
+    label: 'Destination',
+    confidence: DEFAULT_FIELD_CONFIDENCE,
+    value: (item) => item.destination || null,
+  },
+  material: {
+    key: 'material',
+    label: 'Material',
+    confidence: 0.65,
+    value: (item) => item.material || null,
+  },
+  tons: {
+    key: 'tons',
+    label: 'Tons',
+    confidence: 0.88,
+    value: (item) => (item.tons !== null ? String(item.tons) : null),
+  },
+  invoice_total: {
+    key: 'invoice_total',
+    label: 'Invoice Total',
+    confidence: 0.83,
+    value: (item) => (item.invoice_total !== null ? String(item.invoice_total) : null),
+  },
+};
+
+function resolveIntentSchema(documentType: string, destinationKey: string | null): { label: string; fieldKeys: string[] } {
+  const normalizedType = (documentType || '').toLowerCase();
+  const normalizedDestination = (destinationKey || '').toLowerCase();
+
+  if (normalizedDestination === 'tickets' || normalizedType.includes('ticket')) {
+    return {
+      label: 'Ticket extraction schema',
+      fieldKeys: ['company_name', 'ticket_number', 'material', 'tons', 'destination'],
+    };
+  }
+
+  if (normalizedDestination === 'accounting' || normalizedType.includes('invoice')) {
+    return {
+      label: 'Accounting extraction schema',
+      fieldKeys: ['company_name', 'invoice_total', 'destination', 'ticket_number'],
+    };
+  }
+
+  if (normalizedDestination === 'estimator' || ['bid', 'proposal', 'quote', 'estimate', 'takeoff', 'addendum'].some((token) => normalizedType.includes(token))) {
+    return {
+      label: 'Estimator extraction schema',
+      fieldKeys: ['company_name', 'material', 'tons', 'destination', 'ticket_number'],
+    };
+  }
+
+  return {
+    label: 'General review schema',
+    fieldKeys: ['company_name', 'destination', 'material', 'ticket_number', 'tons'],
+  };
+}
+
 interface ExtractionReviewProps {
   extractionId: string;
   onReviewSubmitted?: () => void;
@@ -306,6 +415,52 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionResult, setActionResult] = useState<{ status: string; message: string } | null>(null);
+  const [placementSuggestion, setPlacementSuggestion] = useState<PlacementSuggestionItem | null>(null);
+  const [conflictSuggestions, setConflictSuggestions] = useState<ConflictSuggestion[]>([]);
+  const [intentLoading, setIntentLoading] = useState(false);
+
+  const loadIntentContext = async (intakeItemId: string) => {
+    try {
+      setIntentLoading(true);
+      const token = getAccessToken();
+      const tenantId = getTenantId();
+      const baseUrl = getApiBaseUrl();
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'X-Tenant-ID': tenantId,
+        'Content-Type': 'application/json',
+      };
+
+      const [placementResponse, conflictsResponse] = await Promise.all([
+        fetch(`${baseUrl}/api/intake/placement/suggest`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ item_ids: [intakeItemId] }),
+        }),
+        fetch(`${baseUrl}/api/intake/conflicts/suggest`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ item_ids: [intakeItemId] }),
+        }),
+      ]);
+
+      if (placementResponse.ok) {
+        const placementPayload = await placementResponse.json() as { items?: PlacementSuggestionItem[] };
+        setPlacementSuggestion(placementPayload.items?.[0] ?? null);
+      }
+
+      if (conflictsResponse.ok) {
+        const conflictPayload = await conflictsResponse.json() as { items?: ConflictSuggestion[] };
+        setConflictSuggestions(Array.isArray(conflictPayload.items) ? conflictPayload.items : []);
+      }
+    } catch {
+      setPlacementSuggestion(null);
+      setConflictSuggestions([]);
+    } finally {
+      setIntentLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchExtraction = async () => {
@@ -337,6 +492,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           const baseUrl = getApiBaseUrl();
           const fileUrl = `${baseUrl}/api/intake/items/${data.extraction.intake_item_id}/file`;
           setFileUrl(fileUrl);
+          await loadIntentContext(data.extraction.intake_item_id);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -517,9 +673,77 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   }
 
   const unresolvedIssues = issues.filter((i) => !i.resolved);
+  const intentSchema = resolveIntentSchema(extraction.document_type, placementSuggestion?.destination_key ?? null);
+  const suggestedValueByField = issues.reduce<Record<string, string | null>>((acc, issue) => {
+    if (issue.suggested_value) {
+      acc[issue.field_name] = issue.suggested_value;
+    }
+    return acc;
+  }, {});
+  const autoPlacementSafe = Boolean(
+    placementSuggestion &&
+    placementSuggestion.confidence >= 0.95 &&
+    unresolvedIssues.length === 0
+  );
 
   return (
-    <div className="grid grid-cols-3 gap-6 p-6 bg-gray-50 min-h-screen">
+    <div className="space-y-6 p-6 bg-gray-50 min-h-screen">
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-lg">AI Document Intent</h3>
+            <p className="text-sm text-gray-600 mt-1">Schema: {intentSchema.label}</p>
+          </div>
+          {intentLoading ? <span className="text-sm text-gray-500">Loading intent...</span> : null}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="rounded border border-slate-200 p-3 bg-slate-50">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Primary type</p>
+            <p className="font-semibold text-slate-900 mt-1">{extraction.document_type || 'unknown'}</p>
+          </div>
+          <div className="rounded border border-slate-200 p-3 bg-slate-50">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Recommended destination</p>
+            <p className="font-semibold text-slate-900 mt-1">{placementSuggestion?.destination_label || 'Pending'}</p>
+            {placementSuggestion ? (
+              <p className="text-xs text-slate-600 mt-1">Confidence {Math.round(placementSuggestion.confidence * 100)}%</p>
+            ) : null}
+          </div>
+          <div className="rounded border border-slate-200 p-3 bg-slate-50">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Automatic placement safe</p>
+            <p className={`font-semibold mt-1 ${autoPlacementSafe ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {autoPlacementSafe ? 'Yes' : 'No'}
+            </p>
+          </div>
+          <div className="rounded border border-slate-200 p-3 bg-slate-50">
+            <p className="text-xs uppercase tracking-wide text-slate-500">Human review required</p>
+            <p className="font-semibold text-amber-700 mt-1">{unresolvedIssues.length > 0 || !autoPlacementSafe ? 'Yes' : 'No'}</p>
+          </div>
+        </div>
+
+        {placementSuggestion ? (
+          <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            <p><strong>Routing reason:</strong> {placementSuggestion.reason}</p>
+            <p className="mt-1 text-xs text-blue-700">Signal source: {placementSuggestion.signal_source}</p>
+          </div>
+        ) : null}
+
+        {conflictSuggestions.length > 0 ? (
+          <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-900">Conflict suggestions</p>
+            {conflictSuggestions.map((conflict) => (
+              <div key={conflict.field_name} className="mt-2 text-sm text-amber-900">
+                <p>
+                  <strong>{conflict.field_name}</strong>: recommended {conflict.recommended.value} {conflict.recommended.unit}
+                </p>
+                <p className="text-xs text-amber-700">{conflict.reason}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid grid-cols-3 gap-6">
       {/* Left: Document Preview */}
       <div className="col-span-1 bg-white rounded-lg shadow p-4">
         <h3 className="font-semibold text-lg mb-4">📄 Document</h3>
@@ -535,37 +759,32 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
       {/* Middle: Extracted Fields */}
       <div className="col-span-1 bg-white rounded-lg shadow p-4">
         <h3 className="font-semibold text-lg mb-4">✏️ Extracted Fields</h3>
+        <p className="text-xs text-gray-500 mb-3">Showing fields based on detected document intent.</p>
         <div className="space-y-2">
-          <EditableField
-            label="Company"
-            value={extraction.company_name}
-            confidence={0.85}
-            onEdit={(value) => setCorrections({ ...corrections, company_name: value })}
-          />
-          <EditableField
-            label="Ticket Number"
-            value={extraction.ticket_number}
-            confidence={0.92}
-            onEdit={(value) => setCorrections({ ...corrections, ticket_number: value })}
-          />
-          <EditableField
-            label="Destination"
-            value={extraction.destination}
-            confidence={extraction.destination_confidence}
-            onEdit={(value) => setCorrections({ ...corrections, destination: value })}
-          />
-          <EditableField
-            label="Material"
-            value={extraction.material}
-            confidence={extraction.material_confidence}
-            onEdit={(value) => setCorrections({ ...corrections, material: value })}
-          />
-          <EditableField
-            label="Tons"
-            value={extraction.tons?.toString() || null}
-            confidence={0.88}
-            onEdit={(value) => setCorrections({ ...corrections, tons: value })}
-          />
+          {intentSchema.fieldKeys.map((fieldKey) => {
+            const config = FIELD_CONFIGS[fieldKey];
+            if (!config) {
+              return null;
+            }
+
+            const confidence =
+              fieldKey === 'destination'
+                ? extraction.destination_confidence
+                : fieldKey === 'material'
+                ? extraction.material_confidence
+                : config.confidence;
+
+            return (
+              <EditableField
+                key={fieldKey}
+                label={config.label}
+                value={config.value(extraction)}
+                confidence={confidence}
+                suggestedValue={suggestedValueByField[fieldKey]}
+                onEdit={(value) => setCorrections({ ...corrections, [fieldKey]: value })}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -782,6 +1001,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
