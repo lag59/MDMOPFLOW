@@ -1,17 +1,106 @@
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# Environment / Secrets
+# =========================
 .env
-.venv/
-__pycache__/
+.env.*
+!.env.example
+
+# =========================
+# Frontend - Next.js / Node
+# =========================
 node_modules/
 .next/
-.dart_tool/
+out/
+dist/
 build/
-backend/mdm_opsflow.db
-backend/mdm_opsflow_fresh.db
-backend/test_opsflow.db
+coverage/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local package manager files
+.pnpm-store/
+
+# Vercel
+.vercel/
+
+# =========================
+# Backend - Python / FastAPI
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Type checking / lint caches
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# Database / Local Data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Temporary files
+# =========================
+tmp/
+temp/
+*.tmp
+*.swp
+
+# =========================
+# Uploaded / generated files
+# =========================
+uploads/
+generated/
+
+# =========================
+# OpsFlow project-specific
+# =========================
+backend/artifacts/
 backend/storage/
 backend/tmp_check_super_admin.py
-backend/artifacts/
-frontend/test_opsflow.db
 frontend/test-fixtures/
-test_opsflow.db
 docs/build-execution-plan.md
