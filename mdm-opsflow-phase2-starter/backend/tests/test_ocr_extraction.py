@@ -200,6 +200,44 @@ class TestFieldMapping:
         # ticket_number was extracted so its confidence should be > 0
         assert float(ext["ticket_number_confidence"]) > 0
 
+    def test_bid_package_doc_uses_estimator_profile_and_emits_canonical_payload(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        quote_text = """\
+Hauling / Disposal Quote
+Project: North Ridge Commerce Park - Phase 2
+Project Number: NRCP-PH2
+Quote Number: HQ-24011
+Assumed One-Way Distance: 16 miles
+Estimated Quantity: 100 CY
+Undercut Allowance: 200 CY
+Addendum 2: Revised quantity to 120 CY
+Addendum 2: Assumed One-Way Distance: 18 miles
+Addendum 2: Undercut Allowance: 150 CY
+"""
+        item = _upload(client, token, tenant_id, quote_text)
+        result = _trigger(client, token, tenant_id, item["id"], force=True)
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        ext = detail["extraction"]
+        assert ext["document_type"] == "hauling_disposal_quote"
+        assert ext["canonical_profile"] == "bid_package"
+        assert ext["canonical_revision"] == 1
+        assert ext["canonical_payload"] is not None
+        assert len(ext["canonical_payload"].get("project_identity", [])) >= 1
+        assert len(ext["canonical_payload"].get("haul_costs", [])) >= 1
+        assert isinstance(ext.get("canonical_discrepancies") or [], list)
+        assert isinstance(ext.get("canonical_source_facts") or [], list)
+        assert len(ext.get("canonical_source_facts") or []) >= 1
+        assert isinstance(ext.get("discrepancy_summary") or {}, dict)
+        discrepancy_kinds = {
+            str(item.get("kind"))
+            for item in (ext.get("canonical_discrepancies") or [])
+            if isinstance(item, dict)
+        }
+        assert "quantity_conflict" in discrepancy_kinds
+        assert "haul_cost_conflict" in discrepancy_kinds
+        assert "allowance_conflict" in discrepancy_kinds
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Issue generation

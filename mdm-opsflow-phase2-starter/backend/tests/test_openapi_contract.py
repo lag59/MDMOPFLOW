@@ -39,3 +39,12 @@ def test_openapi_contract_includes_root_get_operation() -> None:
     rows = collect_operation_rows(schema)
 
     assert ("GET", "/", "root_get") in rows
+
+
+def test_openapi_contract_ai_assist_operation_ids_are_stable() -> None:
+    schema = app.openapi()
+    rows = collect_operation_rows(schema)
+
+    assert ("POST", "/api/estimates/{estimate_id}/ai-assist", "estimate_ai_assist") in rows
+    assert ("POST", "/estimate/assist/preview", "estimate_ai_assist_preview") in rows
+    assert all(operation_id != "estimate_ai_assist_legacy" for _, _, operation_id in rows)

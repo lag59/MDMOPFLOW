@@ -35,6 +35,15 @@ interface Extraction {
   material_confidence: number;
   tons: number | null;
   invoice_total: number | null;
+  canonical_profile?: string | null;
+  canonical_revision?: number | null;
+  canonical_payload?: Record<string, Array<Record<string, string | number | null>>> | null;
+  canonical_discrepancies?: Array<Record<string, string | number | null>> | null;
+  canonical_source_facts?: Array<Record<string, string | number | boolean | null>> | null;
+  precedence_decisions?: Array<Record<string, string | number | boolean | null>> | null;
+  discrepancy_summary?: Record<string, string | number | null> | null;
+  estimate_mapping_preview?: Record<string, Array<Record<string, string | number | null>>> | null;
+  geotech_profile?: Array<Record<string, string | number | null>> | null;
   review_notes: string;
   created_at: string;
 }
@@ -720,6 +729,10 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   );
   const requiredFields = SCHEMA_REQUIRED_FIELDS[destinationKey] || SCHEMA_REQUIRED_FIELDS.default;
   const intentMismatch = (extraction.document_type || '').toLowerCase().includes('ticket') && destinationKey === 'extraction_queue';
+  const canonicalFacts = extraction.canonical_source_facts || [];
+  const precedenceDecisions = extraction.precedence_decisions || [];
+  const discrepancySummary = extraction.discrepancy_summary || null;
+  const geotechProfile = extraction.geotech_profile || [];
 
   return (
     <div className="space-y-6 p-6 bg-gray-50 min-h-screen">
@@ -784,6 +797,81 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
                 <p className="text-xs text-amber-700">{conflict.reason}</p>
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {extraction.canonical_payload ? (
+          <div className="mt-4 rounded border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-emerald-900">Canonical estimator evidence</p>
+              <p className="text-xs text-emerald-700">
+                Profile: {extraction.canonical_profile || 'bid_package'}
+                {' · '}
+                Revision: {extraction.canonical_revision ?? 1}
+              </p>
+            </div>
+            <div className="space-y-2 mt-3">
+              {Object.entries(extraction.canonical_payload).map(([sectionName, rows]) => (
+                <div key={sectionName} className="rounded border border-emerald-100 bg-white p-2">
+                  <p className="text-xs uppercase tracking-wide text-emerald-700">{sectionName.replace(/_/g, ' ')}</p>
+                  <p className="text-sm text-emerald-900 mt-1">{rows.length} value{rows.length === 1 ? '' : 's'} extracted</p>
+                </div>
+              ))}
+            </div>
+            {canonicalFacts.length > 0 ? (
+              <div className="mt-3 rounded border border-emerald-200 bg-white p-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Evidence Facts</p>
+                <div className="mt-2 max-h-56 overflow-y-auto space-y-2">
+                  {canonicalFacts.slice(0, 8).map((fact, idx) => (
+                    <div key={idx} className="rounded border border-emerald-100 p-2 text-xs text-emerald-900">
+                      <p>
+                        <strong>{String(fact.field_key || 'field')}</strong>: {String(fact.value ?? '(empty)')} {String(fact.unit || '')}
+                      </p>
+                      <p className="text-emerald-700">
+                        Source: {String(fact.source_document_type || 'unknown')} · Confidence {Math.round(Number(fact.confidence || 0) * 100)}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {precedenceDecisions.length > 0 ? (
+              <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Precedence Decisions</p>
+                <ul className="mt-1 text-sm text-amber-900">
+                  {precedenceDecisions.slice(0, 5).map((decision, idx) => (
+                    <li key={idx}>
+                      {String(decision.discrepancy_key || 'discrepancy')}: {String(decision.rationale || 'decision recorded')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {extraction.canonical_discrepancies && extraction.canonical_discrepancies.length > 0 ? (
+              <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Discrepancies</p>
+                {discrepancySummary ? (
+                  <p className="text-xs text-amber-800 mt-1">
+                    Total {String(discrepancySummary.total || 0)} · Unresolved {String(discrepancySummary.unresolved || 0)} · Resolved {String(discrepancySummary.resolved || 0)}
+                  </p>
+                ) : null}
+                <ul className="mt-1 text-sm text-amber-900">
+                  {extraction.canonical_discrepancies.slice(0, 5).map((item, idx) => (
+                    <li key={idx}>{String(item.message || item.kind || 'conflict detected')}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {geotechProfile.length > 0 ? (
+              <div className="mt-3 rounded border border-cyan-200 bg-cyan-50 p-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700">Geotechnical Profile</p>
+                <ul className="mt-1 text-sm text-cyan-900">
+                  {geotechProfile.slice(0, 5).map((item, idx) => (
+                    <li key={idx}>{String(item.value ?? '')} {String(item.unit ?? '')} {String(item.original_source_text ?? '')}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

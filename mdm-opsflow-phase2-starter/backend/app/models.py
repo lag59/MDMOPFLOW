@@ -852,6 +852,10 @@ class DocumentExtraction(Base):
     # OCR raw text
     ocr_raw_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     extracted_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    canonical_profile: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    canonical_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    canonical_payload_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    canonical_discrepancies_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
     
     # Audit
     created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
@@ -859,6 +863,45 @@ class DocumentExtraction(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+
+class ExtractionCanonicalFact(Base):
+    __tablename__ = "extraction_canonical_facts"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    extraction_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("document_extractions.id"), index=True, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    field_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    value_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    value_num: Mapped[float | None] = mapped_column(Numeric(14, 4), nullable=True)
+    unit: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    source_document_type: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    source_item_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("intake_items.id"), nullable=True)
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evidence_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    authority_level: Mapped[str] = mapped_column(String(40), default="informational", nullable=False)
+    effective_date: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class ExtractionDiscrepancy(Base):
+    __tablename__ = "extraction_discrepancies"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    extraction_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("document_extractions.id"), index=True, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("tenants.id"), index=True, nullable=False)
+    discrepancy_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), default="warning", nullable=False)
+    candidate_values_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    recommended_value_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    resolved_by: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
 @event.listens_for(AuditLog, "before_update", propagate=True)

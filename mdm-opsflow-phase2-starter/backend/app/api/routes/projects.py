@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import add_audit_log, get_request_id
+from app.authorization import AuthorizationResource, authorize_action
 from app.db import get_db
 from app.dependencies import RequestContext, ensure_tenant_resource_access, require_permissions, resolve_tenant_scope
 from app.models import Project, Ticket
@@ -17,6 +18,29 @@ from app.schemas import (
 from app.services.project_costing import ProjectCostAggregation
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
+
+
+def _ensure_project_access(project: Project, context: RequestContext) -> None:
+    """Authorize access to a loaded project.
+
+    Platform super admins can access a specific project without first selecting
+    a tenant because the project itself carries the tenant scope.
+    """
+    if "*" in context.permissions and not context.tenant_id:
+        return
+
+    authorize_action(
+        user=context.user,
+        tenant_id=context.tenant_id,
+        permission=None,
+        resource=AuthorizationResource(tenant_id=project.tenant_id),
+        membership=context.membership,
+        permissions=context.permissions,
+        tenant_roles=context.tenant_roles,
+        require_membership=True,
+        resource_tenant_mismatch_status=status.HTTP_404_NOT_FOUND,
+        resource_tenant_mismatch_detail="Project not found",
+    )
 
 
 @router.get(
@@ -123,7 +147,7 @@ def get_project(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
+    _ensure_project_access(item, context)
     return item
 
 
@@ -148,7 +172,7 @@ def update_project(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
+    _ensure_project_access(item, context)
 
     before = {
         "project_name": item.project_name,
@@ -201,7 +225,7 @@ def delete_project(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
+    _ensure_project_access(item, context)
 
     add_audit_log(
         db,
@@ -243,7 +267,7 @@ def get_project_costs(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
+    _ensure_project_access(item, context)
 
     costs = ProjectCostAggregation.get_project_costs(db, project_id)
     return ProjectCostResponse(**costs)
@@ -269,7 +293,7 @@ def get_project_profitability(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    ensure_tenant_resource_access(resource_tenant_id=item.tenant_id, context=context, not_found_detail="Project not found")
+    _ensure_project_access(item, context)
 
     try:
         profitability = ProjectCostAggregation.get_project_profitability(db, project_id)
@@ -299,8 +323,7 @@ def get_project_tickets(
     item = db.get(Project, project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    if "*" not in context.permissions and (not context.membership or item.tenant_id != context.membership.tenant_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+    _ensure_project_access(item, context)
 
     query = select(Ticket).where(Ticket.project_id == project_id)
 

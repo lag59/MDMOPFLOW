@@ -30,7 +30,10 @@ from app.schemas import (
     IntakeConflictSuggestionListResponse,
     IntakeConflictSuggestionResponse,
     IntakeConflictValueCandidateResponse,
+    IntakeDocumentIntelligenceResponse,
     IntakeDuplicateResolutionRequest,
+        IntakeProjectMatchAlternativeResponse,
+        IntakeProjectMatchResponse,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
     IntakeReplayExportTokenAuditEntryResponse,
@@ -61,6 +64,7 @@ from app.core.config import settings
 from app.services.canonical_intake import build_canonical_document, score_canonical_document
 from app.services.canonical_conflicts import build_quantity_conflict_suggestions
 from app.services.intake_placement import suggest_intake_placement
+from app.services.project_matching import match_document_to_projects
 from app.services.intake_processing import process_intake_upload
 from app.services.ocr_extraction_service import OCRExtractionService
 
@@ -452,6 +456,20 @@ def suggest_intake_item_placements(
             continue
 
         suggestion = suggest_intake_placement(item)
+        canonical_doc = build_canonical_document(item)
+        routing_scores = score_canonical_document(canonical_doc)
+        project_match = match_document_to_projects(
+            db,
+            tenant_id=tenant_id,
+            canonical_doc=canonical_doc,
+        )
+        confidence_gap_to_next = 0.0
+        if project_match.alternative_matches:
+            confidence_gap_to_next = max(
+                0.0,
+                project_match.match_confidence - project_match.alternative_matches[0].confidence,
+            )
+
         suggestion_items.append(
             IntakePlacementSuggestionResponse(
                 item_id=item.id,
@@ -461,6 +479,62 @@ def suggest_intake_item_placements(
                 confidence=suggestion.confidence,
                 reason=suggestion.reason,
                 signal_source=suggestion.signal_source,
+                document_intelligence=IntakeDocumentIntelligenceResponse(
+                    primary_document_type=canonical_doc.document_type,
+                    subtype=canonical_doc.document_subtype,
+                    project_name=canonical_doc.project.get("project_name", ""),
+                    project_number=canonical_doc.project.get("project_number", ""),
+                    vendor_subcontractor=canonical_doc.vendor.get("name", ""),
+                    document_date=canonical_doc.dates.get("quote_date", "") or canonical_doc.dates.get("invoice_date", ""),
+                    document_reference_number=canonical_doc.document_reference_number,
+                    recommended_module=suggestion.destination_key,
+                    confidence=max(
+                        float(item.classification_confidence or 0.0),
+                        routing_scores.estimator_document_score,
+                        routing_scores.accounting_document_score,
+                        routing_scores.operational_ticket_score,
+                    ),
+                    classification_family=(
+                        "estimator"
+                        if routing_scores.estimator_document_score >= max(
+                            routing_scores.accounting_document_score,
+                            routing_scores.operational_ticket_score,
+                        )
+                        else "accounting"
+                        if routing_scores.accounting_document_score >= routing_scores.operational_ticket_score
+                        else "tickets"
+                    ),
+                    revision_chain_detected=canonical_doc.document_type == "addendum",
+                    ticket_block_reason=(canonical_doc.conflicting_evidence[0] if canonical_doc.conflicting_evidence else ""),
+                    estimator_intent_score=routing_scores.estimator_document_score,
+                    precedence_basis=f"{canonical_doc.document_type}/{canonical_doc.document_subtype}",
+                    supporting_evidence=list(canonical_doc.supporting_evidence),
+                    conflicting_evidence=list(canonical_doc.conflicting_evidence),
+                ),
+                project_match=IntakeProjectMatchResponse(
+                    matched_project_id=project_match.matched_project_id,
+                    match_confidence=project_match.match_confidence,
+                    matching_evidence=list(project_match.matching_evidence),
+                    alternative_matches=[
+                        IntakeProjectMatchAlternativeResponse(
+                            project_id=candidate.project_id,
+                            project_name=candidate.project_name,
+                            project_number=candidate.project_number,
+                            confidence=candidate.confidence,
+                            evidence=list(candidate.evidence),
+                        )
+                        for candidate in project_match.alternative_matches
+                    ],
+                    auto_associate=project_match.auto_associate,
+                    ambiguity_flag=bool(
+                        project_match.matched_project_id
+                        and project_match.alternative_matches
+                        and confidence_gap_to_next < 0.07
+                    ),
+                    confidence_gap_to_next=confidence_gap_to_next,
+                    match_strategy="scored_similarity_v1",
+                    human_confirmation_required=bool(project_match.matched_project_id and not project_match.auto_associate),
+                ),
             )
         )
         _add_intake_audit_log(

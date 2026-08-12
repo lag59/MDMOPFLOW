@@ -1,11 +1,14 @@
 ﻿"""API routes for document extraction review and approval."""
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
+from app.models import ExtractionCanonicalFact, ExtractionDiscrepancy
 from app.schemas import (
     DocumentExtractionIssueResponse,
     DocumentExtractionResponse,
@@ -22,6 +25,155 @@ from app.services.extraction_approval import ExtractionApprovalService
 from app.services.ocr_extraction_service import OCRExtractionService
 
 router = APIRouter(prefix="/api/extractions", tags=["Extractions"])
+
+
+def _parse_canonical_payload(extracted_notes: str) -> dict | None:
+    if not extracted_notes:
+        return None
+    try:
+        parsed = json.loads(extracted_notes)
+    except Exception:
+        return None
+    payload = parsed.get("canonical_payload") if isinstance(parsed, dict) else None
+    return payload if isinstance(payload, dict) else None
+
+
+def _parse_canonical_discrepancies(extracted_notes: str) -> list[dict] | None:
+    if not extracted_notes:
+        return None
+    try:
+        parsed = json.loads(extracted_notes)
+    except Exception:
+        return None
+    payload = parsed.get("canonical_discrepancies") if isinstance(parsed, dict) else None
+    return payload if isinstance(payload, list) else None
+
+
+def _parse_json_dict(value: str) -> dict | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parse_json_list(value: str) -> list[dict] | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return [entry for entry in parsed if isinstance(entry, dict)]
+
+
+def _load_normalized_canonical_facts(db: Session, extraction) -> list[dict[str, str | float | int | None]]:
+    rows = db.scalars(
+        select(ExtractionCanonicalFact)
+        .where(
+            ExtractionCanonicalFact.extraction_id == extraction.id,
+            ExtractionCanonicalFact.tenant_id == extraction.tenant_id,
+        )
+        .order_by(ExtractionCanonicalFact.created_at.asc())
+    ).all()
+
+    return [
+        {
+            "field_key": row.field_key,
+            "value": row.value_num if row.value_num is not None else row.value_text,
+            "unit": row.unit,
+            "source_document_type": row.source_document_type,
+            "source_item_id": row.source_item_id,
+            "page": row.page,
+            "evidence_text": row.evidence_text,
+            "confidence": float(row.confidence or 0.0),
+            "authority_level": row.authority_level,
+            "effective_date": row.effective_date,
+        }
+        for row in rows
+    ]
+
+
+def _load_normalized_discrepancies(db: Session, extraction) -> list[ExtractionDiscrepancy]:
+    return list(
+        db.scalars(
+            select(ExtractionDiscrepancy)
+            .where(
+                ExtractionDiscrepancy.extraction_id == extraction.id,
+                ExtractionDiscrepancy.tenant_id == extraction.tenant_id,
+            )
+            .order_by(ExtractionDiscrepancy.created_at.asc())
+        ).all()
+    )
+
+
+def _build_extraction_response(
+    extraction,
+    *,
+    canonical_source_facts: list[dict[str, str | float | int | None]] | None = None,
+    discrepancy_rows: list[ExtractionDiscrepancy] | None = None,
+) -> DocumentExtractionResponse:
+    canonical_payload = _parse_json_dict(getattr(extraction, "canonical_payload_json", ""))
+    if canonical_payload is None:
+        canonical_payload = _parse_canonical_payload(extraction.extracted_notes)
+
+    canonical_discrepancies = _parse_json_list(getattr(extraction, "canonical_discrepancies_json", ""))
+    if canonical_discrepancies is None:
+        canonical_discrepancies = _parse_canonical_discrepancies(extraction.extracted_notes)
+
+    discrepancy_rows = discrepancy_rows or []
+    precedence_decisions = [
+        {
+            "discrepancy_key": row.discrepancy_key,
+            "severity": row.severity,
+            "rationale": row.rationale,
+            "resolved": row.resolved,
+        }
+        for row in discrepancy_rows
+    ]
+
+    discrepancy_summary = {
+        "total": len(discrepancy_rows),
+        "resolved": sum(1 for row in discrepancy_rows if row.resolved),
+        "unresolved": sum(1 for row in discrepancy_rows if not row.resolved),
+    }
+
+    geotech_profile = (canonical_payload or {}).get("geotechnical_conditions", []) if canonical_payload else []
+
+    return DocumentExtractionResponse(
+        id=extraction.id,
+        tenant_id=extraction.tenant_id,
+        intake_item_id=extraction.intake_item_id,
+        document_type=extraction.document_type,
+        document_type_confidence=extraction.document_type_confidence,
+        status=extraction.status,
+        company_name=extraction.company_name,
+        company_name_confidence=extraction.company_name_confidence,
+        ticket_number=extraction.ticket_number,
+        ticket_number_confidence=extraction.ticket_number_confidence,
+        destination=extraction.destination,
+        destination_confidence=extraction.destination_confidence,
+        material=extraction.material,
+        material_confidence=extraction.material_confidence,
+        tons=extraction.tons,
+        invoice_total=extraction.invoice_total,
+        canonical_profile=getattr(extraction, "canonical_profile", "") or None,
+        canonical_revision=getattr(extraction, "canonical_revision", None),
+        canonical_payload=canonical_payload,
+        canonical_discrepancies=canonical_discrepancies,
+        canonical_source_facts=canonical_source_facts or None,
+        precedence_decisions=precedence_decisions or None,
+        discrepancy_summary=discrepancy_summary,
+        estimate_mapping_preview=canonical_payload,
+        geotech_profile=geotech_profile,
+        review_notes=extraction.review_notes,
+        created_at=extraction.created_at,
+        created_by=extraction.created_by,
+    )
 
 
 @router.get(
@@ -98,26 +250,12 @@ def get_extraction_detail(
 
     issues = service.get_extraction_issues(extraction_id)
 
-    extraction_response = DocumentExtractionResponse(
-        id=extraction.id,
-        tenant_id=extraction.tenant_id,
-        intake_item_id=extraction.intake_item_id,
-        document_type=extraction.document_type,
-        document_type_confidence=extraction.document_type_confidence,
-        status=extraction.status,
-        company_name=extraction.company_name,
-        company_name_confidence=extraction.company_name_confidence,
-        ticket_number=extraction.ticket_number,
-        ticket_number_confidence=extraction.ticket_number_confidence,
-        destination=extraction.destination,
-        destination_confidence=extraction.destination_confidence,
-        material=extraction.material,
-        material_confidence=extraction.material_confidence,
-        tons=extraction.tons,
-        invoice_total=extraction.invoice_total,
-        review_notes=extraction.review_notes,
-        created_at=extraction.created_at,
-        created_by=extraction.created_by,
+    canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
+    discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    extraction_response = _build_extraction_response(
+        extraction,
+        canonical_source_facts=canonical_source_facts,
+        discrepancy_rows=discrepancy_rows,
     )
 
     issues_response = [
@@ -171,26 +309,12 @@ def submit_extraction_review(
     extraction = service.get_extraction_for_review(extraction_id)
     issues = service.get_extraction_issues(extraction_id)
 
-    extraction_response = DocumentExtractionResponse(
-        id=extraction.id,
-        tenant_id=extraction.tenant_id,
-        intake_item_id=extraction.intake_item_id,
-        document_type=extraction.document_type,
-        document_type_confidence=extraction.document_type_confidence,
-        status=extraction.status,
-        company_name=extraction.company_name,
-        company_name_confidence=extraction.company_name_confidence,
-        ticket_number=extraction.ticket_number,
-        ticket_number_confidence=extraction.ticket_number_confidence,
-        destination=extraction.destination,
-        destination_confidence=extraction.destination_confidence,
-        material=extraction.material,
-        material_confidence=extraction.material_confidence,
-        tons=extraction.tons,
-        invoice_total=extraction.invoice_total,
-        review_notes=extraction.review_notes,
-        created_at=extraction.created_at,
-        created_by=extraction.created_by,
+    canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
+    discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    extraction_response = _build_extraction_response(
+        extraction,
+        canonical_source_facts=canonical_source_facts,
+        discrepancy_rows=discrepancy_rows,
     )
 
     issues_response = [
@@ -393,26 +517,12 @@ def revalidate_extraction(
     review_service = ExtractionReviewService(db, str(context.user.id), tenant_id)
     issues = review_service.get_extraction_issues(extraction_id)
 
-    extraction_response = DocumentExtractionResponse(
-        id=extraction.id,
-        tenant_id=extraction.tenant_id,
-        intake_item_id=extraction.intake_item_id,
-        document_type=extraction.document_type,
-        document_type_confidence=float(extraction.document_type_confidence or 0),
-        status=extraction.status,
-        company_name=extraction.company_name,
-        company_name_confidence=float(extraction.company_name_confidence or 0),
-        ticket_number=extraction.ticket_number,
-        ticket_number_confidence=float(extraction.ticket_number_confidence or 0),
-        destination=extraction.destination,
-        destination_confidence=float(extraction.destination_confidence or 0),
-        material=extraction.material,
-        material_confidence=float(extraction.material_confidence or 0),
-        tons=extraction.tons,
-        invoice_total=extraction.invoice_total,
-        review_notes=extraction.review_notes,
-        created_at=extraction.created_at,
-        created_by=extraction.created_by,
+    canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
+    discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    extraction_response = _build_extraction_response(
+        extraction,
+        canonical_source_facts=canonical_source_facts,
+        discrepancy_rows=discrepancy_rows,
     )
     issues_response = [
         DocumentExtractionIssueResponse(

@@ -126,3 +126,17 @@ def ai_assist_estimate(
             "Edit each field to match your actual scope before saving."
         ),
     }
+
+
+@router.post(
+    "/estimate/assist/preview",
+    operation_id="estimate_ai_assist_preview",
+    summary="Preview AI-assisted estimate suggestions",
+)
+async def estimate_ai_assist_preview(
+    estimate_id: str,
+    context: RequestContext = Depends(require_permissions("estimate_read")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Preview estimate AI assist output without introducing a duplicate operation ID."""
+    return ai_assist_estimate(estimate_id=estimate_id, context=context, db=db)
