@@ -5,8 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import TicketCalculatorPanel from "@/components/TicketCalculatorPanel";
-import { getAccessToken } from "@/lib/auth";
-import { getLocale, t } from "@/lib/i18n";
+import { getAccessToken, getTenantId } from "@/lib/auth";
+import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 import { getCurrentRoleAccess, type RoleAccessContext } from "@/lib/roleAccess";
 import {
   ReplayTokenApiError,
@@ -63,6 +63,48 @@ type ReplayTokenAuditWindowPreset =
   | "last_10950d"
   | "last_30d"
   | "custom";
+
+type IntakeUploadResponseItem = {
+  id: string;
+  original_filename: string;
+  document_type: string;
+  extracted_summary: string;
+  extracted_text: string;
+  extracted_entities: string;
+  classification_confidence: number;
+  ocr_status: string;
+  ai_status: string;
+  needs_review: boolean;
+};
+
+type IntakePlacementSuggestion = {
+  item_id: string;
+  destination_key: string;
+  destination_label: string;
+  destination_href: string;
+  confidence: number;
+  reason: string;
+  signal_source: string;
+};
+
+type IntakePlacementSuggestionResponse = {
+  items: IntakePlacementSuggestion[];
+};
+
+type SmartPlacementResult = {
+  itemId: string;
+  originalFilename: string;
+  documentType: string;
+  extractedSummary: string;
+  ocrStatus: string;
+  aiStatus: string;
+  classificationConfidence: number;
+  needsReview: boolean;
+  suggestedLabel: string;
+  suggestedHref: string;
+  reason: string;
+  signalSource: string;
+};
 
 function formatPercent(value: number | null | undefined): string {
   if (value === null || value === undefined) {
@@ -243,6 +285,9 @@ export default function IntakePage() {
   const [draftRevenue, setDraftRevenue] = useState<string>("");
   const [draftTicketBusy, setDraftTicketBusy] = useState(false);
   const [draftTicketMessage, setDraftTicketMessage] = useState<string>("");
+  const [smartUploadBusy, setSmartUploadBusy] = useState(false);
+  const [smartUploadMessage, setSmartUploadMessage] = useState("");
+  const [smartUploadResults, setSmartUploadResults] = useState<SmartPlacementResult[]>([]);
   const [error, setError] = useState<string>("");
   const [roleAccess, setRoleAccess] = useState<RoleAccessContext | null>(null);
 
@@ -308,6 +353,101 @@ export default function IntakePage() {
       return "/settings/users";
     }
     return "/tickets";
+  }
+
+  async function fetchPlacementSuggestions(itemIds: string[]): Promise<Map<string, IntakePlacementSuggestion>> {
+    const token = getAccessToken();
+    const tenantId = getTenantId();
+    const apiBaseUrl = getApiBaseUrl();
+    if (!token || !tenantId || itemIds.length === 0) {
+      return new Map();
+    }
+
+    const response = await fetch(`${apiBaseUrl}/api/intake/placement/suggest`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "X-Tenant-ID": tenantId,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ item_ids: itemIds }),
+    });
+    if (!response.ok) {
+      return new Map();
+    }
+
+    const payload = (await response.json()) as IntakePlacementSuggestionResponse;
+    return new Map(payload.items.map((item) => [item.item_id, item]));
+  }
+
+  async function uploadAndPlaceDocuments(files: FileList | null): Promise<void> {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    const token = getAccessToken();
+    const tenantId = getTenantId();
+    const apiBaseUrl = getApiBaseUrl();
+    if (!token || !tenantId) {
+      setSmartUploadMessage("Please sign in with a tenant context before uploading documents.");
+      return;
+    }
+
+    setSmartUploadBusy(true);
+    setSmartUploadMessage("");
+    setSmartUploadResults([]);
+
+    try {
+      const uploadedItems: IntakeUploadResponseItem[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch(`${apiBaseUrl}/api/intake/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-Tenant-ID": tenantId,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Upload failed for ${file.name}`);
+        }
+
+        const uploadedItem = (await response.json()) as IntakeUploadResponseItem;
+        uploadedItems.push(uploadedItem);
+      }
+
+      const suggestions = await fetchPlacementSuggestions(uploadedItems.map((item) => item.id));
+      const uploadedResults: SmartPlacementResult[] = uploadedItems.map((uploadedItem) => {
+        const suggestion = suggestions.get(uploadedItem.id);
+        return {
+          itemId: uploadedItem.id,
+          originalFilename: uploadedItem.original_filename,
+          documentType: uploadedItem.document_type,
+          extractedSummary: uploadedItem.extracted_summary,
+          ocrStatus: uploadedItem.ocr_status,
+          aiStatus: uploadedItem.ai_status,
+          classificationConfidence: uploadedItem.classification_confidence,
+          needsReview: uploadedItem.needs_review,
+          suggestedLabel: suggestion?.destination_label || "Extraction queue review",
+          suggestedHref: suggestion?.destination_href || "/extraction-queue",
+          reason: suggestion?.reason || "No centralized suggestion available; route to review queue.",
+          signalSource: suggestion?.signal_source || "fallback",
+        };
+      });
+
+      setSmartUploadResults(uploadedResults);
+      setSmartUploadMessage(
+        `Uploaded ${uploadedResults.length} document${uploadedResults.length === 1 ? "" : "s"}. OCR and routing suggestions are ready.`
+      );
+    } catch {
+      setSmartUploadMessage("Upload failed. Please retry with supported files (PDF, image, or text).");
+    } finally {
+      setSmartUploadBusy(false);
+    }
   }
 
   const byState = useMemo(() => {
@@ -635,6 +775,52 @@ export default function IntakePage() {
             Back to modules
           </a>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Smart document upload (AI + OCR)</h3>
+        </div>
+        <p className="metric-note">
+          Upload files and Intake will run OCR extraction, then recommend the best destination workspace.
+        </p>
+        <input
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv"
+          onChange={(event) => {
+            void uploadAndPlaceDocuments(event.target.files);
+            event.currentTarget.value = "";
+          }}
+          disabled={smartUploadBusy}
+        />
+        {smartUploadMessage ? <p className="metric-note" style={{ marginTop: 8 }}>{smartUploadMessage}</p> : null}
+        {smartUploadResults.length > 0 ? (
+          <div className="list" style={{ marginTop: 10 }}>
+            {smartUploadResults.map((result) => (
+              <div key={result.itemId} className="list-item" style={{ display: "block" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <strong>{result.originalFilename}</strong>
+                  <span className="metric-note">
+                    OCR: {result.ocrStatus} | AI: {result.aiStatus} | Confidence: {(result.classificationConfidence * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <p className="metric-note" style={{ margin: "6px 0" }}>
+                  Suggested placement: <a href={result.suggestedHref}>{result.suggestedLabel}</a>
+                </p>
+                <p className="metric-note" style={{ margin: "4px 0" }}>
+                  Reason: {result.reason} ({result.signalSource})
+                </p>
+                <p className="metric-note" style={{ margin: "4px 0" }}>
+                  Document type: {result.documentType} | Needs review: {result.needsReview ? "yes" : "no"}
+                </p>
+                {result.extractedSummary ? (
+                  <p className="metric-note" style={{ margin: "4px 0" }}>Summary: {result.extractedSummary}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid">

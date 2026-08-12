@@ -1945,6 +1945,24 @@ class IntakeItemResponse(IntakeItemBase):
     updated_at: datetime
 
 
+class IntakePlacementSuggestionRequest(BaseModel):
+    item_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class IntakePlacementSuggestionResponse(BaseModel):
+    item_id: str
+    destination_key: str
+    destination_label: str
+    destination_href: str
+    confidence: float
+    reason: str
+    signal_source: str
+
+
+class IntakePlacementSuggestionListResponse(BaseModel):
+    items: list[IntakePlacementSuggestionResponse] = Field(default_factory=list)
+
+
 class IngestionBatchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

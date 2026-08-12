@@ -48,9 +48,13 @@ from app.schemas import (
     IntakeIntegrationEventRetryRequest,
     IntakeIntegrationEventResponse,
     IntakeItemResponse,
+    IntakePlacementSuggestionListResponse,
+    IntakePlacementSuggestionRequest,
+    IntakePlacementSuggestionResponse,
 )
 from app.security import TokenError, create_token, decode_token
 from app.core.config import settings
+from app.services.intake_placement import suggest_intake_placement
 from app.services.intake_processing import process_intake_upload
 from app.services.ocr_extraction_service import OCRExtractionService
 
@@ -368,6 +372,63 @@ async def upload_intake_files(
         )
 
     return item
+
+
+@router.post(
+    "/placement/suggest",
+    response_model=IntakePlacementSuggestionListResponse,
+    operation_id="intake_placement_suggest",
+    summary="Suggest destination placement for intake items",
+)
+def suggest_intake_item_placements(
+    payload: IntakePlacementSuggestionRequest,
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context(context)
+    requested_ids = [item_id.strip() for item_id in payload.item_ids if item_id.strip()]
+    if not requested_ids:
+        return IntakePlacementSuggestionListResponse(items=[])
+
+    scoped_items = db.scalars(
+        select(IntakeItem)
+        .where(IntakeItem.tenant_id == tenant_id)
+        .where(IntakeItem.id.in_(requested_ids))
+    ).all()
+    item_by_id = {item.id: item for item in scoped_items}
+
+    suggestion_items: list[IntakePlacementSuggestionResponse] = []
+    for item_id in requested_ids:
+        item = item_by_id.get(item_id)
+        if not item:
+            continue
+
+        suggestion = suggest_intake_placement(item)
+        suggestion_items.append(
+            IntakePlacementSuggestionResponse(
+                item_id=item.id,
+                destination_key=suggestion.destination_key,
+                destination_label=suggestion.destination_label,
+                destination_href=suggestion.destination_href,
+                confidence=suggestion.confidence,
+                reason=suggestion.reason,
+                signal_source=suggestion.signal_source,
+            )
+        )
+        _add_intake_audit_log(
+            db,
+            item=item,
+            actor_user_id=context.user.id,
+            action="ai_suggest_intake_placement",
+            details=(
+                f"destination={suggestion.destination_key};"
+                f"confidence={suggestion.confidence:.2f};"
+                f"signal_source={suggestion.signal_source}"
+            ),
+        )
+
+    db.commit()
+    return IntakePlacementSuggestionListResponse(items=suggestion_items)
 
 
 @router.get(

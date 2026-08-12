@@ -18,6 +18,173 @@ describe("Intake replay token observability page", () => {
     vi.restoreAllMocks();
   });
 
+  it("uploads files and renders placement suggestions from centralized API", async () => {
+    const placementCalls: Array<{ body: string | undefined }> = [];
+
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.includes("/api/intake/upload")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "intake-100",
+              original_filename: "ticket-upload.txt",
+              document_type: "ticket",
+              extracted_summary: "Ticket TCK-100 extracted",
+              extracted_text: "Ticket: TCK-100",
+              extracted_entities: '{"ticket_number":"TCK-100"}',
+              classification_confidence: 0.94,
+              ocr_status: "completed",
+              ai_status: "completed",
+              needs_review: false,
+            }),
+            { status: 201, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/api/intake/placement/suggest")) {
+        placementCalls.push({ body: init?.body as string | undefined });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  item_id: "intake-100",
+                  destination_key: "tickets",
+                  destination_label: "Tickets workspace",
+                  destination_href: "/tickets",
+                  confidence: 0.92,
+                  reason: "Ticket signals were detected in OCR/extracted fields.",
+                  signal_source: "document_type+entities",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_issued_at: null,
+              next_cursor_token_id: null,
+              sort: "-issued_at",
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-states/alerts")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              as_of: "2026-07-25T18:10:00Z",
+              stale_threshold_minutes: 60,
+              stale_active_threshold_count: 10,
+              window_start_issued_at: null,
+              window_end_issued_at: null,
+              window_effective_timezone: "UTC",
+              total_tokens: 0,
+              active_tokens: 0,
+              active_tokens_older_than_threshold: 0,
+              active_tokens_older_than_threshold_exceeded: false,
+              consumed_tokens: 0,
+              revoked_tokens: 0,
+              consumed_to_revoked_ratio: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/list")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              limit: 10,
+              has_more: false,
+              next_cursor_created_at: null,
+              next_cursor_id: null,
+              sort: "-created_at",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              total_entries: 0,
+              issued_count: 0,
+              consumed_count: 0,
+              revoked_count: 0,
+              consume_rate_percent: null,
+              revoke_rate_percent: null,
+              unique_actor_count: 0,
+              latest_created_at: null,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.includes("/export-token-history/trends")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [],
+              granularity: "day",
+              window_start_created_at: null,
+              window_end_created_at: null,
+              window_effective_timezone: "UTC",
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const { container } = render(<IntakePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Smart document upload (AI + OCR)")).toBeInTheDocument();
+    });
+
+    const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(uploadInput).not.toBeNull();
+
+    const file = new File(["Ticket: TCK-100"], "ticket-upload.txt", { type: "text/plain" });
+    fireEvent.change(uploadInput as HTMLInputElement, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Uploaded 1 document. OCR and routing suggestions are ready.")).toBeInTheDocument();
+      expect(screen.getByText("ticket-upload.txt")).toBeInTheDocument();
+      expect(screen.getByText("Suggested placement:", { exact: false })).toBeInTheDocument();
+      expect(screen.getByText("Tickets workspace")).toBeInTheDocument();
+      expect(screen.getByText("Reason: Ticket signals were detected in OCR/extracted fields. (document_type+entities)")).toBeInTheDocument();
+    });
+
+    expect(placementCalls.length).toBe(1);
+    expect(placementCalls[0].body).toBeDefined();
+    expect(JSON.parse(placementCalls[0].body as string)).toEqual({ item_ids: ["intake-100"] });
+  });
+
   it("loads envelope list plus alerts and supports cursor-based load more", async () => {
     const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
