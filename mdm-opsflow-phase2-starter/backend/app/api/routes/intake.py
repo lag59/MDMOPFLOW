@@ -26,6 +26,10 @@ from app.models import (
     User,
 )
 from app.schemas import (
+    IntakeConflictResolveRequest,
+    IntakeConflictSuggestionListResponse,
+    IntakeConflictSuggestionResponse,
+    IntakeConflictValueCandidateResponse,
     IntakeDuplicateResolutionRequest,
     IntakeIntegrationEventProcessRequest,
     IntakeIntegrationEventReplayRequest,
@@ -54,6 +58,8 @@ from app.schemas import (
 )
 from app.security import TokenError, create_token, decode_token
 from app.core.config import settings
+from app.services.canonical_intake import build_canonical_document, score_canonical_document
+from app.services.canonical_conflicts import build_quantity_conflict_suggestions
 from app.services.intake_placement import suggest_intake_placement
 from app.services.intake_processing import process_intake_upload
 from app.services.ocr_extraction_service import OCRExtractionService
@@ -157,6 +163,43 @@ def _add_integration_event(
             created_by=actor_user_id,
         )
     )
+
+
+def _should_auto_create_ticket(
+    item: IntakeItem,
+    *,
+    ticket_number: str,
+    is_duplicate: bool,
+    extracted_entities: dict[str, str],
+) -> bool:
+    if is_duplicate or not ticket_number:
+        return False
+
+    if item.needs_review:
+        return False
+
+    if (item.document_type or "").lower() != "ticket":
+        return False
+
+    canonical = build_canonical_document(item)
+    scores = score_canonical_document(canonical)
+
+    if scores.estimator_document_score >= 0.75:
+        return False
+
+    if scores.accounting_document_score >= 0.80:
+        return False
+
+    if scores.operational_ticket_score < 0.85:
+        return False
+
+    if (item.ocr_status or "").lower() != "completed":
+        return False
+
+    if float(item.classification_confidence or 0.0) < 0.75:
+        return False
+
+    return True
 
 
 def _ensure_event_access(event: IntegrationEvent | None, context: RequestContext) -> IntegrationEvent:
@@ -306,7 +349,12 @@ async def upload_intake_files(
     created_ticket_ids: list[str] = []
     extracted_entities = json.loads(processed.extracted_entities or "{}")
     ticket_number = (extracted_entities.get("ticket_number") or "").strip()
-    if ticket_number and not is_duplicate:
+    if _should_auto_create_ticket(
+        item,
+        ticket_number=ticket_number,
+        is_duplicate=is_duplicate,
+        extracted_entities=extracted_entities,
+    ):
         ticket = Ticket(
             tenant_id=tenant_id,
             intake_item_id=item.id,
@@ -429,6 +477,122 @@ def suggest_intake_item_placements(
 
     db.commit()
     return IntakePlacementSuggestionListResponse(items=suggestion_items)
+
+
+@router.post(
+    "/conflicts/suggest",
+    response_model=IntakeConflictSuggestionListResponse,
+    operation_id="intake_conflicts_suggest",
+    summary="Suggest intake data conflicts using document precedence",
+)
+def suggest_intake_conflicts(
+    payload: IntakePlacementSuggestionRequest,
+    context: RequestContext = Depends(require_permissions("intake_read")),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context(context)
+    requested_ids = [item_id.strip() for item_id in payload.item_ids if item_id.strip()]
+    if not requested_ids:
+        return IntakeConflictSuggestionListResponse(items=[])
+
+    scoped_items = db.scalars(
+        select(IntakeItem)
+        .where(IntakeItem.tenant_id == tenant_id)
+        .where(IntakeItem.id.in_(requested_ids))
+        .order_by(IntakeItem.created_at.asc())
+    ).all()
+
+    suggestions = build_quantity_conflict_suggestions(scoped_items)
+    response_items: list[IntakeConflictSuggestionResponse] = []
+
+    for suggestion in suggestions:
+        candidates = [
+            IntakeConflictValueCandidateResponse(
+                item_id=candidate.item_id,
+                field_name=candidate.field_name,
+                value=candidate.value,
+                unit=candidate.unit,
+                document_type=candidate.document_type,
+                document_subtype=candidate.document_subtype,
+                source_text=candidate.source_text,
+                page=candidate.page,
+                confidence=candidate.confidence,
+                created_at=candidate.created_at,
+            )
+            for candidate in suggestion.candidates
+        ]
+
+        recommended = IntakeConflictValueCandidateResponse(
+            item_id=suggestion.recommended.item_id,
+            field_name=suggestion.recommended.field_name,
+            value=suggestion.recommended.value,
+            unit=suggestion.recommended.unit,
+            document_type=suggestion.recommended.document_type,
+            document_subtype=suggestion.recommended.document_subtype,
+            source_text=suggestion.recommended.source_text,
+            page=suggestion.recommended.page,
+            confidence=suggestion.recommended.confidence,
+            created_at=suggestion.recommended.created_at,
+        )
+
+        response_items.append(
+            IntakeConflictSuggestionResponse(
+                field_name=suggestion.field_name,
+                candidates=candidates,
+                recommended=recommended,
+                reason=suggestion.reason,
+            )
+        )
+
+    return IntakeConflictSuggestionListResponse(items=response_items)
+
+
+@router.post(
+    "/conflicts/resolve",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="intake_conflicts_resolve",
+    summary="Record user decision for intake conflict resolution",
+)
+def resolve_intake_conflict(
+    payload: IntakeConflictResolveRequest,
+    context: RequestContext = Depends(require_permissions("intake_review")),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context(context)
+    selected_item = db.scalars(
+        select(IntakeItem)
+        .where(IntakeItem.id == payload.selected_item_id)
+        .where(IntakeItem.tenant_id == tenant_id)
+    ).first()
+    if not selected_item:
+        raise HTTPException(status_code=404, detail="Selected intake item not found")
+
+    _add_intake_audit_log(
+        db,
+        item=selected_item,
+        actor_user_id=context.user.id,
+        action="resolve_intake_conflict",
+        details=(
+            f"field={payload.field_name};"
+            f"selected_value={payload.selected_value};"
+            f"rationale={payload.rationale or 'none'}"
+        ),
+    )
+    _add_integration_event(
+        db,
+        tenant_id=tenant_id,
+        actor_user_id=context.user.id,
+        event_type="intake_conflict_resolved",
+        resource_id=selected_item.id,
+        payload={
+            "field_name": payload.field_name,
+            "selected_item_id": payload.selected_item_id,
+            "selected_value": payload.selected_value,
+            "rationale": payload.rationale,
+        },
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

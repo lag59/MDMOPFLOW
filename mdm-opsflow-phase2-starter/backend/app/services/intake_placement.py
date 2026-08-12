@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from app.models import IntakeItem
+from app.services.canonical_intake import (
+    build_canonical_document,
+    has_estimator_signals,
+    score_canonical_document,
+)
 
 
 @dataclass(frozen=True)
@@ -19,24 +23,11 @@ class IntakePlacementSuggestion:
 DESTINATION_CATALOG: dict[str, tuple[str, str]] = {
     "tickets": ("Tickets workspace", "/tickets"),
     "estimator": ("Estimator workspace", "/estimator"),
+    "accounting": ("Accounting invoice intake", "/modules/accounting/ap-invoice-intake"),
     "vendor": ("Vendor portal", "/vendor"),
     "safety": ("Safety module", "/modules/safety_manager/incidents"),
     "extraction_queue": ("Extraction queue review", "/extraction-queue"),
 }
-
-
-def _parse_entities(raw: str) -> dict[str, str]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        return {}
-
-    if not isinstance(parsed, dict):
-        return {}
-
-    return {str(key): str(value or "") for key, value in parsed.items()}
 
 
 def _build_suggestion(
@@ -58,41 +49,75 @@ def _build_suggestion(
 
 
 def suggest_intake_placement(item: IntakeItem) -> IntakePlacementSuggestion:
-    entities = _parse_entities(item.extracted_entities)
-    summary = (item.extracted_summary or "").lower()
-    extracted_text = (item.extracted_text or "").lower()
-    document_type = (item.document_type or "general").lower()
+    canonical = build_canonical_document(item)
+    scores = score_canonical_document(canonical)
+    classification_confidence = float(item.classification_confidence or 0.0)
 
-    if document_type == "ticket" or entities.get("ticket_number", "").strip():
-        return _build_suggestion(
-            "tickets",
-            confidence=0.92,
-            reason="Ticket signals were detected in OCR/extracted fields.",
-            signal_source="document_type+entities",
-        )
+    ranked_scores = sorted(
+        (
+            ("estimator", scores.estimator_document_score),
+            ("accounting", scores.accounting_document_score),
+            ("tickets", scores.operational_ticket_score),
+        ),
+        key=lambda entry: entry[1],
+        reverse=True,
+    )
+    _, top_score = ranked_scores[0]
+    second_score = ranked_scores[1][1]
 
-    if any(token in summary for token in ("estimate", "bid", "proposal")) or any(
-        token in extracted_text for token in ("scope of work", "estimate", "proposal")
-    ):
+    # Strong estimating/accounting intent should still surface the right destination
+    # even when extraction confidence requires review before operational placement.
+    if scores.estimator_document_score >= 0.75:
         return _build_suggestion(
             "estimator",
-            confidence=0.86,
-            reason="Estimating language was detected in extracted content.",
-            signal_source="summary+text",
+            confidence=scores.estimator_document_score,
+            reason=(
+                "Estimator signals met routing threshold "
+                f"(score={scores.estimator_document_score:.2f}, type={canonical.document_type}/{canonical.document_subtype})."
+            ),
+            signal_source=("canonical+priority+review_gate" if item.needs_review or classification_confidence < 0.75 else "canonical+priority"),
         )
 
-    if any(token in summary for token in ("invoice", "purchase order", "delivery", "compliance")) or any(
-        token in extracted_text for token in ("invoice", "po #", "purchase order", "certificate of insurance")
-    ):
+    if scores.accounting_document_score >= 0.80:
         return _build_suggestion(
-            "vendor",
-            confidence=0.83,
-            reason="Vendor/procurement indicators were detected in extraction results.",
-            signal_source="summary+text",
+            "accounting",
+            confidence=scores.accounting_document_score,
+            reason=(
+                "Accounting signals met routing threshold "
+                f"(score={scores.accounting_document_score:.2f}, type={canonical.document_type})."
+            ),
+            signal_source=("canonical+priority+review_gate" if item.needs_review or classification_confidence < 0.75 else "canonical+priority"),
         )
 
-    if any(token in summary for token in ("safety", "incident", "osha")) or any(
-        token in extracted_text for token in ("near miss", "incident", "osha", "safety")
+    if item.needs_review or classification_confidence < 0.75:
+        return _build_suggestion(
+            "extraction_queue",
+            confidence=max(0.74, top_score),
+            reason="Extraction needs reviewer confirmation before operational routing.",
+            signal_source="review_gate",
+        )
+
+    if top_score >= 0.75 and (top_score - second_score) < 0.07:
+        return _build_suggestion(
+            "extraction_queue",
+            confidence=top_score,
+            reason="Signals conflict across modules and require reviewer confirmation.",
+            signal_source="score_conflict_gate",
+        )
+
+    if scores.operational_ticket_score >= 0.85:
+        return _build_suggestion(
+            "tickets",
+            confidence=scores.operational_ticket_score,
+            reason=(
+                "Operational ticket signals met routing threshold "
+                f"(score={scores.operational_ticket_score:.2f})."
+            ),
+            signal_source="canonical+priority",
+        )
+
+    if any(token in canonical.summary for token in ("safety", "incident", "osha")) or any(
+        token in canonical.extracted_text for token in ("near miss", "incident", "osha", "safety")
     ):
         return _build_suggestion(
             "safety",

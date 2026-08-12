@@ -1963,6 +1963,37 @@ class IntakePlacementSuggestionListResponse(BaseModel):
     items: list[IntakePlacementSuggestionResponse] = Field(default_factory=list)
 
 
+class IntakeConflictValueCandidateResponse(BaseModel):
+    item_id: str
+    field_name: str
+    value: float
+    unit: str
+    document_type: str
+    document_subtype: str
+    source_text: str
+    page: int | None = None
+    confidence: float
+    created_at: datetime
+
+
+class IntakeConflictSuggestionResponse(BaseModel):
+    field_name: str
+    candidates: list[IntakeConflictValueCandidateResponse] = Field(default_factory=list)
+    recommended: IntakeConflictValueCandidateResponse
+    reason: str
+
+
+class IntakeConflictSuggestionListResponse(BaseModel):
+    items: list[IntakeConflictSuggestionResponse] = Field(default_factory=list)
+
+
+class IntakeConflictResolveRequest(BaseModel):
+    field_name: str = Field(min_length=2, max_length=120)
+    selected_item_id: str = Field(min_length=3, max_length=120)
+    selected_value: float
+    rationale: str = ""
+
+
 class IngestionBatchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
