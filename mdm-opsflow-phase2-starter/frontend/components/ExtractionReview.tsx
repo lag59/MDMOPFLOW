@@ -76,6 +76,34 @@ interface FieldConfig {
   value: (item: Extraction) => string | null;
 }
 
+const FIELD_LABEL_OVERRIDES: Record<string, string> = {
+  company_name: 'Company',
+  ticket_number: 'Ticket Number',
+  job_location: 'Job Location',
+  driver_name: 'Driver Name',
+  destination: 'Destination',
+  material: 'Material',
+  tons: 'Tons',
+  invoice_total: 'Invoice Total',
+};
+
+const SCHEMA_REQUIRED_FIELDS: Record<string, string[]> = {
+  tickets: ['Company', 'Ticket Number', 'Driver Name', 'Material', 'Tons'],
+  estimator: ['Company', 'Destination'],
+  accounting: ['Company', 'Invoice Total', 'Destination'],
+  default: ['Company', 'Destination'],
+};
+
+const ISSUE_KEYS_BY_DESTINATION: Record<string, string[]> = {
+  tickets: ['document_count', 'company_name', 'job_location', 'destination', 'driver_name', 'ticket_number', 'material', 'tons'],
+  estimator: ['document_count', 'company_name', 'destination', 'material', 'tons', 'line_items', 'quote_number'],
+  accounting: ['document_count', 'company_name', 'destination', 'invoice_total'],
+};
+
+function toFriendlyFieldLabel(fieldName: string): string {
+  return FIELD_LABEL_OVERRIDES[fieldName] || fieldName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 const DEFAULT_FIELD_CONFIDENCE = 0.75;
 
 const FIELD_CONFIGS: Record<string, FieldConfig> = {
@@ -277,7 +305,7 @@ const IssueItem = ({
     <div className="border-l-4 border-yellow-400 bg-yellow-50 p-3 mb-2">
       <div className="flex justify-between items-start">
         <div className="flex-1">
-          <p className={`font-semibold ${severityColor}`}>{issue.field_name}</p>
+          <p className={`font-semibold ${severityColor}`}>{toFriendlyFieldLabel(issue.field_name)}</p>
           <p className="text-sm text-gray-700 mt-1">{issue.message}</p>
           {issue.suggested_value && (
             <p className="text-sm text-gray-600 mt-1">Suggestion: {issue.suggested_value}</p>
@@ -685,6 +713,13 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
     placementSuggestion.confidence >= 0.95 &&
     unresolvedIssues.length === 0
   );
+  const destinationKey = (placementSuggestion?.destination_key || '').toLowerCase();
+  const allowedIssueKeys = ISSUE_KEYS_BY_DESTINATION[destinationKey] || ISSUE_KEYS_BY_DESTINATION.tickets;
+  const schemaAwareIssues = unresolvedIssues.filter((issue) =>
+    allowedIssueKeys.includes(issue.field_name)
+  );
+  const requiredFields = SCHEMA_REQUIRED_FIELDS[destinationKey] || SCHEMA_REQUIRED_FIELDS.default;
+  const intentMismatch = (extraction.document_type || '').toLowerCase().includes('ticket') && destinationKey === 'extraction_queue';
 
   return (
     <div className="space-y-6 p-6 bg-gray-50 min-h-screen">
@@ -725,6 +760,16 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
             <p><strong>Routing reason:</strong> {placementSuggestion.reason}</p>
             <p className="mt-1 text-xs text-blue-700">Signal source: {placementSuggestion.signal_source}</p>
+          </div>
+        ) : null}
+
+        {intentMismatch ? (
+          <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-semibold">Intent mismatch warning</p>
+            <p className="mt-1">
+              The extraction is currently ticket-typed but routing remains in review queue. Review this document as a whole
+              before approving ticket-specific updates.
+            </p>
           </div>
         ) : null}
 
@@ -790,13 +835,18 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
 
       {/* Right: Issues + Actions */}
       <div className="col-span-1 bg-white rounded-lg shadow p-4 flex flex-col">
-        <h3 className="font-semibold text-lg mb-4">⚠️ Issues ({unresolvedIssues.length})</h3>
+        <h3 className="font-semibold text-lg mb-4">⚠️ Issues ({schemaAwareIssues.length})</h3>
+
+        <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Required fields for this schema</p>
+          <p className="text-sm text-slate-800 mt-1">{requiredFields.join(' • ')}</p>
+        </div>
 
         <div className="flex-1 overflow-y-auto mb-4">
-          {unresolvedIssues.length === 0 ? (
+          {schemaAwareIssues.length === 0 ? (
             <p className="text-green-600 text-sm">✓ All issues resolved</p>
           ) : (
-            unresolvedIssues.map((issue) => (
+            schemaAwareIssues.map((issue) => (
               <IssueItem
                 key={issue.id}
                 issue={issue}
