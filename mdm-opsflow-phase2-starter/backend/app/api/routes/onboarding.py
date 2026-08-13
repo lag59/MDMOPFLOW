@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import AuditLog, MembershipStatus, Project, ProjectStatus, Role, Tenant, TenantMembership, User
+from app.models import AuditLog, MembershipStatus, Project, ProjectStatus, Role, Tenant, TenantMembership, User, normalize_tenant_name
 from app.rbac import ROLE_PERMISSIONS, permissions_csv_for_role
 from app.schemas import OnboardingRequest, OnboardingResponse
 
@@ -60,12 +60,22 @@ def complete_onboarding(
     if invalid_company_types:
         raise HTTPException(status_code=400, detail="Invalid company type")
 
-    has_membership = db.scalar(select(TenantMembership).where(TenantMembership.user_id == current_user.id))
-    if has_membership:
+    has_active_membership = db.scalar(
+        select(TenantMembership).where(
+            TenantMembership.user_id == current_user.id,
+            TenantMembership.status == MembershipStatus.ACTIVE,
+        )
+    )
+    if has_active_membership:
         raise HTTPException(status_code=400, detail="User has already completed onboarding")
 
+    normalized_company_name = normalize_tenant_name(payload.company_name)
+    existing = db.scalar(select(Tenant).where(func.lower(Tenant.name) == normalized_company_name.lower()))
+    if existing is not None:
+        raise HTTPException(status_code=400, detail="Tenant name already exists")
+
     tenant = Tenant(
-        name=payload.company_name,
+        name=normalized_company_name,
         company_type=",".join(payload.company_types),
         tenant_type=payload.tenant_type,
         is_test=payload.is_test,

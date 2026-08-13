@@ -1,7 +1,49 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import func
 
 from app.db import SessionLocal
-from app.models import User
+from app.models import MembershipStatus, Role, Tenant, TenantMembership, User
+
+
+def test_tenant_names_are_normalized_for_canonical_seed_lookup(client: TestClient):
+    register = client.post(
+        "/api/auth/register",
+        json={"email": "tenant-normalize@example.com", "password": "Pass12345!", "display_name": "Tenant Normalize"},
+    )
+    assert register.status_code == 201
+    token = register.json()["tokens"]["access_token"]
+
+    first = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "company_name": "  ACME CIVIL  ",
+            "company_types": ["Heavy Civil"],
+            "language": "en",
+            "modules": ["Projects"],
+            "invite_emails": [],
+            "first_project_name": "Acme Project",
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "company_name": "acme civil",
+            "company_types": ["Heavy Civil"],
+            "language": "en",
+            "modules": ["Projects"],
+            "invite_emails": [],
+            "first_project_name": "Duplicate Project",
+        },
+    )
+    assert second.status_code == 400
+    with SessionLocal() as db:
+        matches = db.query(Tenant).filter(func.lower(Tenant.name) == "acme civil").all()
+        assert len(matches) == 1
+        assert matches[0].name == "ACME CIVIL" or matches[0].name == "Acme Civil"
 
 
 def test_auth_register_login_me_refresh_logout(client: TestClient):
@@ -53,19 +95,89 @@ def test_auth_register_login_me_refresh_logout(client: TestClient):
     assert refresh_after_logout.status_code == 401
 
 
+def test_owner_can_complete_onboarding_with_only_invited_or_inactive_membership(client: TestClient):
+    register = client.post(
+        "/api/auth/register",
+        json={"email": "owner-invited@example.com", "password": "Pass12345!", "display_name": "Owner Invited"},
+    )
+    assert register.status_code == 201
+    token = register.json()["tokens"]["access_token"]
+
+    with SessionLocal() as db:
+        tenant = Tenant(name="Invited Tenant", company_type="General Contractor", preferred_language="en")
+        db.add(tenant)
+        db.flush()
+
+        role = Role(tenant_id=tenant.id, name="owner", permissions="project.manage", created_by=register.json()["user_id"])
+        db.add(role)
+        db.flush()
+
+        db.add(
+            TenantMembership(
+                tenant_id=tenant.id,
+                user_id=register.json()["user_id"],
+                role_id=role.id,
+                status=MembershipStatus.INVITED,
+                created_by=register.json()["user_id"],
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/onboarding/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "company_name": "New Owner Company",
+            "company_types": ["Heavy Civil"],
+            "language": "en",
+            "modules": ["Projects"],
+            "invite_emails": [],
+            "first_project_name": "New Owner Project",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["tenant_id"]
+
+
 def test_super_admin_login_recovers_when_seed_user_is_missing(client: TestClient):
     with SessionLocal() as db:
-        user = db.query(User).filter(User.email == "founder@mdmopsflow.com").first()
+        user = db.query(User).filter(User.email == "lag59@mdmopflow.com").first()
         if user:
             db.delete(user)
             db.commit()
 
     response = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert response.status_code == 200
     assert response.json()["platform_role"] == "platform_super_admin"
+
+
+def test_super_admin_email_is_normalized_to_single_canonical_identity(client: TestClient):
+    with SessionLocal() as db:
+        db.query(User).filter(User.email.ilike("lag59@mdmopflow.com")).delete()
+        legacy_alias = User(
+            email="lag59@mdmopflow.com",
+            password_hash="legacy-hash",
+            display_name="Legacy Super Admin",
+            title="Legacy",
+            platform_role=User.__table__.c.get("platform_role") if False else None,
+        )
+        db.add(legacy_alias)
+        db.commit()
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "LAG59@MDMOPFLOW.COM", "password": "ChangeMe123!"},
+    )
+    assert response.status_code == 200
+
+    with SessionLocal() as db:
+        rows = db.query(User).filter(User.email.ilike("lag59@mdmopflow.com")).all()
+        assert len(rows) == 1
+        assert rows[0].email == "lag59@mdmopflow.com"
 
 
 def test_login_accepts_case_variant_of_registered_email(client: TestClient):
@@ -86,7 +198,7 @@ def test_login_accepts_case_variant_of_registered_email(client: TestClient):
 def test_platform_admin_is_seeded_and_protected(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
@@ -108,7 +220,7 @@ def test_platform_admin_is_seeded_and_protected(client: TestClient):
 def test_super_admin_can_manage_user_access_and_reset_password(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
@@ -155,7 +267,7 @@ def test_super_admin_can_manage_user_access_and_reset_password(client: TestClien
 def test_super_admin_can_create_tenant_and_assign_user_membership(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
@@ -192,7 +304,7 @@ def test_super_admin_can_create_tenant_and_assign_user_membership(client: TestCl
 def test_membership_activation_reenables_user_login(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
@@ -337,7 +449,7 @@ def test_membership_deactivation_revokes_tenant_access_and_reactivation_restores
 
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
@@ -421,7 +533,7 @@ def test_inactive_user_cannot_login(client: TestClient):
 
     admin_login = client.post(
         "/api/auth/login",
-        json={"email": "founder@mdmopsflow.com", "password": "ChangeMe123!"},
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
     )
     assert admin_login.status_code == 200
     admin_token = admin_login.json()["tokens"]["access_token"]
