@@ -152,6 +152,26 @@ export default function PlatformAdminPage() {
     }
   }
 
+  async function deleteUser() {
+    setMessage(null);
+    if (!selectedUser) return;
+
+    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+
+    if (res.ok) {
+      const updated = await res.json();
+      setMessage({ text: `User ${updated.email} was deactivated and memberships were cleared.`, ok: true });
+      await loadUsers();
+      setSelectedUserId(null);
+    } else {
+      const d = await res.json().catch(() => null);
+      setMessage({ text: d?.detail || "Failed to delete user.", ok: false });
+    }
+  }
+
   async function savePassword() {
     setMessage(null);
     if (!selectedUser) return;
@@ -373,6 +393,7 @@ export default function PlatformAdminPage() {
                         Active
                       </label>
                       <button onClick={saveAccess}>Save Access</button>
+                      <button onClick={deleteUser} style={{ background: "#dc2626", color: "white" }}>Delete User</button>
                     </div>
                   </div>
 

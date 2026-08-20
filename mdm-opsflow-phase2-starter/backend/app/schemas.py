@@ -243,6 +243,32 @@ class AssignTenantUserRequest(BaseModel):
     temporary_password: str = Field(min_length=8, max_length=255, default="ChangeMe123!")
 
 
+class UpdateTenantUserMembershipRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "role_name": "field_supervisor",
+                "status": "active",
+            }
+        }
+    )
+
+    role_name: str | None = Field(default=None, min_length=2, max_length=100)
+    status: str | None = Field(default=None, pattern="^(active|inactive|invited)$")
+
+
+class TenantUserResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "new_password": "NewStrongPass123!",
+            }
+        }
+    )
+
+    new_password: str = Field(min_length=8)
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

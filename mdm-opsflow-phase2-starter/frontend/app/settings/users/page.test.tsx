@@ -155,61 +155,43 @@ describe("User settings assignment flow", () => {
   it("lets a super-admin pick a tenant before loading members", async () => {
     window.localStorage.removeItem("opsflow_tenant_id");
 
-    const fetchMock = vi
-      .spyOn(global, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            items: [
-              { tenant_id: "tenant-a", tenant_name: "Acme Civil" },
-              { tenant_id: "tenant-b", tenant_name: "North Ridge" },
-            ],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      );
+    const fetchMock = vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/admin/tenant-service-summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                { tenant_id: "tenant-a", tenant_name: "Acme Civil" },
+                { tenant_id: "tenant-b", tenant_name: "North Ridge" },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users/roles/catalog")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(["owner", "executive", "project_manager", "estimator"]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      if (url.endsWith("/api/tenant-users") || url.endsWith("/api/tenant-users/permissions/catalog")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
 
     const user = userEvent.setup();
     render(<UserSettingsPage />);

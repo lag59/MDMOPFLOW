@@ -66,6 +66,20 @@ describe("module metadata helpers", () => {
     expect(detail?.route.focusAreas).toContain("Fleet assets");
   });
 
+  it("resolves the field supervisor workspace modules as live route entries", () => {
+    const safety = getModuleDetail("field_supervisor", "safety");
+    const production = getModuleDetail("field_supervisor", "production");
+    const crew = getModuleDetail("field_supervisor", "crew");
+    const dailyReports = getModuleDetail("field_supervisor", "daily-field-reports");
+
+    expect(safety).not.toBeNull();
+    expect(safety?.route.status).toBe("live");
+    expect(safety?.route.href).toBe("/modules/field_supervisor/safety");
+    expect(production?.route.href).toBe("/modules/field_supervisor/production");
+    expect(crew?.route.href).toBe("/modules/field_supervisor/crew");
+    expect(dailyReports?.route.href).toBe("/field-supervisor");
+  });
+
   it("returns richer action metadata for safety manager incidents module", () => {
     const detail = getModuleDetail("safety_manager", "incidents");
     expect(detail).not.toBeNull();

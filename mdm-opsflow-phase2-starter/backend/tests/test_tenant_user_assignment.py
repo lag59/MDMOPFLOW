@@ -146,6 +146,84 @@ def test_owner_can_create_user_with_temporary_password_and_assign_role(client: T
     assert login.status_code == 200
 
 
+def test_owner_can_remove_reactivate_and_reset_tenant_staff_password(client: TestClient):
+    owner = register_user(client, "owner-staff-control@acme.com", "Pass12345!", "Owner Staff Control")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Staff Control", "Staff Control Project")
+    tenant_id = onboarding["tenant_id"]
+
+    assign = client.post(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={
+            "email": "staff-control@acme.com",
+            "role_name": "field_supervisor",
+            "display_name": "Staff Control",
+            "temporary_password": "ChangeMe123!",
+        },
+    )
+    assert assign.status_code == 201, assign.text
+    user_id = assign.json()["user_id"]
+
+    reset = client.post(
+        f"/api/tenant-users/{user_id}/reset-password",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"new_password": "OwnerReset123!"},
+    )
+    assert reset.status_code == 200, reset.text
+
+    new_login = client.post(
+        "/api/auth/login",
+        json={"email": "staff-control@acme.com", "password": "OwnerReset123!", "tenant_id": tenant_id},
+    )
+    assert new_login.status_code == 200
+
+    remove = client.patch(
+        f"/api/tenant-users/{user_id}/membership",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"status": "inactive"},
+    )
+    assert remove.status_code == 200, remove.text
+    assert remove.json()["status"] == "inactive"
+
+    denied_after_remove = client.get(
+        "/api/projects",
+        headers={"Authorization": f"Bearer {new_login.json()['tokens']['access_token']}", "X-Tenant-ID": tenant_id},
+    )
+    assert denied_after_remove.status_code == 403
+
+    list_after_remove = client.get(
+        "/api/tenant-users",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+    )
+    assert list_after_remove.status_code == 200
+    removed_row = next(item for item in list_after_remove.json() if item["email"] == "staff-control@acme.com")
+    assert removed_row["status"] == "inactive"
+
+    reactivate = client.patch(
+        f"/api/tenant-users/{user_id}/membership",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"role_name": "field_supervisor", "status": "active"},
+    )
+    assert reactivate.status_code == 200, reactivate.text
+    assert reactivate.json()["status"] == "active"
+
+
+def test_owner_cannot_remove_last_active_owner_membership(client: TestClient):
+    owner = register_user(client, "owner-last-owner@acme.com", "Pass12345!", "Owner Last Owner")
+    owner_token = owner["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, owner_token, "Acme Last Owner", "Last Owner Project")
+    tenant_id = onboarding["tenant_id"]
+
+    remove_owner = client.patch(
+        f"/api/tenant-users/{owner['user_id']}/membership",
+        headers={"Authorization": f"Bearer {owner_token}", "X-Tenant-ID": tenant_id},
+        json={"status": "inactive"},
+    )
+    assert remove_owner.status_code == 400
+    assert "last active owner" in remove_owner.json()["detail"]
+
+
 def test_assigning_case_variant_reuses_existing_user_account(client: TestClient):
     owner = register_user(client, "owner-case@acme.com", "Pass12345!", "Owner")
     owner_token = owner["tokens"]["access_token"]

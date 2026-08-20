@@ -352,6 +352,70 @@ def cleanup_test_data(
     )
 
 
+@router.delete(
+    "/users/{user_id}",
+    response_model=AdminUserAccessItem,
+    operation_id="admin_user_delete",
+    summary="Delete user",
+    description="Deactivates a user and all tenant memberships as a super-admin safety action without hard-deleting their audit history.",
+    responses={
+        200: {"description": "User deactivated successfully."},
+        400: {"description": "Self-deletion or invalid action."},
+        403: {"description": "Super-admin required."},
+        404: {"description": "User not found."},
+    },
+)
+def delete_user(
+    user_id: str,
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own super-admin account")
+
+    user.is_active = False
+    user.refresh_token_hash = None
+    user.refresh_token_expires_at = None
+
+    memberships = db.scalars(select(TenantMembership).where(TenantMembership.user_id == user.id)).all()
+    for membership in memberships:
+        membership.status = MembershipStatus.INACTIVE
+
+    if memberships:
+        tenant_id_for_audit = memberships[0].tenant_id
+        db.add(
+            AuditLog(
+                tenant_id=tenant_id_for_audit,
+                actor_user_id=current_user.id,
+                action="admin_delete_user",
+                resource_type="user",
+                resource_id=user.id,
+                details=f"Deactivated user {user.email} and {len(memberships)} tenant memberships",
+                created_by=current_user.id,
+            )
+        )
+
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "display_name": user.display_name,
+        "title": user.title,
+        "platform_role": user.platform_role,
+        "is_active": user.is_active,
+        "user_status": "active" if user.is_active else "inactive",
+        "is_test": user.is_test,
+        "created_by_automation": user.created_by_automation,
+        "test_run_id": user.test_run_id,
+        "expires_at": user.expires_at,
+    }
+
+
 @router.get(
     "/roles/catalog",
     response_model=list[str],

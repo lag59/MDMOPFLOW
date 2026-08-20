@@ -20,8 +20,10 @@ from app.security import hash_password
 from app.schemas import (
     AssignTenantUserRequest,
     PermissionCatalogResponse,
+    TenantUserResetPasswordRequest,
     TenantUserPermissionsResponse,
     TenantUserSummary,
+    UpdateTenantUserMembershipRequest,
     UpdateTenantUserPermissionsRequest,
     UserPermissionOverrideItem,
 )
@@ -68,6 +70,91 @@ def _ensure_owner_cannot_grant_admin_permissions(*, actor_role_name: str | None,
         )
 
 
+def _ensure_can_manage_tenant_users(context: RequestContext, db: Session) -> str | None:
+    actor_role_name = _actor_role(context, db)
+    is_platform_super_admin = context.user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN
+    is_tenant_admin = actor_role_name == "tenant_admin"
+    is_owner = actor_role_name == "owner"
+    if not is_platform_super_admin and not is_tenant_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return actor_role_name
+
+
+def _tenant_user_summary(db: Session, user: User, memberships: list[TenantMembership]) -> TenantUserSummary:
+    role_names: set[str] = set()
+    statuses = {membership.status for membership in memberships}
+    for membership in memberships:
+        role = db.get(Role, membership.role_id)
+        if role:
+            role_names.add(role.name)
+
+    if MembershipStatus.ACTIVE in statuses:
+        status_value = MembershipStatus.ACTIVE.value
+    elif MembershipStatus.INVITED in statuses:
+        status_value = MembershipStatus.INVITED.value
+    else:
+        status_value = MembershipStatus.INACTIVE.value
+
+    return TenantUserSummary(
+        user_id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        title=user.title,
+        role_name=", ".join(sorted(role_names)),
+        status=status_value,
+    )
+
+
+def _get_any_tenant_memberships_and_user_or_404(db: Session, tenant_id: str, user_id: str) -> tuple[list[TenantMembership], User]:
+    memberships = db.scalars(
+        select(TenantMembership).where(
+            TenantMembership.tenant_id == tenant_id,
+            TenantMembership.user_id == user_id,
+        )
+    ).all()
+    if not memberships:
+        raise HTTPException(status_code=404, detail="User is not a tenant member")
+
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User is not a tenant member")
+    return memberships, user
+
+
+def _get_or_create_role(db: Session, tenant_id: str, role_name: str, actor_user_id: str) -> Role:
+    role = db.scalar(select(Role).where(Role.tenant_id == tenant_id, Role.name == role_name))
+    if role:
+        return role
+    if role_name not in ROLE_PERMISSIONS:
+        raise HTTPException(status_code=404, detail="Role not found for tenant")
+    role = Role(
+        tenant_id=tenant_id,
+        name=role_name,
+        permissions=permissions_csv_for_role(role_name),
+        created_by=actor_user_id,
+    )
+    db.add(role)
+    db.flush()
+    return role
+
+
+def _ensure_tenant_keeps_active_owner(db: Session, tenant_id: str, target_user_id: str) -> None:
+    active_memberships = db.scalars(
+        select(TenantMembership).where(
+            TenantMembership.tenant_id == tenant_id,
+            TenantMembership.status == MembershipStatus.ACTIVE,
+        )
+    ).all()
+    active_owner_user_ids: set[str] = set()
+    for membership in active_memberships:
+        role = db.get(Role, membership.role_id)
+        if role and role.name == "owner":
+            active_owner_user_ids.add(membership.user_id)
+
+    if target_user_id in active_owner_user_ids and len(active_owner_user_ids) == 1:
+        raise HTTPException(status_code=400, detail="Cannot remove the last active owner membership for this tenant")
+
+
 @router.get(
     "/roles/catalog",
     response_model=list[str],
@@ -102,35 +189,16 @@ def list_tenant_users(
 ):
     tenant_id = _tenant_id_from_context_or_400(context)
 
-    memberships = db.scalars(
-        select(TenantMembership).where(
-            TenantMembership.tenant_id == tenant_id,
-            TenantMembership.status == MembershipStatus.ACTIVE,
-        )
-    ).all()
+    memberships = db.scalars(select(TenantMembership).where(TenantMembership.tenant_id == tenant_id)).all()
 
-    grouped: dict[str, TenantUserSummary] = {}
+    grouped: dict[str, list[TenantMembership]] = {}
     for membership in memberships:
         user = db.get(User, membership.user_id)
-        role = db.get(Role, membership.role_id)
-        if not user or not role:
+        if not user:
             continue
-        existing = grouped.get(user.id)
-        if existing:
-            existing_roles = {item.strip() for item in existing.role_name.split(",") if item.strip()}
-            existing_roles.add(role.name)
-            existing.role_name = ", ".join(sorted(existing_roles))
-            continue
-        grouped[user.id] = TenantUserSummary(
-                user_id=user.id,
-                email=user.email,
-                display_name=user.display_name,
-                title=user.title,
-                role_name=role.name,
-                status=membership.status.value,
-            )
+        grouped.setdefault(user.id, []).append(membership)
 
-    return list(grouped.values())
+    return [_tenant_user_summary(db, db.get(User, user_id), user_memberships) for user_id, user_memberships in grouped.items() if db.get(User, user_id)]
 
 
 @router.post(
@@ -154,12 +222,8 @@ def assign_tenant_user(
     db: Session = Depends(get_db),
 ):
     tenant_id = _tenant_id_from_context_or_400(context)
-    actor_role_name = _actor_role(context, db)
+    actor_role_name = _ensure_can_manage_tenant_users(context, db)
     is_platform_super_admin = context.user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN
-    is_tenant_admin = actor_role_name == "tenant_admin"
-    is_owner = actor_role_name == "owner"
-    if not is_platform_super_admin and not is_tenant_admin and not is_owner:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
     _ensure_owner_cannot_grant_admin_role(actor_role_name=actor_role_name, target_role_name=payload.role_name)
 
     normalized_email = payload.email.lower().strip()
@@ -182,23 +246,7 @@ def assign_tenant_user(
             db.add(user)
             db.flush()
 
-    role = db.scalar(
-        select(Role).where(
-            Role.tenant_id == tenant_id,
-            Role.name == payload.role_name,
-        )
-    )
-    if not role:
-        if payload.role_name not in ROLE_PERMISSIONS:
-            raise HTTPException(status_code=404, detail="Role not found for tenant")
-        role = Role(
-            tenant_id=tenant_id,
-            name=payload.role_name,
-            permissions=permissions_csv_for_role(payload.role_name),
-            created_by=context.user.id,
-        )
-        db.add(role)
-        db.flush()
+    role = _get_or_create_role(db, tenant_id, payload.role_name, context.user.id)
 
     existing = db.scalar(
         select(TenantMembership).where(
@@ -259,6 +307,138 @@ def assign_tenant_user(
         role_name=role.name,
         status=membership.status.value,
     )
+
+
+@router.patch(
+    "/{user_id}/membership",
+    response_model=TenantUserSummary,
+    operation_id="tenant_users_membership_update",
+    summary="Update tenant user membership",
+    description="Updates a tenant user's role or membership status within the current tenant context.",
+    responses={
+        200: {"description": "Tenant user membership updated successfully."},
+        400: {"description": "X-Tenant-ID is required or tenant would lose its owner."},
+        403: {"description": "Insufficient permissions."},
+        404: {"description": "User is not a tenant member."},
+    },
+)
+def update_tenant_user_membership(
+    user_id: str,
+    payload: UpdateTenantUserMembershipRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context_or_400(context)
+    actor_role_name = _ensure_can_manage_tenant_users(context, db)
+    memberships, user = _get_any_tenant_memberships_and_user_or_404(db, tenant_id, user_id)
+
+    requested_status = MembershipStatus(payload.status) if payload.status else None
+    if requested_status == MembershipStatus.INACTIVE:
+        _ensure_tenant_keeps_active_owner(db, tenant_id, user_id)
+    if payload.role_name:
+        _ensure_owner_cannot_grant_admin_role(actor_role_name=actor_role_name, target_role_name=payload.role_name)
+        changing_last_owner = payload.role_name != "owner" and any(
+            (db.get(Role, membership.role_id) and db.get(Role, membership.role_id).name == "owner" and membership.status == MembershipStatus.ACTIVE)
+            for membership in memberships
+        )
+        if changing_last_owner:
+            _ensure_tenant_keeps_active_owner(db, tenant_id, user_id)
+
+    before = {
+        "roles": [db.get(Role, membership.role_id).name for membership in memberships if db.get(Role, membership.role_id)],
+        "statuses": [membership.status.value for membership in memberships],
+    }
+
+    if requested_status == MembershipStatus.INACTIVE:
+        for membership in memberships:
+            membership.status = MembershipStatus.INACTIVE
+    elif payload.role_name:
+        target_role = _get_or_create_role(db, tenant_id, payload.role_name, context.user.id)
+        target_membership = next((membership for membership in memberships if membership.role_id == target_role.id), None)
+        if target_membership is None:
+            target_membership = TenantMembership(
+                tenant_id=tenant_id,
+                user_id=user.id,
+                role_id=target_role.id,
+                status=MembershipStatus.ACTIVE,
+                created_by=context.user.id,
+            )
+            db.add(target_membership)
+            memberships.append(target_membership)
+        for membership in memberships:
+            membership.status = MembershipStatus.ACTIVE if membership.role_id == target_role.id else MembershipStatus.INACTIVE
+    elif requested_status is not None:
+        for membership in memberships:
+            membership.status = requested_status
+
+    if requested_status == MembershipStatus.ACTIVE and not user.is_active:
+        user.is_active = True
+
+    db.flush()
+    after_memberships, _ = _get_any_tenant_memberships_and_user_or_404(db, tenant_id, user_id)
+    after = {
+        "roles": [db.get(Role, membership.role_id).name for membership in after_memberships if db.get(Role, membership.role_id)],
+        "statuses": [membership.status.value for membership in after_memberships],
+    }
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="update_tenant_user_membership",
+        entity_type="tenant_membership",
+        entity_id=user.id,
+        tenant_id=tenant_id,
+        request_id=get_request_id(request),
+        details=f"Updated tenant membership for {user.email}",
+        before=before,
+        after=after,
+    )
+    db.commit()
+    return _tenant_user_summary(db, user, after_memberships)
+
+
+@router.post(
+    "/{user_id}/reset-password",
+    response_model=TenantUserSummary,
+    operation_id="tenant_users_password_reset",
+    summary="Reset tenant user password",
+    description="Resets a staff user's password within the current tenant context.",
+    responses={
+        200: {"description": "Password reset successfully."},
+        400: {"description": "X-Tenant-ID is required."},
+        403: {"description": "Insufficient permissions."},
+        404: {"description": "User is not a tenant member."},
+    },
+)
+def reset_tenant_user_password(
+    user_id: str,
+    payload: TenantUserResetPasswordRequest,
+    request: Request,
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    tenant_id = _tenant_id_from_context_or_400(context)
+    _ensure_can_manage_tenant_users(context, db)
+    memberships, user = _get_any_tenant_memberships_and_user_or_404(db, tenant_id, user_id)
+
+    if user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN and context.user.platform_role != PlatformRole.PLATFORM_SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Only platform super-admin can reset another super-admin password")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.refresh_token_hash = None
+    user.refresh_token_expires_at = None
+    add_audit_log(
+        db,
+        actor_user_id=context.user.id,
+        action="reset_tenant_user_password",
+        entity_type="user",
+        entity_id=user.id,
+        tenant_id=tenant_id,
+        request_id=get_request_id(request),
+        details=f"Password reset for {user.email}",
+    )
+    db.commit()
+    return _tenant_user_summary(db, user, memberships)
 
 
 def _get_memberships_and_user_or_404(db: Session, tenant_id: str, user_id: str) -> tuple[list[TenantMembership], User]:

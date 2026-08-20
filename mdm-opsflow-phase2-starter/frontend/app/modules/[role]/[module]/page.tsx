@@ -695,7 +695,7 @@ export default function ModuleDetailPage() {
       return;
     }
 
-    if (!detail || !["company_owner", "executive", "project_manager", "estimator", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
+    if (!detail || !["company_owner", "executive", "project_manager", "estimator", "field_supervisor", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
       return;
     }
 
@@ -1550,7 +1550,7 @@ export default function ModuleDetailPage() {
   };
 
   const renderCompanyOwnerContent = () => {
-    if (!detail || !["company_owner", "executive", "project_manager", "estimator", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
+    if (!detail || !["company_owner", "executive", "project_manager", "estimator", "field_supervisor", "dispatcher", "accounting", "payroll", "fleet_manager", "safety_manager", "administrator", "customer", "vendor"].includes(detail.roleKey)) {
       return null;
     }
 
@@ -2363,6 +2363,141 @@ export default function ModuleDetailPage() {
     const distinctMaterials = Array.from(new Set(tickets.map((ticket) => ticket.material.trim()).filter(Boolean)));
     const presetCoverage = distinctMaterials.filter((material) => materialPresets.some((preset) => preset.material_name.trim().toLowerCase() === material.toLowerCase())).length;
     const employeeCount = employees.length;
+    const fieldSupervisorReports = dailyReports.slice(0, 6);
+    const fieldReportsDue = dailyReports.filter((report) => ["draft", "not_started", "pending"].includes((report.status || "").toLowerCase())).length;
+    const fieldReportsSubmitted = dailyReports.filter((report) => ["submitted", "review", "reviewed", "under_review", "approved"].includes((report.status || "").toLowerCase())).length;
+    const openSafetyIssues = Math.max(0, tickets.filter((ticket) => (ticket.notes || "").toLowerCase().includes("safety") || (ticket.material || "").toLowerCase().includes("safety")).length);
+
+    if (detail.roleKey === "field_supervisor" && detail.moduleSlug === "daily-field-reports") {
+      return (
+        <section className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Reports due</div><div className="mt-2 text-3xl font-bold text-red-600">{fieldReportsDue}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Submitted</div><div className="mt-2 text-3xl font-bold text-green-600">{fieldReportsSubmitted}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Crew onsite</div><div className="mt-2 text-3xl font-bold text-slate-900">{employeeCount}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Safety flags</div><div className="mt-2 text-3xl font-bold text-amber-600">{openSafetyIssues}</div></div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Daily field report queue</h2>
+            <div className="mt-4 space-y-3">
+              {fieldSupervisorReports.length === 0 ? (
+                <p className="text-sm text-slate-600">No daily field reports are currently available.</p>
+              ) : (
+                fieldSupervisorReports.map((report) => (
+                  <div key={report.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{report.report_number || report.id}</div>
+                        <div>{projects.find((project) => project.id === report.project_id)?.project_name || "Unassigned project"}</div>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 capitalize">{report.status || "Draft"}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-600">
+                      {report.reporting_supervisor || "Field lead"} • {report.report_date || "No date"}
+                    </div>
+                    <div className="mt-2">{report.work_performed || "Production update pending."}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    if (detail.roleKey === "field_supervisor" && detail.moduleSlug === "safety") {
+      return (
+        <section className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Safety observations</h2>
+            <div className="mt-4 space-y-3">
+              {tickets.filter((ticket) => (ticket.notes || "").toLowerCase().includes("safety") || (ticket.material || "").toLowerCase().includes("safety")).slice(0, 5).length === 0 ? (
+                <p className="text-sm text-slate-600">No safety-related issues are currently flagged.</p>
+              ) : (
+                tickets.filter((ticket) => (ticket.notes || "").toLowerCase().includes("safety") || (ticket.material || "").toLowerCase().includes("safety")).slice(0, 5).map((ticket) => (
+                  <div key={ticket.id} className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-slate-800">
+                    <div className="font-semibold">{ticket.ticket_number || ticket.id}</div>
+                    <div className="mt-1">{ticket.material || "Safety observation"} • {ticket.status || "Open"}</div>
+                    <div className="mt-1">{ticket.notes || "Incident follow-up pending."}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    if (detail.roleKey === "field_supervisor" && detail.moduleSlug === "production") {
+      return (
+        <section className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Active projects</div><div className="mt-2 text-3xl font-bold text-slate-900">{ownerSummary.activeProjects}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Production tickets</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.assignedTickets}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Revenue tracked</div><div className="mt-2 text-3xl font-bold text-green-600">{formatCurrency(ownerSummary.totalRevenue)}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Reports due</div><div className="mt-2 text-3xl font-bold text-red-600">{fieldReportsDue}</div></div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Production focus</h2>
+            <div className="mt-4 space-y-3">
+              {projects.slice(0, 5).map((project) => {
+                const projectProfitability = profitability.get(project.id);
+                return (
+                  <div key={project.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{project.project_name}</div>
+                        <div>{project.status}</div>
+                      </div>
+                      <div className="text-right">
+                        <div>Margin: {Number(projectProfitability?.profit_margin || 0).toFixed(1)}%</div>
+                        <div>Tickets: {projectProfitability?.ticket_count || 0}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    if (detail.roleKey === "field_supervisor" && detail.moduleSlug === "crew") {
+      return (
+        <section className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Crew members</div><div className="mt-2 text-3xl font-bold text-slate-900">{employeeCount}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Assigned tickets</div><div className="mt-2 text-3xl font-bold text-blue-700">{ownerSummary.assignedTickets}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Unassigned loads</div><div className="mt-2 text-3xl font-bold text-amber-600">{ownerSummary.unassignedTickets.length}</div></div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4"><div className="text-xs font-semibold uppercase text-slate-500">Work trucks</div><div className="mt-2 text-3xl font-bold text-slate-900">{truckCount}</div></div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Crew assignment view</h2>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Crew roster</div>
+                <div className="mt-2 space-y-2">
+                  {employees.slice(0, 6).map((employee) => (
+                    <div key={employee.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                      {employee.name || employee.id} • {employee.role || "Field employee"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Workload signals</div>
+                <div className="mt-2 space-y-2 text-sm text-slate-700">
+                  {topDrivers.map(([driver, count]) => (
+                    <div key={driver} className="rounded-md border border-slate-200 px-3 py-2">{driver}: {count} assigned tickets</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
 
     if (detail.roleKey === "dispatcher" && detail.moduleSlug === "dispatch-board") {
       return (

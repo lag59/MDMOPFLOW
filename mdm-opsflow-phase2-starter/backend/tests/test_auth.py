@@ -264,6 +264,63 @@ def test_super_admin_can_manage_user_access_and_reset_password(client: TestClien
     assert new_login.status_code == 200
 
 
+def test_super_admin_can_delete_user_and_inactivate_memberships(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    user_register = client.post(
+        "/api/auth/register",
+        json={"email": "to-delete@example.com", "password": "Pass12345!", "display_name": "To Delete"},
+    )
+    assert user_register.status_code == 201
+    user_id = user_register.json()["user_id"]
+
+    tenant = client.post(
+        "/api/admin/tenants",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "tenant_name": "Delete Tenant Example",
+            "company_type": "General Contractor",
+            "preferred_language": "en",
+            "selected_modules": ["Projects"],
+        },
+    )
+    assert tenant.status_code == 201, tenant.text
+    tenant_id = tenant.json()["tenant_id"]
+
+    assign = client.post(
+        f"/api/admin/users/{user_id}/memberships",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"tenant_id": tenant_id, "role_name": "project_manager"},
+    )
+    assert assign.status_code == 201, assign.text
+
+    delete_response = client.delete(
+        f"/api/admin/users/{user_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert delete_response.status_code == 200, delete_response.text
+    payload = delete_response.json()
+    assert payload["is_active"] is False
+
+    memberships = client.get(
+        f"/api/admin/users/{user_id}/memberships",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert memberships.status_code == 200
+    assert all(item["status"] == "inactive" for item in memberships.json())
+
+    login_after_delete = client.post(
+        "/api/auth/login",
+        json={"email": "to-delete@example.com", "password": "Pass12345!"},
+    )
+    assert login_after_delete.status_code == 401
+
+
 def test_super_admin_can_create_tenant_and_assign_user_membership(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",

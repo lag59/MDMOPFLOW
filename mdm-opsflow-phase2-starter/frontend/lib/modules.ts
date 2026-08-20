@@ -233,6 +233,55 @@ export const MODULE_ROUTE_MAP: Record<string, ModuleRouteConfig> = {
     focusAreas: ["Estimate outcomes", "Margin realization", "Pipeline conversion", "Bid performance"],
   },
 
+  "Daily Field Reports": {
+    href: "/field-supervisor",
+    status: "live",
+    helperText: "Daily site reporting and crew production logs",
+    primaryActionLabel: "Open Daily Field Reports",
+    actionLinks: [
+      { label: "Open field supervisor workspace", href: "/field-supervisor" },
+      { label: "Review daily production", href: "/daily-production" },
+      { label: "Inspect project tickets", href: "/tickets" },
+    ],
+    focusAreas: ["Daily site activity", "Crew output", "Safety conditions", "Project reporting"],
+  },
+  Safety: {
+    href: "/modules/field_supervisor/safety",
+    status: "live",
+    helperText: "Site safety observations, issues, and corrective follow-up",
+    primaryActionLabel: "Open Safety Module",
+    actionLinks: [
+      { label: "Open safety review", href: "/modules/field_supervisor/safety" },
+      { label: "Review daily reports", href: "/field-supervisor" },
+      { label: "Check active projects", href: "/projects" },
+    ],
+    focusAreas: ["Safety observations", "Crew exposure", "Issue follow-up", "Corrective actions"],
+  },
+  Production: {
+    href: "/modules/field_supervisor/production",
+    status: "live",
+    helperText: "Daily output, completed quantities, and schedule progress",
+    primaryActionLabel: "Open Production Module",
+    actionLinks: [
+      { label: "Open production view", href: "/modules/field_supervisor/production" },
+      { label: "Open daily production form", href: "/daily-production" },
+      { label: "Review active projects", href: "/projects" },
+    ],
+    focusAreas: ["Production output", "Quantities complete", "Crew efficiency", "Schedule pressure"],
+  },
+  Crew: {
+    href: "/modules/field_supervisor/crew",
+    status: "live",
+    helperText: "Crew assignments, attendance, and daily staffing visibility",
+    primaryActionLabel: "Open Crew Module",
+    actionLinks: [
+      { label: "Open crew view", href: "/modules/field_supervisor/crew" },
+      { label: "Open dispatch board", href: "/ticket-manager" },
+      { label: "Review project assignments", href: "/projects" },
+    ],
+    focusAreas: ["Crew coverage", "Daily staffing", "Assignment load", "Field readiness"],
+  },
+
   "Dispatch Board": {
     href: "/ticket-manager",
     status: "live",

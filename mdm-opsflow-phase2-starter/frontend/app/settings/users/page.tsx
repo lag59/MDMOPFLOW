@@ -79,7 +79,7 @@ export default function UserSettingsPage() {
   const [memberships, setMemberships] = useState<UserMembership[]>([]);
   const [permissionCatalog, setPermissionCatalog] = useState<string[]>([]);
   const [tenantOptions, setTenantOptions] = useState<TenantOption[]>([]);
-  const [selectedTenantId, setSelectedTenantId] = useState(() => getTenantId());
+  const [selectedTenantId, setSelectedTenantId] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserMembership | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Set<string>>(new Set());
   const [basePermissions, setBasePermissions] = useState<Set<string>>(new Set());
@@ -92,6 +92,8 @@ export default function UserSettingsPage() {
   const [message, setMessage] = useState("");
   const [toggleMessage, setToggleMessage] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState("ChangeMe123!");
 
   function formatPermissionLabel(permission: string): string {
     return permission
@@ -135,14 +137,21 @@ export default function UserSettingsPage() {
     });
 
     if (response.ok) {
-      const payload = (await response.json()) as { items: TenantOption[] };
-      setTenantOptions(payload.items);
+      const payload = (await response.json()) as { items?: TenantOption[] } | TenantOption[];
+      const options = (Array.isArray(payload) ? payload : payload.items ?? []).filter((item) => item?.tenant_id && item?.tenant_name);
+      if (options.length === 0) {
+        return;
+      }
+      setTenantOptions(options);
 
-      const hasSelectedTenant = selectedTenantId
-        ? payload.items.some((tenant) => tenant.tenant_id === selectedTenantId)
+      const preferredTenantId = selectedTenantId || getTenantId();
+      const hasSelectedTenant = preferredTenantId
+        ? options.some((tenant) => tenant.tenant_id === preferredTenantId)
         : false;
       if (!hasSelectedTenant) {
-        setSelectedTenantId(payload.items[0]?.tenant_id ?? "");
+        setSelectedTenantId(options[0]?.tenant_id ?? "");
+      } else {
+        setSelectedTenantId(preferredTenantId);
       }
       return;
     }
@@ -161,11 +170,14 @@ export default function UserSettingsPage() {
         }));
         setTenantOptions(options);
 
-        const hasSelectedTenant = selectedTenantId
-          ? options.some((tenant) => tenant.tenant_id === selectedTenantId)
+        const preferredTenantId = selectedTenantId || getTenantId();
+        const hasSelectedTenant = preferredTenantId
+          ? options.some((tenant) => tenant.tenant_id === preferredTenantId)
           : false;
         if (!hasSelectedTenant) {
           setSelectedTenantId(options[0]?.tenant_id ?? "");
+        } else {
+          setSelectedTenantId(preferredTenantId);
         }
         return;
       }
@@ -389,6 +401,54 @@ export default function UserSettingsPage() {
     setToggleMessage("Function toggles updated.");
   }
 
+  async function updateMembershipStatus(membership: UserMembership, status: "active" | "inactive"): Promise<void> {
+    setMessage("");
+    const role = membership.role_name.split(",")[0]?.trim() || roleName;
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/${membership.user_id}/membership`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": resolveTenantHeader(),
+      },
+      body: JSON.stringify({ role_name: status === "active" ? role : undefined, status }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      setMessage(payload?.detail ?? "Failed to update membership status.");
+      return;
+    }
+
+    setSelectedUser(null);
+    setMessage(status === "active" ? "Membership reactivated." : "Membership removed from this tenant.");
+    await loadMembers();
+  }
+
+  async function resetTenantUserPassword(membership: UserMembership): Promise<void> {
+    setMessage("");
+    const nextPassword = resetPassword.trim() || "ChangeMe123!";
+    const response = await fetchWithSessionRetry(`${getApiBaseUrl()}/api/tenant-users/${membership.user_id}/reset-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAccessToken()}`,
+        "X-Tenant-ID": resolveTenantHeader(),
+      },
+      body: JSON.stringify({ new_password: nextPassword }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      setMessage(payload?.detail ?? "Failed to reset password.");
+      return;
+    }
+
+    setResetPasswordUserId(null);
+    setResetPassword("ChangeMe123!");
+    setMessage(`Password reset for ${membership.email}. Temporary password: ${nextPassword}`);
+  }
+
   function togglePermission(permission: string): void {
     const next = new Set(selectedPermissions);
     if (next.has(permission)) {
@@ -494,15 +554,45 @@ export default function UserSettingsPage() {
             <strong>{membership.display_name} ({membership.email})</strong>
             <span className="muted">{membership.role_name}</span>
             <span className={`status-pill status-${membership.status}`}>{membership.status}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedUser(membership);
-                void loadUserPermissions(membership.user_id);
-              }}
-            >
-              Manage Functions
-            </button>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                type="button"
+                disabled={membership.status !== "active"}
+                onClick={() => {
+                  setSelectedUser(membership);
+                  void loadUserPermissions(membership.user_id);
+                }}
+              >
+                Manage Functions
+              </button>
+              {membership.status === "active" ? (
+                <button type="button" onClick={() => void updateMembershipStatus(membership, "inactive")}>
+                  Remove
+                </button>
+              ) : (
+                <button type="button" onClick={() => void updateMembershipStatus(membership, "active")}>
+                  Reactivate
+                </button>
+              )}
+              <button type="button" onClick={() => setResetPasswordUserId(membership.user_id)}>
+                Reset Password
+              </button>
+            </div>
+            {resetPasswordUserId === membership.user_id ? (
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginTop: "8px" }}>
+                <input
+                  aria-label={`New password for ${membership.email}`}
+                  value={resetPassword}
+                  onChange={(event) => setResetPassword(event.target.value)}
+                />
+                <button type="button" onClick={() => void resetTenantUserPassword(membership)}>
+                  Save Password
+                </button>
+                <button type="button" onClick={() => setResetPasswordUserId(null)}>
+                  Cancel
+                </button>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
