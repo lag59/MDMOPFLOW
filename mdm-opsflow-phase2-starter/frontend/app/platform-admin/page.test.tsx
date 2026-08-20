@@ -135,4 +135,59 @@ describe("Platform admin tenant creation", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/api/admin/tenants"))).toBe(true);
     expect(screen.getByLabelText("Saved tenant")).toHaveValue("tenant-1");
   });
+
+  it("refreshes the session and retries tenant creation when the token expires", async () => {
+    let createAttempts = 0;
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      if (url.endsWith("/api/auth/me")) {
+        return Promise.resolve(new Response(JSON.stringify({ platform_role: "platform_super_admin" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/auth/refresh")) {
+        return Promise.resolve(new Response(JSON.stringify({ access_token: "tenant-create-fresh-token", refresh_token: "fresh-refresh" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/overview")) {
+        return Promise.resolve(new Response(JSON.stringify({ tenants: 0, users: 0, projects: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/service-insights")) {
+        return Promise.resolve(new Response(JSON.stringify({ tickets: 0, intake_items: 0, intake_needs_review: 0, extractions_pending_review: 0, extractions_review_submitted: 0, unresolved_extraction_issues: 0, integration_events_pending: 0, integration_events_failed: 0, opportunities: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/users") || url.endsWith("/api/admin/roles/catalog")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/tenant-service-summary")) {
+        return Promise.resolve(new Response(JSON.stringify({ items: createAttempts > 0 ? [{ tenant_id: "tenant-2", tenant_name: "Token Refresh Civil" }] : [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/tenants") && method === "POST") {
+        createAttempts += 1;
+        if (createAttempts === 1) {
+          return Promise.resolve(new Response(JSON.stringify({ detail: "Invalid authentication" }), { status: 401, headers: { "Content-Type": "application/json" } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ tenant_id: "tenant-2", tenant_name: "Token Refresh Civil", tenant_type: "production", is_test: false, created_by_automation: false }), { status: 201, headers: { "Content-Type": "application/json" } }));
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+
+    const user = userEvent.setup();
+    render(<PlatformAdminPage />);
+
+    await user.type(await screen.findByLabelText("Tenant name"), "Token Refresh Civil");
+    await user.click(screen.getByRole("button", { name: "Create Tenant" }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Tenant "Token Refresh Civil" saved.')).toBeInTheDocument();
+    });
+
+    expect(createAttempts).toBe(2);
+    expect(window.localStorage.getItem("opsflow_access_token")).toBe("tenant-create-fresh-token");
+  });
 });

@@ -81,17 +81,25 @@ export default function PlatformAdminPage() {
   const selectedUser = users.find((u) => u.id === selectedUserId) ?? null;
 
   const api = getApiBaseUrl();
-  function authHeaders() {
+  function authHeaders(): Record<string, string> {
     return { "Content-Type": "application/json", Authorization: `Bearer ${getAccessToken()}` };
   }
 
+  async function adminFetch(url: string, init: RequestInit = {}) {
+    let response = await fetch(url, { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) } });
+    if (response.status === 401 && await refreshSession(api)) {
+      response = await fetch(url, { ...init, headers: { ...authHeaders(), ...(init.headers as Record<string, string> | undefined) } });
+    }
+    return response;
+  }
+
   async function loadUsers() {
-    const res = await fetch(`${api}/api/admin/users`, { headers: authHeaders() });
+    const res = await adminFetch(`${api}/api/admin/users`);
     if (res.ok) setUsers(await res.json());
   }
 
   async function loadTenants() {
-    const res = await fetch(`${api}/api/admin/tenant-service-summary`, { headers: authHeaders() });
+    const res = await adminFetch(`${api}/api/admin/tenant-service-summary`);
     if (res.ok) {
       const data = await res.json();
       setTenants((data.items ?? []).map((t: { tenant_id: string; tenant_name: string }) => ({ id: t.tenant_id, name: t.tenant_name })));
@@ -99,7 +107,7 @@ export default function PlatformAdminPage() {
   }
 
   async function loadRoleCatalog() {
-    const res = await fetch(`${api}/api/admin/roles/catalog`, { headers: authHeaders() });
+    const res = await adminFetch(`${api}/api/admin/roles/catalog`);
     if (!res.ok) {
       setRoleOptions(DEFAULT_ROLE_OPTIONS);
       if (!DEFAULT_ROLE_OPTIONS.includes(newRoleName)) {
@@ -118,8 +126,8 @@ export default function PlatformAdminPage() {
 
   async function loadAdminData() {
     const [ovRes, insRes] = await Promise.all([
-      fetch(`${api}/api/admin/overview`, { headers: authHeaders() }),
-      fetch(`${api}/api/admin/service-insights`, { headers: authHeaders() }),
+      adminFetch(`${api}/api/admin/overview`),
+      adminFetch(`${api}/api/admin/service-insights`),
     ]);
     if (ovRes.ok) setOverview(await ovRes.json());
     if (insRes.ok) setInsights(await insRes.json());
@@ -134,7 +142,7 @@ export default function PlatformAdminPage() {
     setEditActive(user.is_active);
     setNewPassword("");
     setMessage(null);
-    const res = await fetch(`${api}/api/admin/users/${user.id}/memberships`, { headers: authHeaders() });
+    const res = await adminFetch(`${api}/api/admin/users/${user.id}/memberships`);
     if (res.ok) setMemberships(await res.json());
     else setMemberships([]);
   }
@@ -142,9 +150,8 @@ export default function PlatformAdminPage() {
   async function saveAccess() {
     setMessage(null);
     if (!selectedUser) return;
-    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}/access`, {
+    const res = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/access`, {
       method: "PATCH",
-      headers: authHeaders(),
       body: JSON.stringify({ platform_role: editRole, is_active: editActive }),
     });
     if (res.ok) {
@@ -160,9 +167,8 @@ export default function PlatformAdminPage() {
     setMessage(null);
     if (!selectedUser) return;
 
-    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}`, {
+    const res = await adminFetch(`${api}/api/admin/users/${selectedUser.id}`, {
       method: "DELETE",
-      headers: authHeaders(),
     });
 
     if (res.ok) {
@@ -183,9 +189,8 @@ export default function PlatformAdminPage() {
       setMessage({ text: "Password must be at least 8 characters.", ok: false });
       return;
     }
-    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}/reset-password`, {
+    const res = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/reset-password`, {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({ new_password: newPassword.trim() }),
     });
     if (res.ok) {
@@ -203,14 +208,13 @@ export default function PlatformAdminPage() {
       setMessage({ text: "Select a tenant first.", ok: false });
       return;
     }
-    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}/memberships`, {
+    const res = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/memberships`, {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({ tenant_id: newTenantId, role_name: newRoleName }),
     });
     if (res.ok) {
       setMessage({ text: `Role "${newRoleName}" assigned.`, ok: true });
-      const r2 = await fetch(`${api}/api/admin/users/${selectedUser.id}/memberships`, { headers: authHeaders() });
+      const r2 = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/memberships`);
       if (r2.ok) setMemberships(await r2.json());
     } else {
       const d = await res.json().catch(() => null);
@@ -221,14 +225,13 @@ export default function PlatformAdminPage() {
   async function removeMembership(membershipId: string, tenantId: string) {
     setMessage(null);
     if (!selectedUser) return;
-    const res = await fetch(`${api}/api/admin/users/${selectedUser.id}/memberships/${membershipId}`, {
+    const res = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/memberships/${membershipId}`, {
       method: "PATCH",
-      headers: authHeaders(),
       body: JSON.stringify({ tenant_id: tenantId, status: "inactive" }),
     });
     if (res.ok) {
       setMessage({ text: "Membership removed.", ok: true });
-      const r2 = await fetch(`${api}/api/admin/users/${selectedUser.id}/memberships`, { headers: authHeaders() });
+      const r2 = await adminFetch(`${api}/api/admin/users/${selectedUser.id}/memberships`);
       if (r2.ok) setMemberships(await r2.json());
     } else {
       const d = await res.json().catch(() => null);
@@ -243,9 +246,8 @@ export default function PlatformAdminPage() {
       return;
     }
 
-    const res = await fetch(`${api}/api/admin/tenants`, {
+    const res = await adminFetch(`${api}/api/admin/tenants`, {
       method: "POST",
-      headers: authHeaders(),
       body: JSON.stringify({
         tenant_name: newTenantName.trim(),
         company_type: newTenantType,
@@ -281,10 +283,7 @@ export default function PlatformAdminPage() {
   useEffect(() => {
     setLocale(getLocale());
     async function verifyAdminAccess() {
-      let response = await fetch(`${api}/api/auth/me`, { headers: authHeaders() });
-      if (!response.ok && await refreshSession(api)) {
-        response = await fetch(`${api}/api/auth/me`, { headers: authHeaders() });
-      }
+      const response = await adminFetch(`${api}/api/auth/me`);
 
       const me = response.ok ? await response.json() : null;
       if ((me?.platform_role || "").toLowerCase() === "platform_super_admin") {
