@@ -13,8 +13,52 @@ describe("Platform admin tenant creation", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.localStorage.setItem("opsflow_access_token", "token");
+    window.localStorage.setItem("opsflow_refresh_token", "refresh-token");
     window.localStorage.setItem("opsflow_locale", "en");
     vi.restoreAllMocks();
+  });
+
+  it("refreshes an expired access token before denying super-admin access", async () => {
+    window.localStorage.setItem("opsflow_tenant_id", "tenant-1");
+    let meCalls = 0;
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/auth/me")) {
+        meCalls += 1;
+        if (meCalls === 1) {
+          return Promise.resolve(new Response(JSON.stringify({ detail: "Invalid authentication" }), { status: 401, headers: { "Content-Type": "application/json" } }));
+        }
+        return Promise.resolve(new Response(JSON.stringify({ platform_role: "PLATFORM_SUPER_ADMIN" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/auth/refresh")) {
+        return Promise.resolve(new Response(JSON.stringify({ access_token: "fresh-token", refresh_token: "fresh-refresh" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/overview")) {
+        return Promise.resolve(new Response(JSON.stringify({ tenants: 0, users: 0, projects: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/service-insights")) {
+        return Promise.resolve(new Response(JSON.stringify({ tickets: 0, intake_items: 0, intake_needs_review: 0, extractions_pending_review: 0, extractions_review_submitted: 0, unresolved_extraction_issues: 0, integration_events_pending: 0, integration_events_failed: 0, opportunities: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/users") || url.endsWith("/api/admin/roles/catalog")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/tenant-service-summary")) {
+        return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+
+    render(<PlatformAdminPage />);
+
+    expect(await screen.findByRole("heading", { name: "Create Tenant" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("opsflow_access_token")).toBe("fresh-token");
   });
 
   it("creates and saves a tenant with owner access", async () => {

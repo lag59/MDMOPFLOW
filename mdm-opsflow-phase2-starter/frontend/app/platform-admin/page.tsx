@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, refreshSession } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 type Overview = { tenants: number; users: number; projects: number };
@@ -58,6 +58,7 @@ const DEFAULT_ROLE_OPTIONS = [
 export default function PlatformAdminPage() {
   const [locale, setLocale] = useState<"en" | "es">("en");
   const [authorized, setAuthorized] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [insights, setInsights] = useState<ServiceInsights | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -279,18 +280,28 @@ export default function PlatformAdminPage() {
 
   useEffect(() => {
     setLocale(getLocale());
-    fetch(`${api}/api/auth/me`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((me) => {
-        if (!me || me.platform_role !== "platform_super_admin") return;
+    async function verifyAdminAccess() {
+      let response = await fetch(`${api}/api/auth/me`, { headers: authHeaders() });
+      if (!response.ok && await refreshSession(api)) {
+        response = await fetch(`${api}/api/auth/me`, { headers: authHeaders() });
+      }
+
+      const me = response.ok ? await response.json() : null;
+      if ((me?.platform_role || "").toLowerCase() === "platform_super_admin") {
         setAuthorized(true);
-        loadAdminData();
-      });
+        await loadAdminData();
+      }
+      setCheckingAccess(false);
+    }
+
+    void verifyAdminAccess().catch(() => setCheckingAccess(false));
   }, []);
 
   return (
     <AppShell titleKey="platformAdmin.title">
-      {!authorized ? (
+      {checkingAccess ? (
+        <p>Checking platform admin access...</p>
+      ) : !authorized ? (
         <p>{t(locale, "platformAdmin.denied")}</p>
       ) : (
         <>
