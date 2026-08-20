@@ -525,6 +525,10 @@ def assign_user_membership(
         db.flush()
         action = "admin_assign_user_membership"
 
+    if current_user.platform_role == PlatformRole.PLATFORM_SUPER_ADMIN:
+        membership.status = MembershipStatus.ACTIVE
+        action = "super_admin_create_active_membership"
+
     if not user.is_active:
         user.is_active = True
 

@@ -223,6 +223,10 @@ def assign_tenant_user(
         db.add(membership)
         action = "assign_user"
 
+    if is_platform_super_admin:
+        membership.status = MembershipStatus.ACTIVE
+        action = "super_admin_create_active_membership"
+
     # Membership activation should also enable the account for tenant access.
     if not user.is_active:
         user.is_active = True

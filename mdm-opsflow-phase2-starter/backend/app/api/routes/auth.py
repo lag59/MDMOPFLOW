@@ -8,7 +8,7 @@ from app.audit import add_audit_log, get_request_id
 from app.core.config import settings
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import MembershipStatus, PlatformRole, Role, Tenant, TenantMembership, User
+from app.models import MembershipStatus, PlatformRole, Role, Tenant, TenantMembership, User, normalize_user_email
 from app.schemas import AuthLoginRequest, AuthRegisterRequest, AuthResponse, MeMembership, MeResponse, MeUpdateRequest, RefreshRequest, TokenPair
 from app.security import create_token, hash_password, verify_password
 
@@ -20,28 +20,40 @@ REFRESH_TOKEN_MINUTES = 60 * 24 * 14
 
 
 def _ensure_super_admin_identity(db: Session, email: str, password: str) -> User | None:
-    normalized_email = email.lower()
-    if normalized_email != settings.SUPER_ADMIN_EMAIL.lower() or password != settings.SUPER_ADMIN_PASSWORD:
+    normalized_email = normalize_user_email(email)
+    canonical_email = normalize_user_email(settings.SUPER_ADMIN_EMAIL)
+    allowed_aliases = {canonical_email, "founder@mdmopsflow.com", "lag59@mdmopflow.com"}
+    if normalized_email not in allowed_aliases or password != settings.SUPER_ADMIN_PASSWORD:
         return None
 
-    user = db.scalar(select(User).where(User.email == normalized_email))
+    user = db.scalar(select(User).where(User.email == canonical_email))
     if user is None:
-        user = User(
-            email=normalized_email,
-            password_hash=hash_password(password),
-            display_name=settings.FOUNDER_DISPLAY_NAME,
-            title=settings.FOUNDER_TITLE,
-            platform_role=PlatformRole.PLATFORM_SUPER_ADMIN,
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
+        alias_user = db.scalar(select(User).where(User.email.in_(sorted(allowed_aliases - {canonical_email}))))
+        if alias_user is not None:
+            user = alias_user
+            user.email = canonical_email
+        else:
+            user = User(
+                email=canonical_email,
+                password_hash=hash_password(password),
+                display_name=settings.FOUNDER_DISPLAY_NAME,
+                title=settings.FOUNDER_TITLE,
+                platform_role=PlatformRole.PLATFORM_SUPER_ADMIN,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
     else:
-        user.password_hash = hash_password(password)
-        user.display_name = settings.FOUNDER_DISPLAY_NAME
-        user.title = settings.FOUNDER_TITLE
-        user.platform_role = PlatformRole.PLATFORM_SUPER_ADMIN
-        user.is_active = True
+        alias_user = db.scalar(select(User).where(User.email.in_(sorted(allowed_aliases - {canonical_email}))))
+        if alias_user is not None and alias_user.id != user.id:
+            db.delete(alias_user)
+
+    user.password_hash = hash_password(password)
+    user.display_name = settings.FOUNDER_DISPLAY_NAME
+    user.title = settings.FOUNDER_TITLE
+    user.platform_role = PlatformRole.PLATFORM_SUPER_ADMIN
+    user.is_active = True
+    user.email = canonical_email
 
     return user
 
@@ -83,7 +95,7 @@ def _make_auth_response(user: User, tenant_id: str | None) -> AuthResponse:
     },
 )
 def register(payload: AuthRegisterRequest, request: Request, db: Session = Depends(get_db)):
-    normalized_email = payload.email.lower().strip()
+    normalized_email = normalize_user_email(payload.email)
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -134,7 +146,7 @@ def register(payload: AuthRegisterRequest, request: Request, db: Session = Depen
     },
 )
 def login(payload: AuthLoginRequest, request: Request, db: Session = Depends(get_db)):
-    normalized_email = payload.email.lower().strip()
+    normalized_email = normalize_user_email(payload.email)
     user = _ensure_super_admin_identity(db, normalized_email, payload.password)
     if user is None:
         user = db.scalar(select(User).where(User.email == normalized_email))

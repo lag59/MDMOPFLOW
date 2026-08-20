@@ -14,6 +14,18 @@ class PlatformRole(str, enum.Enum):
     USER = "user"
 
 
+def normalize_user_email(value: str | None) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def normalize_tenant_name(value: str | None) -> str:
+    if value is None:
+        return ""
+    return " ".join(str(value).strip().split())
+
+
 class MembershipStatus(str, enum.Enum):
     ACTIVE = "active"
     INVITED = "invited"
