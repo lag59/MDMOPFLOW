@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import func
 
+from app.core.config import settings
 from app.db import SessionLocal
 from app.models import MembershipStatus, Role, Tenant, TenantMembership, User
 
@@ -156,8 +157,10 @@ def test_super_admin_login_recovers_when_seed_user_is_missing(client: TestClient
 
 
 def test_super_admin_email_is_normalized_to_single_canonical_identity(client: TestClient):
+    canonical_email = settings.SUPER_ADMIN_EMAIL.lower()
     with SessionLocal() as db:
         db.query(User).filter(User.email.ilike("lag59@mdmopflow.com")).delete()
+        db.query(User).filter(User.email.ilike(canonical_email)).delete()
         legacy_alias = User(
             email="lag59@mdmopflow.com",
             password_hash="legacy-hash",
@@ -173,11 +176,16 @@ def test_super_admin_email_is_normalized_to_single_canonical_identity(client: Te
         json={"email": "LAG59@MDMOPFLOW.COM", "password": "ChangeMe123!"},
     )
     assert response.status_code == 200
+    assert response.json()["platform_role"] == "platform_super_admin"
+    assert response.json()["email"] == canonical_email
 
     with SessionLocal() as db:
-        rows = db.query(User).filter(User.email.ilike("lag59@mdmopflow.com")).all()
+        rows = db.query(User).filter(User.email.ilike(canonical_email)).all()
+        alias_rows = db.query(User).filter(User.email.ilike("lag59@mdmopflow.com")).all()
         assert len(rows) == 1
-        assert rows[0].email == "lag59@mdmopflow.com"
+        assert rows[0].email == canonical_email
+        assert rows[0].platform_role.value == "platform_super_admin"
+        assert alias_rows == []
 
 
 def test_login_accepts_case_variant_of_registered_email(client: TestClient):

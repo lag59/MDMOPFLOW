@@ -69,7 +69,15 @@ class Tenant(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     company_type: Mapped[str] = mapped_column(String(120), nullable=False)
-    tenant_type: Mapped[TenantType] = mapped_column(Enum(TenantType), default=TenantType.PRODUCTION, nullable=False)
+    tenant_type: Mapped[TenantType] = mapped_column(
+        Enum(
+            TenantType,
+            name="tenanttype",
+            values_callable=lambda items: [item.value for item in items],
+        ),
+        default=TenantType.PRODUCTION,
+        nullable=False,
+    )
     is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     created_by_automation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     test_run_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)

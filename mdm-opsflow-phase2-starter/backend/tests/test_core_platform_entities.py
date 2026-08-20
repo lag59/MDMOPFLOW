@@ -1,5 +1,15 @@
 from fastapi.testclient import TestClient
 
+from app.models import Tenant, TenantType
+
+
+def test_tenant_type_enum_binds_lowercase_values_for_postgres() -> None:
+    tenant_type = Tenant.__table__.c.tenant_type.type
+
+    assert tenant_type.name == "tenanttype"
+    assert tenant_type.enums == [item.value for item in TenantType]
+    assert "PRODUCTION" not in tenant_type.enums
+
 
 def test_core_platform_entities_are_created_and_listed_for_tenant(client: TestClient) -> None:
     register_response = client.post(

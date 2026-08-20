@@ -4,7 +4,7 @@ import React from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/components/AppShell";
-import { getAccessToken, getTenantId, saveSession } from "@/lib/auth";
+import { getAccessToken, getTenantId, refreshSession, saveSession } from "@/lib/auth";
 import { getApiBaseUrl, getLocale, setLocale as persistLocale, t } from "@/lib/i18n";
 
 const COMPANY_TYPES = [
@@ -137,38 +137,60 @@ export default function OnboardingPage() {
     }
 
     setIsSubmitting(true);
-    const accessToken = getAccessToken();
-    const response = await fetch(`${getApiBaseUrl()}/api/onboarding/complete`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        company_name: companyName,
-        company_types: companyTypes,
-        language,
-        modules,
-        invite_emails: invites.split(",").map((x) => x.trim()).filter(Boolean),
-        first_project_name: firstProject,
-      }),
-    });
+    const api = getApiBaseUrl();
+    const payload = {
+      company_name: companyName,
+      company_types: companyTypes,
+      language,
+      modules,
+      invite_emails: invites.split(",").map((x) => x.trim()).filter(Boolean),
+      first_project_name: firstProject,
+    };
 
-    if (!response.ok) {
+    try {
+      let accessToken = getAccessToken();
+      let response = await fetch(`${api}/api/onboarding/complete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.status === 401 && await refreshSession(api)) {
+        accessToken = getAccessToken();
+        response = await fetch(`${api}/api/onboarding/complete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { detail?: string } | null;
+        setMessage(detail?.detail || t(locale, "common.onboardingFailed"));
+        setMessageTone("error");
+        return;
+      }
+
+      const data = await response.json();
+      saveSession({
+        accessToken,
+        refreshToken: window.localStorage.getItem("opsflow_refresh_token") || "",
+        tenantId: data.tenant_id,
+      });
+      setMessage(t(locale, "common.onboardingComplete"));
+      window.location.href = "/dashboard";
+    } catch {
       setMessage(t(locale, "common.onboardingFailed"));
       setMessageTone("error");
+    } finally {
       setIsSubmitting(false);
-      return;
     }
-
-    const data = await response.json();
-    saveSession({
-      accessToken,
-      refreshToken: window.localStorage.getItem("opsflow_refresh_token") || "",
-      tenantId: data.tenant_id,
-    });
-    setMessage(t(locale, "common.onboardingComplete"));
-    window.location.href = "/dashboard";
   }
 
   return (
