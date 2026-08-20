@@ -2480,7 +2480,7 @@ export default function ModuleDetailPage() {
                 <div className="mt-2 space-y-2">
                   {employees.slice(0, 6).map((employee) => (
                     <div key={employee.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                      {employee.name || employee.id} • {employee.role || "Field employee"}
+                      {employee.name || employee.id} • {employee.unit_number || "Field employee"}
                     </div>
                   ))}
                 </div>
