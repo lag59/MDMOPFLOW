@@ -580,6 +580,9 @@ class AdminCreateTenantRequest(BaseModel):
     expires_at: datetime | None = None
     preferred_language: str = Field(default="en", min_length=2, max_length=10)
     selected_modules: list[str] = Field(default_factory=lambda: ["Projects", "Budget", "Safety"])
+    owner_email: EmailStr | None = None
+    owner_display_name: str = Field(default="", max_length=255)
+    owner_temporary_password: str = Field(default="", max_length=255)
 
 
 class AdminCreateTenantResponse(BaseModel):

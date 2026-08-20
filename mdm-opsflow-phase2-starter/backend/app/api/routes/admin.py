@@ -21,6 +21,7 @@ from app.models import (
     TenantMembership,
     Ticket,
     User,
+    normalize_user_email,
 )
 from app.rbac import (
     FORMAL_PERMISSION_CATALOG,
@@ -488,17 +489,66 @@ def create_tenant(
     db.add(tenant)
     db.flush()
 
+    seeded_roles: dict[str, Role] = {}
     for role_name in ROLE_PERMISSIONS:
         if role_name == "platform_super_admin":
             continue
-        db.add(
-            Role(
-                tenant_id=tenant.id,
-                name=role_name,
-                permissions=permissions_csv_for_role(role_name),
-                created_by=current_user.id,
+        role = Role(
+            tenant_id=tenant.id,
+            name=role_name,
+            permissions=permissions_csv_for_role(role_name),
+            created_by=current_user.id,
+        )
+        seeded_roles[role_name] = role
+        db.add(role)
+    db.flush()
+
+    owner_email = normalize_user_email(payload.owner_email)
+    owner_user: User | None = None
+    if owner_email:
+        owner_user = db.scalar(select(User).where(User.email == owner_email))
+        if not owner_user:
+            existing_case_variant = db.scalar(select(User).where(User.email.ilike(owner_email)))
+            if existing_case_variant is not None:
+                existing_case_variant.email = owner_email
+                owner_user = existing_case_variant
+            else:
+                display_name = payload.owner_display_name.strip() or owner_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                owner_user = User(
+                    email=owner_email,
+                    password_hash=hash_password(payload.owner_temporary_password.strip() or "ChangeMe123!"),
+                    display_name=display_name,
+                    title="Owner",
+                    platform_role=PlatformRole.USER,
+                    is_active=True,
+                )
+                db.add(owner_user)
+                db.flush()
+
+        owner_role = seeded_roles.get("owner")
+        if owner_role is None:
+            owner_role = _get_or_create_role(db, tenant.id, "owner", current_user.id)
+        existing_owner_membership = db.scalar(
+            select(TenantMembership).where(
+                TenantMembership.tenant_id == tenant.id,
+                TenantMembership.user_id == owner_user.id,
+                TenantMembership.role_id == owner_role.id,
             )
         )
+        if existing_owner_membership:
+            existing_owner_membership.status = MembershipStatus.ACTIVE
+        else:
+            db.add(
+                TenantMembership(
+                    tenant_id=tenant.id,
+                    user_id=owner_user.id,
+                    role_id=owner_role.id,
+                    status=MembershipStatus.ACTIVE,
+                    created_by=current_user.id,
+                )
+            )
+        if not owner_user.is_active:
+            owner_user.is_active = True
 
     db.add(
         AuditLog(
@@ -507,7 +557,7 @@ def create_tenant(
             action="admin_create_tenant",
             resource_type="tenant",
             resource_id=tenant.id,
-            details=f"Created tenant {tenant.name}",
+            details=f"Created tenant {tenant.name}" + (f" with owner {owner_email}" if owner_email else ""),
             created_by=current_user.id,
         )
     )

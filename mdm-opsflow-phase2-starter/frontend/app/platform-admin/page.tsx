@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { getAccessToken } from "@/lib/auth";
@@ -70,6 +70,9 @@ export default function PlatformAdminPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newTenantName, setNewTenantName] = useState("");
   const [newTenantType, setNewTenantType] = useState("General Contractor");
+  const [newTenantOwnerEmail, setNewTenantOwnerEmail] = useState("");
+  const [newTenantOwnerName, setNewTenantOwnerName] = useState("");
+  const [newTenantOwnerPassword, setNewTenantOwnerPassword] = useState("ChangeMe123!");
   const [editRole, setEditRole] = useState<"platform_super_admin" | "user">("user");
   const [editActive, setEditActive] = useState(true);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
@@ -247,6 +250,9 @@ export default function PlatformAdminPage() {
         company_type: newTenantType,
         preferred_language: "en",
         selected_modules: ["Projects", "Budget", "Safety"],
+        owner_email: newTenantOwnerEmail.trim() || null,
+        owner_display_name: newTenantOwnerName.trim(),
+        owner_temporary_password: newTenantOwnerPassword.trim(),
       }),
     });
 
@@ -258,7 +264,15 @@ export default function PlatformAdminPage() {
 
     const payload = (await res.json()) as { tenant_id: string; tenant_name: string };
     setNewTenantName("");
-    setMessage({ text: `Tenant "${payload.tenant_name}" created. You can now assign users to it.`, ok: true });
+    setNewTenantOwnerEmail("");
+    setNewTenantOwnerName("");
+    setNewTenantOwnerPassword("ChangeMe123!");
+    setNewTenantId(payload.tenant_id);
+    setTenants((current) => {
+      const nextTenant = { id: payload.tenant_id, name: payload.tenant_name };
+      return current.some((tenant) => tenant.id === payload.tenant_id) ? current : [...current, nextTenant].sort((a, b) => a.name.localeCompare(b.name));
+    });
+    setMessage({ text: `Tenant "${payload.tenant_name}" saved${newTenantOwnerEmail.trim() ? " with owner access" : ""}.`, ok: true });
     await loadTenants();
     await loadAdminData();
   }
@@ -314,8 +328,36 @@ export default function PlatformAdminPage() {
                 Company type
                 <input value={newTenantType} onChange={(e) => setNewTenantType(e.target.value)} placeholder="General Contractor" />
               </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 240 }}>
+                Owner email
+                <input value={newTenantOwnerEmail} onChange={(e) => setNewTenantOwnerEmail(e.target.value)} placeholder="owner@company.com" />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 220 }}>
+                Owner name
+                <input value={newTenantOwnerName} onChange={(e) => setNewTenantOwnerName(e.target.value)} placeholder="Business owner name" />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, minWidth: 200 }}>
+                Owner temporary password
+                <input type="password" value={newTenantOwnerPassword} onChange={(e) => setNewTenantOwnerPassword(e.target.value)} placeholder="Min. 8 characters" />
+              </label>
               <button onClick={createTenant}>Create Tenant</button>
             </div>
+            {message ? (
+              <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 6, fontSize: 13,
+                background: message.ok ? "#dcfce7" : "#fee2e2",
+                color: message.ok ? "#166534" : "#991b1b" }}>
+                {message.text}
+              </div>
+            ) : null}
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, maxWidth: 320, marginTop: 12 }}>
+              Saved tenant
+              <select value={newTenantId} onChange={(e) => setNewTenantId(e.target.value)}>
+                <option value="">— select saved tenant —</option>
+                {tenants.map((tenant) => (
+                  <option key={tenant.id} value={tenant.id}>{tenant.name}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {/* User management: list + detail panel */}

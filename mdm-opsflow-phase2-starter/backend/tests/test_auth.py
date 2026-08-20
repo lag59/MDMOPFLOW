@@ -358,6 +358,45 @@ def test_super_admin_can_create_tenant_and_assign_user_membership(client: TestCl
     assert assign.json()["status"] == "active"
 
 
+def test_super_admin_can_create_tenant_with_owner_membership(client: TestClient):
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"email": "lag59@mdmopflow.com", "password": "ChangeMe123!"},
+    )
+    assert admin_login.status_code == 200
+    admin_token = admin_login.json()["tokens"]["access_token"]
+
+    create_tenant = client.post(
+        "/api/admin/tenants",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "tenant_name": "Tenant With Saved Owner",
+            "company_type": "General Contractor",
+            "preferred_language": "en",
+            "selected_modules": ["Projects", "Budget", "Safety"],
+            "owner_email": "tenant-owner-saved@example.com",
+            "owner_display_name": "Tenant Saved Owner",
+            "owner_temporary_password": "OwnerPass123!",
+        },
+    )
+    assert create_tenant.status_code == 201, create_tenant.text
+    tenant_id = create_tenant.json()["tenant_id"]
+
+    owner_login = client.post(
+        "/api/auth/login",
+        json={"email": "tenant-owner-saved@example.com", "password": "OwnerPass123!", "tenant_id": tenant_id},
+    )
+    assert owner_login.status_code == 200, owner_login.text
+    owner_token = owner_login.json()["tokens"]["access_token"]
+
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {owner_token}"})
+    assert me.status_code == 200
+    assert any(
+        membership["tenant_id"] == tenant_id and membership["role_name"] == "owner"
+        for membership in me.json()["memberships"]
+    )
+
+
 def test_membership_activation_reenables_user_login(client: TestClient):
     admin_login = client.post(
         "/api/auth/login",
