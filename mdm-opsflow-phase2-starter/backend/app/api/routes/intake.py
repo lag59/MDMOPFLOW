@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.models import (
     IntakeItem,
     IntakeStatus,
     IntegrationEvent,
+    Project,
     Ticket,
     User,
 )
@@ -270,11 +271,18 @@ def get_intake_item(
 )
 async def upload_intake_files(
     file: UploadFile = File(...),
+    project_id: str | None = Form(default=None),
     context: RequestContext = Depends(require_permissions("intake_write")),
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     tenant_id = _tenant_id_from_context(context)
+    linked_project_id = project_id.strip() if project_id else None
+    if linked_project_id:
+        project = db.get(Project, linked_project_id)
+        if not project or project.tenant_id != tenant_id:
+            raise HTTPException(status_code=404, detail="Project not found")
+
     payload = await file.read()
     original_filename = file.filename or "upload.bin"
     created_at = datetime.utcnow()
@@ -321,7 +329,7 @@ async def upload_intake_files(
     item = IntakeItem(
         tenant_id=tenant_id,
         batch_id=batch.id,
-        project_id=None,
+        project_id=linked_project_id,
         filename=processed.filename,
         original_filename=processed.original_filename,
         file_path=processed.file_path,
@@ -362,7 +370,7 @@ async def upload_intake_files(
         ticket = Ticket(
             tenant_id=tenant_id,
             intake_item_id=item.id,
-            project_id=None,
+            project_id=linked_project_id,
             ticket_number=ticket_number,
             truck=(extracted_entities.get("truck") or "").strip(),
             driver=(extracted_entities.get("driver") or "").strip(),
