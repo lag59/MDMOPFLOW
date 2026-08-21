@@ -190,6 +190,17 @@ class TestFieldMapping:
         detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
         assert detail["extraction"]["document_type"] == "ticket"
 
+    def test_extraction_detail_includes_source_document_preview_metadata(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        item = _upload(client, token, tenant_id, _TICKET_TEXT)
+        result = _trigger(client, token, tenant_id, item["id"])
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        extraction = detail["extraction"]
+        assert extraction["source_file_url"] == f"/api/intake/items/{item['id']}/file"
+        assert extraction["original_filename"] == item["original_filename"]
+        assert extraction["mime_type"] == item["mime_type"]
+
     def test_confidence_scores_populated(self, client: TestClient):
         token, tenant_id = _auth(client)
         item = _upload(client, token, tenant_id, _TICKET_TEXT)

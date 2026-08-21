@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import RequestContext, require_permissions
-from app.models import ExtractionCanonicalFact, ExtractionDiscrepancy
+from app.models import ExtractionCanonicalFact, ExtractionDiscrepancy, IntakeItem
 from app.schemas import (
     DocumentExtractionIssueResponse,
     DocumentExtractionResponse,
@@ -116,6 +116,7 @@ def _build_extraction_response(
     *,
     canonical_source_facts: list[dict[str, str | float | int | None]] | None = None,
     discrepancy_rows: list[ExtractionDiscrepancy] | None = None,
+    intake_item: IntakeItem | None = None,
 ) -> DocumentExtractionResponse:
     canonical_payload = _parse_json_dict(getattr(extraction, "canonical_payload_json", ""))
     if canonical_payload is None:
@@ -148,6 +149,9 @@ def _build_extraction_response(
         id=extraction.id,
         tenant_id=extraction.tenant_id,
         intake_item_id=extraction.intake_item_id,
+        source_file_url=f"/api/intake/items/{extraction.intake_item_id}/file" if extraction.intake_item_id else None,
+        original_filename=intake_item.original_filename if intake_item else None,
+        mime_type=intake_item.mime_type if intake_item else None,
         document_type=extraction.document_type,
         document_type_confidence=extraction.document_type_confidence,
         status=extraction.status,
@@ -252,10 +256,12 @@ def get_extraction_detail(
 
     canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
     discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    intake_item = db.get(IntakeItem, extraction.intake_item_id) if extraction.intake_item_id else None
     extraction_response = _build_extraction_response(
         extraction,
         canonical_source_facts=canonical_source_facts,
         discrepancy_rows=discrepancy_rows,
+        intake_item=intake_item if intake_item and intake_item.tenant_id == tenant_id else None,
     )
 
     issues_response = [
@@ -311,10 +317,12 @@ def submit_extraction_review(
 
     canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
     discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    intake_item = db.get(IntakeItem, extraction.intake_item_id) if extraction.intake_item_id else None
     extraction_response = _build_extraction_response(
         extraction,
         canonical_source_facts=canonical_source_facts,
         discrepancy_rows=discrepancy_rows,
+        intake_item=intake_item if intake_item and intake_item.tenant_id == tenant_id else None,
     )
 
     issues_response = [
@@ -519,10 +527,12 @@ def revalidate_extraction(
 
     canonical_source_facts = _load_normalized_canonical_facts(db, extraction)
     discrepancy_rows = _load_normalized_discrepancies(db, extraction)
+    intake_item = db.get(IntakeItem, extraction.intake_item_id) if extraction.intake_item_id else None
     extraction_response = _build_extraction_response(
         extraction,
         canonical_source_facts=canonical_source_facts,
         discrepancy_rows=discrepancy_rows,
+        intake_item=intake_item if intake_item and intake_item.tenant_id == tenant_id else None,
     )
     issues_response = [
         DocumentExtractionIssueResponse(

@@ -2639,6 +2639,9 @@ class DocumentExtractionResponse(BaseModel):
     id: str
     tenant_id: str
     intake_item_id: str
+    source_file_url: str | None = None
+    original_filename: str | None = None
+    mime_type: str | None = None
     document_type: str
     document_type_confidence: float
     status: str

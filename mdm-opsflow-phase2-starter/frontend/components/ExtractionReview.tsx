@@ -26,7 +26,9 @@ interface Extraction {
   intake_item_id: string;
   status: string;
   document_type: string;
-  mime_type: string;
+  source_file_url?: string | null;
+  original_filename?: string | null;
+  mime_type?: string | null;
   company_name: string;
   ticket_number: string;
   destination: string;
@@ -338,12 +340,14 @@ const DocumentPreview = ({
   fileUrl,
   mimeType,
   documentType,
+  originalFilename,
   loading,
   error,
 }: {
   fileUrl: string | null;
-  mimeType?: string;
+  mimeType?: string | null;
   documentType: string;
+  originalFilename?: string | null;
   loading: boolean;
   error: string | null;
 }) => {
@@ -377,12 +381,14 @@ const DocumentPreview = ({
     );
   }
 
+  const downloadLabel = originalFilename ? `Open ${originalFilename}` : 'Open source document';
+
   // For images, show inline
   if (mimeType?.startsWith('image/')) {
     return (
       <img
         src={fileUrl}
-        alt="Document preview"
+        alt={originalFilename || 'Document preview'}
         className="w-full h-auto rounded border border-gray-200 max-h-96 object-cover"
       />
     );
@@ -409,7 +415,7 @@ const DocumentPreview = ({
             download
             className="text-blue-600 hover:underline text-sm block mb-2"
           >
-            📥 Download file
+            {downloadLabel}
           </a>
         </pre>
       </div>
@@ -426,7 +432,7 @@ const DocumentPreview = ({
           download
           className="text-blue-600 hover:underline text-sm mt-3 inline-block"
         >
-          📥 Download File
+          {downloadLabel}
         </a>
       </div>
     </div>
@@ -455,6 +461,51 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const [placementSuggestion, setPlacementSuggestion] = useState<PlacementSuggestionItem | null>(null);
   const [conflictSuggestions, setConflictSuggestions] = useState<ConflictSuggestion[]>([]);
   const [intentLoading, setIntentLoading] = useState(false);
+
+  function resolveFileUrl(sourceFileUrl: string): string {
+    if (/^https?:\/\//i.test(sourceFileUrl)) {
+      return sourceFileUrl;
+    }
+    return `${getApiBaseUrl()}${sourceFileUrl.startsWith('/') ? '' : '/'}${sourceFileUrl}`;
+  }
+
+  const loadSourceDocumentPreview = async (item: Extraction) => {
+    const sourceFileUrl = item.source_file_url || (item.intake_item_id ? `/api/intake/items/${item.intake_item_id}/file` : '');
+    if (!sourceFileUrl) {
+      setFileUrl(null);
+      return;
+    }
+
+    let objectUrl: string | null = null;
+    try {
+      setFileLoading(true);
+      setFileError(null);
+      const token = getAccessToken();
+      const tenantId = getTenantId();
+      const response = await fetch(resolveFileUrl(sourceFileUrl), {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-Tenant-ID': tenantId,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Preview failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      objectUrl = URL.createObjectURL(blob);
+      setFileUrl(objectUrl);
+    } catch (err) {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+      setFileUrl(null);
+      setFileError(err instanceof Error ? err.message : 'Unable to load source document preview.');
+    } finally {
+      setFileLoading(false);
+    }
+  };
 
   const loadIntentContext = async (intakeItemId: string) => {
     try {
@@ -524,11 +575,8 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
         setExtraction(data.extraction);
         setIssues(data.issues);
 
-        // Build file URL for the document preview
-        if (data.extraction.intake_item_id) {
-          const baseUrl = getApiBaseUrl();
-          const fileUrl = `${baseUrl}/api/intake/items/${data.extraction.intake_item_id}/file`;
-          setFileUrl(fileUrl);
+        if (data.extraction.source_file_url || data.extraction.intake_item_id) {
+          await loadSourceDocumentPreview(data.extraction);
           await loadIntentContext(data.extraction.intake_item_id);
         }
       } catch (err) {
@@ -540,6 +588,14 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
 
     fetchExtraction();
   }, [extractionId]);
+
+  useEffect(() => {
+    return () => {
+      if (fileUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(fileUrl);
+      }
+    };
+  }, [fileUrl]);
 
   const handleSubmitReview = async () => {
     try {
@@ -884,6 +940,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           fileUrl={fileUrl}
           mimeType={extraction.mime_type}
           documentType={extraction.document_type}
+          originalFilename={extraction.original_filename}
           loading={fileLoading}
           error={fileError}
         />
