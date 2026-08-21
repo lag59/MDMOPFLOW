@@ -350,7 +350,7 @@ def _generate_issues(extraction: DocumentExtraction, *, profile_key: str = "tick
             issues.append({
                 "issue_type": "missing_required",
                 "field_name": field_attr,
-                "severity": "error",
+                "severity": "warning" if profile_key == "estimator" and field_attr == "project_name" else "error",
                 "message": f"Required field '{field_label}' was not detected in the document.",
                 "suggested_value": "",
             })
@@ -358,7 +358,7 @@ def _generate_issues(extraction: DocumentExtraction, *, profile_key: str = "tick
             issues.append({
                 "issue_type": "low_confidence",
                 "field_name": field_attr,
-                "severity": "error",
+                "severity": "warning" if profile_key == "estimator" and field_attr == "project_name" else "error",
                 "message": f"'{field_label}' extracted with low confidence ({int(float(confidence) * 100)}%). Please verify.",
                 "suggested_value": value,
             })

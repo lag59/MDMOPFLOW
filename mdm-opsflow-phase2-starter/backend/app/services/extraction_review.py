@@ -51,6 +51,13 @@ class ExtractionReviewService:
                         pass
                 else:
                     setattr(extraction, field_name, corrected_value)
+                if str(corrected_value).strip():
+                    for issue in self.get_extraction_issues(extraction_id):
+                        if issue.field_name == field_name and not issue.resolved:
+                            issue.resolved = True
+                            issue.resolved_value = str(corrected_value)
+                            issue.resolved_by = str(self.user_id)
+                            issue.resolved_at = datetime.utcnow()
         extraction.reviewed_by = str(self.user_id)
         extraction.reviewed_at = datetime.utcnow()
         extraction.review_notes = review_notes

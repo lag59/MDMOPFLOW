@@ -21,6 +21,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.models import DocumentExtraction, ExtractionIssue
+from tests.conftest import TestingSessionLocal
 from tests.helpers import complete_onboarding, register_user
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,6 +202,7 @@ class TestFieldMapping:
         assert extraction["source_file_url"] == f"/api/intake/items/{item['id']}/file"
         assert extraction["original_filename"] == item["original_filename"]
         assert extraction["mime_type"] == item["mime_type"]
+        assert _TICKET_TEXT.strip() in extraction["extracted_text_preview"]
 
     def test_confidence_scores_populated(self, client: TestClient):
         token, tenant_id = _auth(client)
@@ -514,6 +517,57 @@ class TestApprovalEndpoint:
         )
         assert reject_resp.status_code == 200, reject_resp.text
         assert reject_resp.json()["status"] == "rejected"
+
+    def test_estimator_missing_project_name_issue_does_not_block_approval(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        item = _upload(
+            client,
+            token,
+            tenant_id,
+            """\
+Invitation to Bid
+Bid Package: NRCP-26-041
+Estimated Quantity: 48,500 CY
+Vendor Quote: Summit Peak Builders
+""",
+        )
+        trigger = _trigger(client, token, tenant_id, item["id"], force=True)
+        extraction_id = trigger["extraction_id"]
+
+        with TestingSessionLocal() as db:
+            extraction = db.get(DocumentExtraction, extraction_id)
+            assert extraction is not None
+            extraction.document_type = "invitation_to_bid"
+            extraction.canonical_profile = "bid_package"
+            db.add(
+                ExtractionIssue(
+                    id=str(uuid4()),
+                    extraction_id=extraction_id,
+                    tenant_id=tenant_id,
+                    issue_type="missing_required",
+                    field_name="project_name",
+                    severity="error",
+                    message="Required field 'Project Name' was not detected in the document.",
+                    suggested_value="",
+                    correction_source="ocr_extraction_service",
+                )
+            )
+            db.commit()
+
+        review_resp = client.post(
+            f"/api/extractions/{extraction_id}/review",
+            json={"review_notes": "Estimator package reviewed", "corrections": {}},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert review_resp.status_code == 200, review_resp.text
+
+        approve_resp = client.post(
+            f"/api/extractions/{extraction_id}/approve",
+            json={"approve": True, "approval_notes": "Approve estimator intake"},
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        )
+        assert approve_resp.status_code == 200, approve_resp.text
+        assert approve_resp.json()["status"] == "distributed"
 
     def test_approve_requires_review_submitted_status(self, client: TestClient):
         token, tenant_id = _auth(client)

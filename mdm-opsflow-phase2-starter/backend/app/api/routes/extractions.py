@@ -71,6 +71,15 @@ def _parse_json_list(value: str) -> list[dict] | None:
     return [entry for entry in parsed if isinstance(entry, dict)]
 
 
+def _build_extracted_text_preview(value: str, *, max_chars: int = 4000) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[:max_chars].rstrip()}..."
+
+
 def _load_normalized_canonical_facts(db: Session, extraction) -> list[dict[str, str | float | int | None]]:
     rows = db.scalars(
         select(ExtractionCanonicalFact)
@@ -152,9 +161,12 @@ def _build_extraction_response(
         source_file_url=f"/api/intake/items/{extraction.intake_item_id}/file" if extraction.intake_item_id else None,
         original_filename=intake_item.original_filename if intake_item else None,
         mime_type=intake_item.mime_type if intake_item else None,
+        extracted_text_preview=_build_extracted_text_preview(intake_item.extracted_text) if intake_item else None,
         document_type=extraction.document_type,
         document_type_confidence=extraction.document_type_confidence,
         status=extraction.status,
+        project_name=extraction.project_name,
+        project_name_confidence=extraction.project_name_confidence,
         company_name=extraction.company_name,
         company_name_confidence=extraction.company_name_confidence,
         ticket_number=extraction.ticket_number,

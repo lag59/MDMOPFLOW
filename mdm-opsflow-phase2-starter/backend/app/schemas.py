@@ -2642,9 +2642,12 @@ class DocumentExtractionResponse(BaseModel):
     source_file_url: str | None = None
     original_filename: str | None = None
     mime_type: str | None = None
+    extracted_text_preview: str | None = None
     document_type: str
     document_type_confidence: float
     status: str
+    project_name: str = ""
+    project_name_confidence: float = 0.0
     company_name: str
     company_name_confidence: float
     ticket_number: str

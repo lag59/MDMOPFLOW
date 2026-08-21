@@ -11,6 +11,26 @@ from sqlalchemy.orm import Session
 from app.models import DocumentExtraction, ExtractionIssue, Ticket, Project, User, AuditLog, IntakeItem
 
 
+def _is_estimator_document(extraction: DocumentExtraction) -> bool:
+    text = " ".join(
+        str(value or "").lower()
+        for value in (
+            extraction.document_type,
+            extraction.canonical_profile,
+            extraction.canonical_payload_json,
+        )
+    )
+    return any(token in text for token in ("estimator", "bid", "proposal", "quote", "estimate", "takeoff", "addendum", "invitation_to_bid"))
+
+
+def _is_nonblocking_estimator_project_name_issue(extraction: DocumentExtraction, issue: ExtractionIssue) -> bool:
+    if issue.field_name != "project_name":
+        return False
+    if issue.issue_type not in {"missing_required", "low_confidence"}:
+        return False
+    return _is_estimator_document(extraction)
+
+
 class ExtractionApprovalService:
     """Manages approval and distribution of document extractions."""
 
@@ -62,7 +82,11 @@ class ExtractionApprovalService:
         # Use validation service to check for blocking (error-severity) unresolved issues
         from app.services.extraction_validation import ExtractionValidationService
         validator = ExtractionValidationService(self.db, self.tenant_id)
-        blocking = validator.get_blocking_issues(extraction.id)
+        blocking = [
+            issue
+            for issue in validator.get_blocking_issues(extraction.id)
+            if not _is_nonblocking_estimator_project_name_issue(extraction, issue)
+        ]
         if blocking:
             fields = ", ".join(sorted({i.field_name for i in blocking}))
             return False, (

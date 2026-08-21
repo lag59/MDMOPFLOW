@@ -29,6 +29,9 @@ interface Extraction {
   source_file_url?: string | null;
   original_filename?: string | null;
   mime_type?: string | null;
+  extracted_text_preview?: string | null;
+  project_name: string;
+  project_name_confidence: number;
   company_name: string;
   ticket_number: string;
   destination: string;
@@ -96,18 +99,19 @@ const FIELD_LABEL_OVERRIDES: Record<string, string> = {
   material: 'Material',
   tons: 'Tons',
   invoice_total: 'Invoice Total',
+  project_name: 'Project Name',
 };
 
 const SCHEMA_REQUIRED_FIELDS: Record<string, string[]> = {
   tickets: ['Company', 'Ticket Number', 'Driver Name', 'Material', 'Tons'],
-  estimator: ['Company', 'Destination'],
+  estimator: ['Project Name or Project ID', 'Company'],
   accounting: ['Company', 'Invoice Total', 'Destination'],
   default: ['Company', 'Destination'],
 };
 
 const ISSUE_KEYS_BY_DESTINATION: Record<string, string[]> = {
   tickets: ['document_count', 'company_name', 'job_location', 'destination', 'driver_name', 'ticket_number', 'material', 'tons'],
-  estimator: ['document_count', 'company_name', 'destination', 'material', 'tons', 'line_items', 'quote_number'],
+  estimator: ['document_count', 'project_name', 'job_number', 'company_name', 'destination', 'material', 'tons', 'line_items', 'quote_number'],
   accounting: ['document_count', 'company_name', 'destination', 'invoice_total'],
 };
 
@@ -154,6 +158,12 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
     confidence: 0.83,
     value: (item) => (item.invoice_total !== null ? String(item.invoice_total) : null),
   },
+  project_name: {
+    key: 'project_name',
+    label: 'Project Name',
+    confidence: DEFAULT_FIELD_CONFIDENCE,
+    value: (item) => item.project_name || null,
+  },
 };
 
 function resolveIntentSchema(documentType: string, destinationKey: string | null): { label: string; fieldKeys: string[] } {
@@ -177,7 +187,7 @@ function resolveIntentSchema(documentType: string, destinationKey: string | null
   if (normalizedDestination === 'estimator' || ['bid', 'proposal', 'quote', 'estimate', 'takeoff', 'addendum'].some((token) => normalizedType.includes(token))) {
     return {
       label: 'Estimator extraction schema',
-      fieldKeys: ['company_name', 'material', 'tons', 'destination', 'ticket_number'],
+      fieldKeys: ['project_name', 'company_name', 'material', 'tons', 'destination'],
     };
   }
 
@@ -343,6 +353,7 @@ const DocumentPreview = ({
   originalFilename,
   loading,
   error,
+  extractedTextPreview,
 }: {
   fileUrl: string | null;
   mimeType?: string | null;
@@ -350,12 +361,19 @@ const DocumentPreview = ({
   originalFilename?: string | null;
   loading: boolean;
   error: string | null;
+  extractedTextPreview?: string | null;
 }) => {
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded p-3 text-center">
-        <p className="text-sm text-red-700">⚠️ Could not load file</p>
-        <p className="text-xs text-red-600 mt-1">{error}</p>
+      <div className="bg-amber-50 border border-amber-200 rounded p-3">
+        <p className="text-sm font-semibold text-amber-800">⚠️ Original file is unavailable</p>
+        <p className="text-xs text-amber-700 mt-1">{error}</p>
+        {extractedTextPreview ? (
+          <div className="mt-3 rounded border border-amber-100 bg-white p-2 max-h-96 overflow-y-auto">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-2">OCR text fallback</p>
+            <pre className="text-xs whitespace-pre-wrap break-words text-slate-700">{extractedTextPreview}</pre>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -623,8 +641,8 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
       const data = await response.json();
       setExtraction(data.extraction);
       setIssues(data.issues);
-      setReviewNotes('');
       setCorrections({});
+      setReviewNotes('');
 
       if (onReviewSubmitted) {
         onReviewSubmitted();
@@ -673,6 +691,27 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
       setApproving(true);
       const baseUrl = getApiBaseUrl();
 
+      if (Object.keys(corrections).length > 0) {
+        const reviewResponse = await fetchWithAuthRetry(
+          `${baseUrl}/api/extractions/${extractionId}/review`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              review_notes: reviewNotes || extraction?.review_notes || 'Applied corrections before approval.',
+              corrections,
+            }),
+          }
+        );
+
+        if (!reviewResponse.ok) {
+          const err = await reviewResponse.json().catch(() => ({ detail: 'Failed to apply corrections' }));
+          throw new Error(err.detail || 'Failed to apply corrections');
+        }
+      }
+
       const response = await fetchWithAuthRetry(
         `${baseUrl}/api/extractions/${extractionId}/approve`,
         {
@@ -694,6 +733,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
 
       const data = await response.json();
       setActionResult({ status: 'approved', message: `Approved and distributed. Status: ${data.status}` });
+      setCorrections({});
       if (onReviewSubmitted) onReviewSubmitted();
     } catch (err) {
       setActionResult({ status: 'error', message: err instanceof Error ? err.message : 'Unknown error' });
@@ -926,6 +966,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           originalFilename={extraction.original_filename}
           loading={fileLoading}
           error={fileError}
+          extractedTextPreview={extraction.extracted_text_preview}
         />
       </div>
 
@@ -945,6 +986,8 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
                 ? extraction.destination_confidence
                 : fieldKey === 'material'
                 ? extraction.material_confidence
+                : fieldKey === 'project_name'
+                ? extraction.project_name_confidence
                 : config.confidence;
 
             return (
