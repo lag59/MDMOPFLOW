@@ -69,6 +69,16 @@ def _upload(client: TestClient, token: str, tenant_id: str, text: str = _TICKET_
     return resp.json()
 
 
+def _upload_file(client: TestClient, token: str, tenant_id: str, *, filename: str, payload: bytes, mime_type: str) -> dict:
+    resp = client.post(
+        "/api/intake/upload",
+        files={"file": (filename, io.BytesIO(payload), mime_type)},
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
 def _trigger(client: TestClient, token: str, tenant_id: str, item_id: str, force: bool = False) -> dict:
     """Trigger extraction for an intake item and return response JSON."""
     url = f"/api/extractions/intake/{item_id}/extract"
@@ -213,6 +223,78 @@ class TestFieldMapping:
         ext = detail["extraction"]
         # ticket_number was extracted so its confidence should be > 0
         assert float(ext["ticket_number_confidence"]) > 0
+
+    def test_image_ticket_generated_number_is_visible_in_review(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        item = _upload_file(
+            client,
+            token,
+            tenant_id,
+            filename="IMG_1396.png",
+            mime_type="image/png",
+            payload=(
+                b"LOAD TICKET\n"
+                b"Date: 05/28/2026\n"
+                b"Driver: Christon Bush\n"
+                b"Truck: DL5\n"
+                b"Jobsite: Buffaloe Reserve\n"
+                b"Material: 57 stone\n"
+            ),
+        )
+        result = _trigger(client, token, tenant_id, item["id"], force=True)
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        ext = detail["extraction"]
+        assert ext["ticket_number"] == "BUSH-DL5-BUFFALOE-RESERVE-20260528"
+        assert ext["ticket_number_source"] == "system_generated"
+        assert ext["ticket_number_generated"] is True
+        assert ext["ticket_number_generation_version"] == "driver-truck-jobsite-date-v1"
+
+    def test_duplicate_generated_ticket_number_gets_suffix(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        base_payload = (
+            b"LOAD TICKET\n"
+            b"Date: 05/28/2026\n"
+            b"Driver: Christon Bush\n"
+            b"Truck: DL5\n"
+            b"Jobsite: Buffaloe Reserve\n"
+            b"Material: 57 stone\n"
+        )
+        first = _upload_file(client, token, tenant_id, filename="IMG_1396.png", mime_type="image/png", payload=base_payload)
+        second = _upload_file(client, token, tenant_id, filename="IMG_1397.png", mime_type="image/png", payload=base_payload + b"\nComments: second upload")
+
+        first_result = _trigger(client, token, tenant_id, first["id"], force=True)
+        second_result = _trigger(client, token, tenant_id, second["id"], force=True)
+
+        first_detail = self._get_detail(client, token, tenant_id, first_result["extraction_id"])
+        second_detail = self._get_detail(client, token, tenant_id, second_result["extraction_id"])
+        assert first_detail["extraction"]["ticket_number"] == "BUSH-DL5-BUFFALOE-RESERVE-20260528"
+        assert second_detail["extraction"]["ticket_number"] == "BUSH-DL5-BUFFALOE-RESERVE-20260528-02"
+
+    def test_image_load_count_disagreement_creates_warning_issue(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        item = _upload_file(
+            client,
+            token,
+            tenant_id,
+            filename="IMG_1398.jpeg",
+            mime_type="image/jpeg",
+            payload=(
+                b"LOAD TICKET\n"
+                b"Date: 05/28/2026\n"
+                b"Driver: Christon Bush\n"
+                b"Truck: DL5\n"
+                b"Jobsite: Buffaloe Reserve\n"
+                b"Material: 57 stone\n"
+                b"Total Loads: 11\n"
+                b"Marked Loads: 10\n"
+            ),
+        )
+        result = _trigger(client, token, tenant_id, item["id"], force=True)
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        messages = [issue["message"] for issue in detail["issues"]]
+        assert any("Load count conflict" in message for message in messages)
 
     def test_bid_package_doc_uses_estimator_profile_and_emits_canonical_payload(self, client: TestClient):
         token, tenant_id = _auth(client)

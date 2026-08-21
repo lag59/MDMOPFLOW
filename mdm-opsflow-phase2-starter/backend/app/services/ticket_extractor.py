@@ -5,7 +5,7 @@ import re
 from app.services.llm_client import summarize_ticket_preview
 
 
-TICKET_NUMBER_PATTERN = re.compile(r"(?:ticket|ticket\s*#|ticket\s*number)\s*[:#-]?\s*([A-Za-z0-9-]{3,})", re.IGNORECASE)
+TICKET_NUMBER_PATTERN = re.compile(r"ticket[ \t]*(?:#|number|no\.?)?[ \t]*[:#-][ \t]*([A-Za-z0-9-]{3,})", re.IGNORECASE)
 INVOICE_NUMBER_PATTERN = re.compile(
     r"(?:\binvoice\b|\binv\b)\s*(?:#|number|no\.?|num\.)?\s*[:#-]?\s*([A-Za-z0-9-]{3,})",
     re.IGNORECASE,
@@ -17,10 +17,16 @@ MATERIAL_PATTERN = re.compile(r"material\s*[:#-]\s*([^\r\n]{1,120})", re.IGNOREC
 DATE_PATTERN = re.compile(r"date\s*[:#-]?\s*([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4})", re.IGNORECASE)
 CONTRACTOR_PATTERN = re.compile(r"contractor(?:'s\s*name)?\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
 JOB_PATTERN = re.compile(r"job\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
+JOBSITE_PATTERN = re.compile(r"job\s*site\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
 JOB_LOCATION_PATTERN = re.compile(r"job\s*location\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
+PICKUP_LOCATION_PATTERN = re.compile(r"(?:pickup|pick\s*up|load)\s*(?:location|site)?\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
+DUMP_SITE_PATTERN = re.compile(r"(?:dump\s*site|dump|disposal\s*site|destination)\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
 COMPANY_HAULING_FOR_PATTERN = re.compile(r"company\s+hauling\s+for\s*[:#-]?\s*([^\r\n]{1,120})", re.IGNORECASE)
 START_TIME_PATTERN = re.compile(r"start\s*time\s*[:#-]?\s*([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)", re.IGNORECASE)
 FINISH_TIME_PATTERN = re.compile(r"finish\s*time\s*[:#-]?\s*([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)", re.IGNORECASE)
+STOP_TIME_PATTERN = re.compile(r"stop\s*time\s*[:#-]?\s*([0-9]{1,2}[:.][0-9]{2}\s*(?:am|pm)?)", re.IGNORECASE)
+SHIFT_PATTERN = re.compile(r"shift\s*[:#-]?\s*([^\r\n]{1,80})", re.IGNORECASE)
+TOTAL_HOURS_PATTERN = re.compile(r"total\s*hours?\s*[:#-]?\s*([\d.]+)", re.IGNORECASE)
 LINE_ITEM_MATERIAL_PATTERN = re.compile(
     r"(?:description|item|product|material)\s*[:#-]?\s*([^\r\n]{2,160})",
     re.IGNORECASE,
@@ -44,6 +50,7 @@ LOAD_COUNT_HASH_PATTERN = re.compile(r"#\s*of\s*loads?\s*#?\s*(\d+)", re.IGNOREC
 LOAD_COUNT_NEXTLINE_PATTERN = re.compile(r"#?\s*loads?\s*[:#-]?\s*[\r\n]+\s*(\d{1,3})\b", re.IGNORECASE)
 LOAD_COUNT_REVERSED_PATTERN = re.compile(r"\b(\d{1,3})\s*loads?\b", re.IGNORECASE)
 LOAD_COUNT_REVERSED_ABBREV_PATTERN = re.compile(r"\b(\d{1,3})\s*lds?\b", re.IGNORECASE)
+COUNTED_LOADS_PATTERN = re.compile(r"(?:counted|marked|tally|detected)\s*loads?\s*[:#-]?\s*(\d{1,3})", re.IGNORECASE)
 SPECIAL_COMMENTS_PATTERN = re.compile(r"(?:special\s+hauls?\s+or\s+comments?|notes?)\s*[:#-]?\s*([^\r\n]{1,160})", re.IGNORECASE)
 QUANTITY_PATTERN = re.compile(r"(?:qty|quantity)\s*[:#-]?\s*(\d+)", re.IGNORECASE)
 # "OPERATORS NAME" / "OPERATOR:" as driver fallback
@@ -58,6 +65,7 @@ MATERIAL_SUPPLY_PATTERN = re.compile(r"material\s+supply\s*[:#-]?\s*([^\r\n]{1,1
 PRODUCT_CIRCLED_PATTERN = re.compile(r"\((MILLING|STONE|MUD|ROUGH|ABC|ASPHALT|DIRT|CONCRETE|ROCKS|DEBRIS)\)", re.IGNORECASE)
 # Truck size circled: "(QUAD)" or "(QUAD-AXLE)"
 TRUCK_SIZE_CIRCLED_PATTERN = re.compile(r"\(?(TANDEM|TRI-?AXLE|QUAD(?:-AXLE)?|QUINT(?:-AXLE)?)\)?", re.IGNORECASE)
+TRUCK_TYPE_PATTERN = re.compile(r"truck\s*type\s*[:#-]?\s*(TANDEM|TRI-?AXLE|QUAD(?:-AXLE)?|QUINT(?:-AXLE)?)", re.IGNORECASE)
 # Foreman signature line load count: "13 loads"
 FOREMAN_LOAD_PATTERN = re.compile(r"foreman'?s?\s+signature[^\r\n]*?(\d{1,3})\s*(?:loads?|lds?)\b", re.IGNORECASE)
 SHORT_HEADER_TICKET_LINE_PATTERN = re.compile(r"^\s*(\d{4,6})\s*$")
@@ -267,17 +275,30 @@ def _extract_fields_from_text(
         "contractor": _first_group(CONTRACTOR_PATTERN, text),
         "driver": _first_group(DRIVER_PATTERN, text),
         "truck": truck_clean,
+        "truck_type": _first_group(TRUCK_TYPE_PATTERN, text),
         "job": _first_group(JOB_PATTERN, text),
+        "jobsite": _first_group(JOBSITE_PATTERN, text),
         "job_location": _first_group(JOB_LOCATION_PATTERN, text),
+        "pickup_location": _first_group(PICKUP_LOCATION_PATTERN, text),
+        "dump_site": _first_group(DUMP_SITE_PATTERN, text),
         "company_hauling_for": _first_group(COMPANY_HAULING_FOR_PATTERN, text),
+        "shift": _first_group(SHIFT_PATTERN, text),
         "start_time": _first_group(START_TIME_PATTERN, text),
-        "finish_time": _first_group(FINISH_TIME_PATTERN, text),
+        "finish_time": _first_group(FINISH_TIME_PATTERN, text) or _first_group(STOP_TIME_PATTERN, text),
+        "total_hours": _first_group(TOTAL_HOURS_PATTERN, text),
         "material": _first_group(MATERIAL_PATTERN, text),
         "net_weight_lbs": _normalize_number(_first_group(NET_WEIGHT_PATTERN, text)),
         "gross_weight_lbs": _normalize_number(_first_group(GROSS_WEIGHT_PATTERN, text)),
         "tare_weight_lbs": _normalize_number(_first_group(TARE_WEIGHT_PATTERN, text)),
         "number_of_loads": _extract_load_count(text),
+        "counted_loads": _first_group(COUNTED_LOADS_PATTERN, text),
+        "comments": _first_group(SPECIAL_COMMENTS_PATTERN, text),
     }
+
+    if fields["jobsite"] and not fields["job_location"]:
+        fields["job_location"] = fields["jobsite"]
+    if not fields["truck_type"]:
+        fields["truck_type"] = _first_group(TRUCK_SIZE_CIRCLED_PATTERN, text)
 
     # OPERATORS NAME as driver fallback (Trucking Beast format)
     if not fields["driver"]:

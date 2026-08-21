@@ -36,6 +36,9 @@ interface Extraction {
   job_number_confidence: number;
   company_name: string;
   ticket_number: string;
+  ticket_number_source?: string | null;
+  ticket_number_generated?: boolean;
+  ticket_number_generation_version?: string | null;
   destination: string;
   destination_confidence: number;
   material: string;
@@ -124,6 +127,7 @@ const ESTIMATOR_DOCUMENT_TYPE_HINTS = [
   'change_order',
   'contract',
   'estimate',
+  'generic_quote',
   'geotechnical',
   'hauling_disposal_quote',
   'internal_cost_worksheet',
@@ -997,6 +1001,21 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           error={fileError}
           extractedTextPreview={extraction.extracted_text_preview}
         />
+        {(extraction.ticket_number_source || extraction.ticket_number_generated) ? (
+          <div className="mt-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <p className="font-semibold">Ticket number source</p>
+            <p className="mt-1">
+              {extraction.ticket_number_generated ? 'System generated' : 'Source document'}
+              {extraction.ticket_number ? `: ${extraction.ticket_number}` : ''}
+            </p>
+            {extraction.ticket_number_generated ? (
+              <p className="mt-1 text-xs text-blue-700">
+                Generated because no reliable source ticket number was detected.
+                {extraction.ticket_number_generation_version ? ` Version: ${extraction.ticket_number_generation_version}.` : ''}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Middle: Extracted Fields */}

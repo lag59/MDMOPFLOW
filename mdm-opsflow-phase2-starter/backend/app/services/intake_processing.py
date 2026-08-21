@@ -22,6 +22,9 @@ from app.services.document_intake_router import route_ocr_document
 from app.services.ticket_extractor import extract_ticket_preview
 
 
+TICKET_NUMBER_GENERATION_VERSION = "driver-truck-jobsite-date-v1"
+
+
 @dataclass(slots=True)
 class ProcessedIntakePayload:
     filename: str
@@ -155,6 +158,52 @@ def extract_document_text(payload: bytes, mime_type: str) -> str:
     return _extract_text(payload, mime_type)
 
 
+def _slug_identifier_component(value: str, *, placeholder: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9]+", "-", (value or "").strip().upper())
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    return normalized or placeholder
+
+
+def _driver_last_name(value: str) -> str:
+    parts = re.findall(r"[A-Za-z0-9']+", value or "")
+    return parts[-1].upper() if parts else "UNKNOWNDRIVER"
+
+
+def _normalize_ticket_date(value: str) -> str:
+    raw = (value or "").strip()
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y", "%m-%d-%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y%m%d")
+        except ValueError:
+            continue
+    return "UNKNOWNDATE"
+
+
+def _fallback_jobsite(entities: dict[str, object]) -> str:
+    for key in ("matched_project_name", "jobsite", "job_location", "job", "project_name", "dump_site", "pickup_location"):
+        value = str(entities.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _apply_ticket_number_metadata(entities: dict[str, object]) -> None:
+    source_ticket = str(entities.get("ticket_number") or "").strip()
+    if source_ticket:
+        entities["ticket_number_source"] = "source_document"
+        entities["ticket_number_generated"] = False
+        return
+
+    driver_component = _slug_identifier_component(_driver_last_name(str(entities.get("driver") or "")), placeholder="UNKNOWNDRIVER")
+    truck_component = _slug_identifier_component(str(entities.get("truck") or ""), placeholder="UNKNOWNTRUCK")
+    jobsite_component = _slug_identifier_component(_fallback_jobsite(entities), placeholder="UNKNOWNJOB")
+    date_component = _normalize_ticket_date(str(entities.get("date") or ""))
+    entities["ticket_number"] = f"{driver_component}-{truck_component}-{jobsite_component}-{date_component}"
+    entities["ticket_number_source"] = "system_generated"
+    entities["ticket_number_generated"] = True
+    entities["ticket_number_generation_version"] = TICKET_NUMBER_GENERATION_VERSION
+
+
 def process_intake_upload(
     *,
     tenant_id: str,
@@ -197,10 +246,21 @@ def process_intake_upload(
                 summary_parts.append(str(routing.vendor["name"]))
             summary = "; ".join(summary_parts)
 
+    effective_document_type = document_type
+    routed_entity_type = str(entities.get("document_type") or "")
+    if effective_document_type == "ticket" or routed_entity_type == "haul_ticket":
+        _apply_ticket_number_metadata(entities)
+
     routing_requires_review = bool(routing and routing.requires_human_review and not legacy_ticket_detected)
     needs_review = bool(extracted_text) and (confidence < 0.75 or routing_requires_review)
     review_reason = ""
-    if needs_review:
+    if entities.get("ticket_number_generated") and any(token in str(entities.get("ticket_number")) for token in ("UNKNOWNDRIVER", "UNKNOWNTRUCK", "UNKNOWNJOB", "UNKNOWNDATE")):
+        needs_review = True
+        review_reason = "Generated ticket number contains one or more UNKNOWN placeholders."
+    if entities.get("counted_loads") and entities.get("number_of_loads") and str(entities.get("counted_loads")) != str(entities.get("number_of_loads")):
+        needs_review = True
+        review_reason = f"Load count conflict: declared total is {entities.get('number_of_loads')} but {entities.get('counted_loads')} marked load rows were detected."
+    if needs_review and not review_reason:
         review_reason = routing.reason_for_review if routing and routing.reason_for_review else "Low extraction confidence; reviewer confirmation required."
 
     try:

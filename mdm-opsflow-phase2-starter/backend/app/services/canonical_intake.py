@@ -23,6 +23,7 @@ ESTIMATOR_DOCUMENT_TYPES = {
     "quantity_takeoff",
     "internal_cost_worksheet",
     "estimate",
+    "generic_quote",
     "contract",
     "change_order",
     "purchase_order",
@@ -60,6 +61,10 @@ ESTIMATOR_KEYWORDS = (
     "bid form",
     "bid proposal",
     "cost breakdown",
+    "quote",
+    "quotation",
+    "price proposal",
+    "proposal total",
     "construction contract",
     "owner-contractor agreement",
     "contract sum",
@@ -194,8 +199,18 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
 
     if any(token in text_blob for token in ("invitation to bid", "itb")):
         return "invitation_to_bid", "solicitation"
+    if any(token in text_blob for token in ("hauling quote", "disposal quote", "assumed one-way distance", "truck type", "truck-hour", "disposal fee", "haul distance", "loads per truck", "standby")):
+        return "hauling_disposal_quote", "haul_pricing"
+    if any(token in text_blob for token in ("material quote", "material quotation")):
+        return "vendor_material_quote", "pricing"
+    if any(token in text_blob for token in ("equipment rental quote", "weekly rate", "monthly rate")):
+        return "equipment_rental_quote", "equipment_pricing"
+    if any(token in text_blob for token in ("subcontractor proposal", "subcontract proposal")):
+        return "subcontractor_proposal", "pricing"
     if any(token in text_blob for token in ("cost estimate", "estimate summary", "estimate total", "estimated cost", "bid proposal", "bid form", "cost breakdown")):
         return "estimate", "general"
+    if any(token in text_blob for token in ("quote", "quotation", "price proposal", "proposal total")):
+        return "generic_quote", "pricing"
     if any(token in text_blob for token in ("construction contract", "owner-contractor agreement", "contract sum", "contract documents", "notice to proceed", "substantial completion", "liquidated damages")):
         return "contract", "agreement"
     if any(token in text_blob for token in ("change order", "contract change", "net change", "revised contract sum")):
@@ -206,16 +221,14 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
         return "scope_of_work", "scope"
     if any(token in text_blob for token in ("bid schedule", "bid item")):
         return "bid_schedule", "line_items"
-    if any(token in text_blob for token in ("hauling quote", "disposal quote", "assumed one-way distance")):
-        return "hauling_disposal_quote", "haul_pricing"
-    if any(token in text_blob for token in ("vendor quote", "material quote")):
+    if any(token in text_blob for token in ("vendor quote",)):
         return "vendor_material_quote", "pricing"
+    if any(token in text_blob for token in ("quote", "quotation", "price proposal", "proposal total")):
+        return "estimate", "general"
     if any(token in text_blob for token in ("geotechnical", "soil", "groundwater", "swell factor", "shrink factor")):
         return "geotechnical_report", "site_conditions"
-    if any(token in text_blob for token in ("equipment rental", "weekly rate", "monthly rate")):
+    if any(token in text_blob for token in ("equipment rental",)):
         return "equipment_rental_quote", "equipment_pricing"
-    if any(token in text_blob for token in ("subcontractor proposal", "subcontract proposal")):
-        return "subcontractor_proposal", "pricing"
     if any(token in text_blob for token in ("quantity takeoff", "takeoff")):
         return "quantity_takeoff", "quantities"
     if any(token in text_blob for token in ("internal cost worksheet", "cost worksheet", "crew cost", "burden")):
@@ -237,7 +250,9 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
     if normalized == "ticket":
         return "haul_material_delivery_ticket", "transactional"
 
-    if normalized in {"quote", "proposal", "bid", "estimate"}:
+    if normalized in {"generic_quote", "quote", "proposal", "bid"}:
+        return "generic_quote", "pricing"
+    if normalized == "estimate":
         return "estimate", "general"
 
     return normalized or "general", "general"

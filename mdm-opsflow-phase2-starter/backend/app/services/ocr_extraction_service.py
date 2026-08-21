@@ -23,7 +23,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import DocumentExtraction, ExtractionCanonicalFact, ExtractionDiscrepancy, ExtractionIssue, IntakeItem
+from app.models import DocumentExtraction, ExtractionCanonicalFact, ExtractionDiscrepancy, ExtractionIssue, IntakeItem, Ticket
 from app.services.bid_package_extraction import build_bid_package_payload
 from app.services.canonical_intake import ESTIMATOR_DOCUMENT_TYPES, build_canonical_document, score_canonical_document
 from app.services.canonical_intake import TICKET_DOCUMENT_TYPES
@@ -133,11 +133,53 @@ def _confidence(value: str, base_confidence: float) -> float:
     return base_confidence if value and value.strip() else 0.0
 
 
+def _is_truthy(value: object) -> bool:
+    return value is True or str(value).strip().lower() in {"true", "1", "yes"}
+
+
+def _generated_ticket_metadata(merged: dict[str, str]) -> dict[str, object]:
+    generated = _is_truthy(merged.get("ticket_number_generated"))
+    return {
+        "ticket_number_source": merged.get("ticket_number_source") or ("system_generated" if generated else "source_document" if merged.get("ticket_number") else ""),
+        "ticket_number_generated": generated,
+        "ticket_number_generation_version": merged.get("ticket_number_generation_version", ""),
+    }
+
+
+def _dedupe_generated_ticket_number(db: Session, *, tenant_id: str, ticket_number: str) -> str:
+    if not ticket_number:
+        return ticket_number
+    existing = set(
+        db.scalars(
+            select(DocumentExtraction.ticket_number).where(
+                DocumentExtraction.tenant_id == tenant_id,
+                DocumentExtraction.ticket_number.like(f"{ticket_number}%"),
+            )
+        ).all()
+    ) | set(
+        db.scalars(
+            select(Ticket.ticket_number).where(
+                Ticket.tenant_id == tenant_id,
+                Ticket.ticket_number.like(f"{ticket_number}%"),
+            )
+        ).all()
+    )
+    if ticket_number not in existing:
+        return ticket_number
+    suffix = 2
+    while True:
+        candidate = f"{ticket_number}-{suffix:02d}"
+        if candidate not in existing:
+            return candidate
+        suffix += 1
+
+
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Field â†’ DocumentExtraction mapping
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _map_candidates_to_extraction(
+    db: Session,
     candidates: list[dict[str, str]],
     ocr_confidence: float,
     raw_text: str,
@@ -181,11 +223,15 @@ def _map_candidates_to_extraction(
     has_invoice = bool(merged.get("invoice_number") or merged.get("invoice_total"))
     doc_type = "invoice" if has_invoice else "ticket"
     doc_type_conf = conf if merged.get("ticket_number") or merged.get("invoice_number") else 0.4
+    ticket_metadata = _generated_ticket_metadata(merged)
+    ticket_number = merged.get("ticket_number", "")
+    if ticket_metadata.get("ticket_number_generated"):
+        ticket_number = _dedupe_generated_ticket_number(db, tenant_id=tenant_id, ticket_number=ticket_number)
 
     # â”€â”€ Truck type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    truck_type = ""
+    truck_type = merged.get("truck_type", "")
     truck_raw = merged.get("truck", "")
-    if truck_raw:
+    if not truck_type and truck_raw:
         for known in ("tandem", "tri-axle", "triaxle", "quad", "quint", "semi"):
             if known in truck_raw.lower():
                 truck_type = known.capitalize()
@@ -193,6 +239,7 @@ def _map_candidates_to_extraction(
 
     # â”€â”€ Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     notes_parts = [v for k, v in merged.items() if k in ("special_comments",) and v]
+    notes_parts.append(json.dumps({"ticket_number_metadata": {**ticket_metadata, "ticket_number": ticket_number}}))
 
     extraction = DocumentExtraction(
         id=str(uuid4()),
@@ -207,8 +254,8 @@ def _map_candidates_to_extraction(
         company_name=merged.get("company_hauling_for", ""),
         company_name_confidence=_confidence(merged.get("company_hauling_for", ""), conf),
         # IDs
-        ticket_number=merged.get("ticket_number", ""),
-        ticket_number_confidence=_confidence(merged.get("ticket_number", ""), conf),
+        ticket_number=ticket_number,
+        ticket_number_confidence=_confidence(ticket_number, conf),
         invoice_number=merged.get("invoice_number", ""),
         invoice_number_confidence=_confidence(merged.get("invoice_number", ""), conf),
         job_number=merged.get("job", ""),
@@ -260,6 +307,24 @@ def _map_candidates_to_extraction(
 
     # â”€â”€ Generate issue list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     issues = _generate_issues(extraction, profile_key="ticket")
+    if ticket_metadata.get("ticket_number_generated") and any(
+        token in ticket_number for token in ("UNKNOWNDRIVER", "UNKNOWNTRUCK", "UNKNOWNJOB", "UNKNOWNDATE")
+    ):
+        issues.append({
+            "issue_type": "generated_ticket_number_incomplete",
+            "field_name": "ticket_number",
+            "severity": "warning",
+            "message": "Generated ticket number contains UNKNOWN placeholder values. Verify missing driver, truck, jobsite, or date before approval.",
+            "suggested_value": ticket_number,
+        })
+    if merged.get("counted_loads") and merged.get("number_of_loads") and str(merged.get("counted_loads")) != str(merged.get("number_of_loads")):
+        issues.append({
+            "issue_type": "load_count_conflict",
+            "field_name": "load_count",
+            "severity": "warning",
+            "message": f"Load count conflict: declared total is {merged.get('number_of_loads')} but {merged.get('counted_loads')} marked load rows were detected.",
+            "suggested_value": str(merged.get("number_of_loads") or ""),
+        })
 
     return extraction, issues
 
@@ -615,6 +680,12 @@ class OCRExtractionService:
                 "Ensure the file has been processed before triggering extraction."
             )
 
+        if existing and force:
+            self._delete_normalized_canonical_rows(existing.id)
+            self.db.delete(existing)
+            self.db.flush()
+            existing = None
+
         canonical_doc = build_canonical_document(item)
         routing_scores = score_canonical_document(canonical_doc)
 
@@ -626,11 +697,14 @@ class OCRExtractionService:
 
         # Parse existing entities JSON as initial hints
         ocr_confidence: float = item.classification_confidence or 0.5
+        existing_entities: dict[str, str] = {}
         if item.extracted_entities:
             try:
-                existing_entities = json.loads(item.extracted_entities)
-                # Merge as a low-priority fallback candidate
-                if existing_entities and not candidates:
+                parsed_entities = json.loads(item.extracted_entities)
+                existing_entities = {str(key): str(value) for key, value in parsed_entities.items()}
+                if existing_entities and candidates:
+                    candidates = [{**existing_entities, **candidate} for candidate in candidates]
+                elif existing_entities and not candidates:
                     candidates = [existing_entities]
             except (json.JSONDecodeError, TypeError):
                 pass
@@ -654,6 +728,7 @@ class OCRExtractionService:
         else:
             # Map to extraction model
             extraction, issue_dicts = _map_candidates_to_extraction(
+                self.db,
                 candidates=candidates,
                 ocr_confidence=ocr_confidence,
                 raw_text=item.extracted_text,
@@ -661,12 +736,6 @@ class OCRExtractionService:
                 intake_item_id=str(intake_item_id),
                 user_id=self.user_id,
             )
-
-        # If we're re-extracting, remove the old extraction first
-        if existing and force:
-            self._delete_normalized_canonical_rows(existing.id)
-            self.db.delete(existing)
-            self.db.flush()
 
         self.db.add(extraction)
         self.db.flush()

@@ -165,14 +165,21 @@ def route_input_to_workflows(
     work_performed = payload.work_performed or parsed.get("work_performed", "")
     work_planned = payload.work_planned_for_tomorrow or parsed.get("work_planned_for_tomorrow", "")
     material_name = payload.material_name or parsed.get("material_name", "")
+    recognized_details = any(
+        value.strip()
+        for value in (company_name, reporting_supervisor, work_performed, work_planned, material_name)
+    )
 
     customer_created = False
+    customer_recognized_existing = False
     if company_name.strip():
         normalized_name = company_name.strip()
         existing_customer = db.scalar(
             select(Customer).where(Customer.tenant_id == tenant_id, Customer.name.ilike(normalized_name))
         )
-        if not existing_customer:
+        if existing_customer:
+            customer_recognized_existing = True
+        else:
             customer = Customer(
                 tenant_id=tenant_id,
                 name=normalized_name,
@@ -194,12 +201,15 @@ def route_input_to_workflows(
             customer_created = True
 
     material_created = False
+    material_recognized_existing = False
     if material_name.strip():
         normalized_material = material_name.strip()
         existing_material = db.scalar(
             select(Material).where(Material.tenant_id == tenant_id, Material.name.ilike(normalized_material))
         )
-        if not existing_material:
+        if existing_material:
+            material_recognized_existing = True
+        else:
             material = Material(
                 tenant_id=tenant_id,
                 name=normalized_material,
@@ -256,13 +266,37 @@ def route_input_to_workflows(
             report_created = True
 
     db.commit()
+    created_count = sum(1 for value in (customer_created, material_created, report_created) if value)
+    recognized_existing_count = sum(1 for value in (customer_recognized_existing, material_recognized_existing) if value)
+    useful_details_count = sum(
+        1
+        for value in (company_name, reporting_supervisor, work_performed, work_planned, material_name)
+        if value.strip()
+    )
+    if created_count > 0:
+        processing_outcome = "created"
+        message = f"Created {created_count} new record{'' if created_count == 1 else 's'}."
+    elif recognized_existing_count > 0:
+        processing_outcome = "recognized_existing"
+        message = f"Recognized {recognized_existing_count} existing record{'' if recognized_existing_count == 1 else 's'}; no duplicate rows were created."
+    elif useful_details_count > 0:
+        processing_outcome = "needs_review"
+        message = "Document was recognized and useful details were extracted, but no new database rows were required."
+    else:
+        processing_outcome = "no_useful_data"
+        message = "Document was processed, but no actionable data was identified."
+
     return AIWorkflowRouteResponse(
-        routed=customer_created or material_created or report_created,
+        routed=processing_outcome != "no_useful_data",
+        processing_outcome=processing_outcome,
+        created_count=created_count,
+        recognized_existing_count=recognized_existing_count,
+        useful_details_count=useful_details_count,
         customer_created=customer_created,
         material_created=material_created,
         report_created=report_created,
         customer_name=company_name.strip() or None,
         material_name=material_name.strip() or None,
         report_number=report_number,
-        message="Captured once and routed to the right places." if (customer_created or material_created or report_created) else "No usable details were found in that note.",
+        message=message,
     )

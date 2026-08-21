@@ -71,6 +71,26 @@ def _parse_json_list(value: str) -> list[dict] | None:
     return [entry for entry in parsed if isinstance(entry, dict)]
 
 
+def _ticket_number_metadata(extraction, intake_item: IntakeItem | None) -> dict[str, str | bool | None]:
+    metadata: dict[str, str | bool | None] = {
+        "ticket_number_source": None,
+        "ticket_number_generated": False,
+        "ticket_number_generation_version": None,
+    }
+    if intake_item and intake_item.extracted_entities:
+        parsed = _parse_json_dict(intake_item.extracted_entities) or {}
+        metadata["ticket_number_source"] = parsed.get("ticket_number_source") or metadata["ticket_number_source"]
+        metadata["ticket_number_generated"] = bool(parsed.get("ticket_number_generated"))
+        metadata["ticket_number_generation_version"] = parsed.get("ticket_number_generation_version") or metadata["ticket_number_generation_version"]
+    parsed_notes = _parse_json_dict(extraction.extracted_notes)
+    if parsed_notes and isinstance(parsed_notes.get("ticket_number_metadata"), dict):
+        note_metadata = parsed_notes["ticket_number_metadata"]
+        metadata["ticket_number_source"] = note_metadata.get("ticket_number_source") or metadata["ticket_number_source"]
+        metadata["ticket_number_generated"] = bool(note_metadata.get("ticket_number_generated"))
+        metadata["ticket_number_generation_version"] = note_metadata.get("ticket_number_generation_version") or metadata["ticket_number_generation_version"]
+    return metadata
+
+
 def _build_extracted_text_preview(value: str, *, max_chars: int = 4000) -> str | None:
     normalized = (value or "").strip()
     if not normalized:
@@ -153,6 +173,7 @@ def _build_extraction_response(
     }
 
     geotech_profile = (canonical_payload or {}).get("geotechnical_conditions", []) if canonical_payload else []
+    ticket_number_metadata = _ticket_number_metadata(extraction, intake_item)
 
     return DocumentExtractionResponse(
         id=extraction.id,
@@ -173,6 +194,9 @@ def _build_extraction_response(
         company_name_confidence=extraction.company_name_confidence,
         ticket_number=extraction.ticket_number,
         ticket_number_confidence=extraction.ticket_number_confidence,
+        ticket_number_source=ticket_number_metadata["ticket_number_source"],
+        ticket_number_generated=bool(ticket_number_metadata["ticket_number_generated"]),
+        ticket_number_generation_version=ticket_number_metadata["ticket_number_generation_version"],
         destination=extraction.destination,
         destination_confidence=extraction.destination_confidence,
         material=extraction.material,

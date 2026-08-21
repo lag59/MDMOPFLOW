@@ -59,7 +59,7 @@ def test_document_intake_router_routes_general_estimate_to_estimator_review() ->
 Project: Riverbend Utility Extension
 Estimate Number: EST-2026-014
 Bid Form
-Scope of Work: Earthwork, storm drainage, and water main installation
+Work includes earthwork, storm drainage, and water main installation
 Cost Breakdown
 Estimated Cost $1,245,000
 """
@@ -72,6 +72,23 @@ Estimated Cost $1,245,000
     assert result.project["name"] == "Riverbend Utility Extension"
     assert result.requires_human_review is False
     assert should_use_ai_fallback(result) is False
+
+
+def test_document_intake_router_understands_generic_quote_as_estimate() -> None:
+    sample = """Quote
+Project: Riverbend Utility Extension
+Quote Number: Q-2026-014
+Proposal Total: $1,245,000
+Work includes earthwork, storm drainage, and water main installation
+"""
+
+    result = route_ocr_document(sample)
+
+    assert result.document_type == "generic_quote"
+    assert result.recommended_route == "Estimator > Estimates > Review"
+    assert result.project["name"] == "Riverbend Utility Extension"
+    assert result.vendor["document_number"] == "Q-2026-014"
+    assert result.requires_human_review is False
 
 
 def test_document_intake_router_routes_contract_to_portfolio_review() -> None:

@@ -8,14 +8,45 @@ from typing import Any
 AUTO_ROUTE_MIN_CONFIDENCE = 0.72
 AUTO_POST_FINANCIAL_OR_TICKET_MIN_CONFIDENCE = 0.90
 
+CLASSIFICATION_PRIORITY = {
+    "addendum": 1000,
+    "haul_ticket": 950,
+    "hauling_disposal_quote": 900,
+    "equipment_rental_quote": 880,
+    "subcontractor_proposal": 870,
+    "material_quote": 860,
+    "quantity_takeoff": 850,
+    "internal_cost_worksheet": 840,
+    "bid_schedule": 830,
+    "scope_of_work": 800,
+    "invitation_to_bid": 790,
+    "contract": 780,
+    "change_order": 770,
+    "purchase_order": 760,
+    "generic_quote": 300,
+    "estimate": 250,
+    "unknown": 0,
+}
+
+HAULING_QUOTE_SIGNALS = (
+    "truck type",
+    "truck-hour",
+    "disposal fee",
+    "one-way distance",
+    "loads per truck",
+    "haul distance",
+    "standby",
+)
+
 DOCUMENT_RULES: dict[str, tuple[tuple[str, ...], str, int]] = {
     "invitation_to_bid": (("invitation to bid", "instructions to bidders", "bid due", "project no"), "Estimator > Bid Packages > Invitation to Bid", 80),
+    "generic_quote": (("quote", "quotation", "price proposal", "proposal total"), "Estimator > Estimates > Review", 70),
     "estimate": (("cost estimate", "estimate summary", "estimate total", "bid proposal", "bid form", "cost breakdown", "estimated cost"), "Estimator > Estimates > Review", 86),
     "contract": (("construction contract", "owner-contractor agreement", "contract sum", "contract documents", "notice to proceed", "substantial completion", "retainage", "liquidated damages"), "Projects > Contracts > Review", 88),
     "change_order": (("change order", "change order number", "contract change", "net change", "original contract sum", "revised contract sum"), "Projects > Change Orders > Review", 88),
     "purchase_order": (("purchase order", "po number", "vendor", "ship to", "bill to", "unit cost", "extended cost"), "Portfolio > Procurement > Purchase Orders", 82),
-    "scope_of_work": (("scope of work", "earthwork", "storm drainage", "water / sewer", "exclusions"), "Estimator > Project Documents > Scope", 78),
-    "bid_schedule": (("bid schedule", "unit price", "extension", "base bid total"), "Estimator > Bid Schedule", 90),
+    "scope_of_work": (("scope of work", "water / sewer", "exclusions", "included scope", "excluded scope"), "Estimator > Project Documents > Scope", 78),
+    "bid_schedule": (("bid schedule", "unit price", "base bid total"), "Estimator > Bid Schedule", 90),
     "material_quote": (("material quotation", "material quote", "quote no", "unit price", "valid through", "freight"), "Estimator > Vendors > Material Quotes", 82),
     "hauling_disposal_quote": (("hauling & disposal quote", "hauling / disposal quote", "truck type", "truck-hour", "disposal fee", "one-way distance"), "Estimator > Hauling > Vendor Quotes", 88),
     "geotechnical_summary": (("geotechnical summary", "geotechnical", "subsurface conditions", "groundwater", "shrink factor", "swell factor"), "Estimator > Project Documents > Geotechnical", 76),
@@ -136,17 +167,43 @@ def normalize_project_name(value: str | None) -> str | None:
 
 def classify_document(text: str) -> IntakeClassification:
     lowered = text.lower()
-    scored: list[tuple[float, str, tuple[str, ...], str, int]] = []
+    scored: list[tuple[int, float, str, tuple[str, ...], str, int]] = []
+    has_hauling_quote_signal = any(token in lowered for token in HAULING_QUOTE_SIGNALS)
+    has_contract_signal = any(token in lowered for token in ("construction contract", "owner-contractor agreement", "contract sum", "contract documents", "notice to proceed"))
+    has_change_order_signal = "change order" in lowered
+    has_purchase_order_signal = any(token in lowered for token in ("purchase order", "po number"))
     for document_type, (keywords, route, priority) in DOCUMENT_RULES.items():
         matches = tuple(keyword for keyword in keywords if keyword in lowered)
-        if matches:
-            scored.append((len(matches) * 20 + priority * 0.15, document_type, matches, route, priority))
+        if document_type == "hauling_disposal_quote" and has_hauling_quote_signal:
+            missing_signals = tuple(token for token in HAULING_QUOTE_SIGNALS if token in lowered and token not in matches)
+            matches = tuple(dict.fromkeys((*matches, *missing_signals)))
+        if not matches:
+            continue
+
+        score = len(matches) * 20 + priority * 0.15
+        if document_type == "hauling_disposal_quote" and has_hauling_quote_signal:
+            score += 35
+        if document_type == "haul_ticket" and has_hauling_quote_signal and not any(token in lowered for token in ("haul ticket", "ticket no", "time in", "time out")):
+            class_priority = CLASSIFICATION_PRIORITY["estimate"]
+        else:
+            class_priority = CLASSIFICATION_PRIORITY.get(document_type, 0)
+        if document_type == "contract" and has_contract_signal:
+            score += 35
+        if document_type == "change_order" and has_change_order_signal:
+            score += 35
+        if document_type == "purchase_order" and has_purchase_order_signal:
+            score += 35
+        if document_type in {"generic_quote", "estimate"} and has_hauling_quote_signal:
+            score -= 25
+        if document_type == "bid_schedule" and any((has_hauling_quote_signal, has_contract_signal, has_change_order_signal, has_purchase_order_signal)):
+            class_priority = min(class_priority, CLASSIFICATION_PRIORITY["estimate"])
+        scored.append((class_priority, score, document_type, matches, route, priority))
 
     if not scored:
         return IntakeClassification("unknown", 0.0, UNKNOWN_ROUTE, (), True, "No supported document type matched OCR text.")
 
-    scored.sort(reverse=True)
-    _, document_type, matches, route, priority = scored[0]
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    _, _, document_type, matches, route, priority = scored[0]
     confidence = min(0.99, 0.40 + len(matches) * 0.12 + priority / 500)
     confidence = round(confidence, 3)
     requires_review = confidence < AUTO_ROUTE_MIN_CONFIDENCE
@@ -310,6 +367,7 @@ EXTRACTORS = {
     "equipment_rental_quote": extract_generic_quote,
     "subcontractor_proposal": extract_generic_quote,
     "estimate": extract_generic_quote,
+    "generic_quote": extract_generic_quote,
     "contract": extract_generic_quote,
     "change_order": extract_generic_quote,
     "purchase_order": extract_generic_quote,

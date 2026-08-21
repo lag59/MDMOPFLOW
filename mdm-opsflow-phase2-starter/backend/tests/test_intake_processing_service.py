@@ -82,7 +82,7 @@ def test_process_intake_upload_routes_general_estimate_to_estimator(tmp_path: Pa
         b"Project: Riverbend Utility Extension\n"
         b"Estimate Number: EST-2026-014\n"
         b"Bid Form\n"
-        b"Scope of Work: Earthwork and storm drainage\n"
+        b"Work includes earthwork and storm drainage\n"
         b"Cost Breakdown\n"
         b"Estimated Cost $1,245,000\n"
     )
@@ -99,6 +99,31 @@ def test_process_intake_upload_routes_general_estimate_to_estimator(tmp_path: Pa
     assert result.document_type == "estimate"
     assert result.classification_confidence >= 0.72
     assert entities["document_type"] == "estimate"
+    assert entities["recommended_route"] == "Estimator > Estimates > Review"
+
+
+def test_process_intake_upload_treats_generic_quote_as_estimate(tmp_path: Path) -> None:
+    payload = (
+        b"Quote\n"
+        b"Project: Riverbend Utility Extension\n"
+        b"Quote Number: Q-2026-014\n"
+        b"Proposal Total: $1,245,000\n"
+        b"Work includes earthwork and storm drainage\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-quote",
+        original_filename="quote.txt",
+        mime_type="text/plain",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert result.document_type == "generic_quote"
+    assert result.classification_confidence >= 0.72
+    assert entities["document_type"] == "generic_quote"
+    assert entities["reference_number"] == "Q-2026-014"
     assert entities["recommended_route"] == "Estimator > Estimates > Review"
 
 
@@ -154,3 +179,107 @@ def test_process_intake_upload_keeps_legacy_ticket_type_for_haul_ticket(tmp_path
     assert entities["document_type"] == "haul_ticket"
     assert entities["ticket_number"] == "CH-004821"
     assert entities["load_unit"] == "TON"
+
+
+def test_image_upload_preserves_source_ticket_number_metadata(tmp_path: Path) -> None:
+    payload = (
+        b"HAUL TICKET\n"
+        b"Ticket # 10984\n"
+        b"Date: 05/28/2026\n"
+        b"Driver: Christon Bush\n"
+        b"Truck: DL5\n"
+        b"Jobsite: Buffaloe Reserve\n"
+        b"Material: 57 stone\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-image-source",
+        original_filename="IMG_10984.jpeg",
+        mime_type="image/jpeg",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert result.mime_type == "image/jpeg"
+    assert result.filename.endswith(".jpeg") or result.filename.endswith(".jpg")
+    assert result.document_type == "ticket"
+    assert entities["ticket_number"] == "10984"
+    assert entities["ticket_number_source"] == "source_document"
+    assert entities["ticket_number_generated"] is False
+
+
+def test_png_image_upload_generates_missing_ticket_number(tmp_path: Path) -> None:
+    payload = (
+        b"LOAD TICKET\n"
+        b"Date: 05/28/2026\n"
+        b"Driver: Christon Bush\n"
+        b"Truck: DL5\n"
+        b"Jobsite: Buffaloe Reserve\n"
+        b"Material: 57 stone\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-image-generated",
+        original_filename="IMG_1396.png",
+        mime_type="image/png",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert result.document_type == "ticket"
+    assert entities["ticket_number"] == "BUSH-DL5-BUFFALOE-RESERVE-20260528"
+    assert entities["ticket_number_source"] == "system_generated"
+    assert entities["ticket_number_generated"] is True
+    assert entities["ticket_number_generation_version"] == "driver-truck-jobsite-date-v1"
+
+
+def test_jpg_image_upload_uses_unknown_placeholder_only_in_generated_identifier(tmp_path: Path) -> None:
+    payload = (
+        b"LOAD TICKET\n"
+        b"Date: 05/28/2026\n"
+        b"Driver: Christon Bush\n"
+        b"Jobsite: Buffaloe Reserve\n"
+        b"Material: 57 stone\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-image-missing-truck",
+        original_filename="IMG_1397.jpg",
+        mime_type="image/jpg",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert entities["ticket_number"] == "BUSH-UNKNOWNTRUCK-BUFFALOE-RESERVE-20260528"
+    assert "truck" not in entities
+    assert result.needs_review is True
+
+
+def test_image_load_count_disagreement_requires_review(tmp_path: Path) -> None:
+    payload = (
+        b"LOAD TICKET\n"
+        b"Date: 05/28/2026\n"
+        b"Driver: Christon Bush\n"
+        b"Truck: DL5\n"
+        b"Jobsite: Buffaloe Reserve\n"
+        b"Material: 57 stone\n"
+        b"Total Loads: 11\n"
+        b"Marked Loads: 10\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-image-load-conflict",
+        original_filename="IMG_1398.png",
+        mime_type="image/png",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert entities["number_of_loads"] == "11"
+    assert entities["counted_loads"] == "10"
+    assert result.needs_review is True
+    assert "Load count conflict" in result.review_reason

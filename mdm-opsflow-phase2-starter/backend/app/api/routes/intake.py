@@ -180,6 +180,9 @@ def _should_auto_create_ticket(
     if is_duplicate or not ticket_number:
         return False
 
+    if extracted_entities.get("ticket_number_generated") is True or str(extracted_entities.get("ticket_number_generated", "")).lower() == "true":
+        return False
+
     if item.needs_review:
         return False
 

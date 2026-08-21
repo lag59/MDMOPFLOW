@@ -47,6 +47,10 @@ describe("AppShell AI Capture", () => {
           new Response(
             JSON.stringify({
               routed: true,
+              processing_outcome: "created",
+              created_count: 2,
+              recognized_existing_count: 0,
+              useful_details_count: 2,
               customer_created: true,
               material_created: true,
               report_created: false,
@@ -72,8 +76,9 @@ describe("AppShell AI Capture", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Captured once and routed to the right places.")).toBeInTheDocument();
-      expect(screen.getByText("Customer: Summit Peak Builders")).toBeInTheDocument();
-      expect(screen.getByText("Material: 57 stone")).toBeInTheDocument();
+      expect(screen.getByText("Outcome: created")).toBeInTheDocument();
+      expect(screen.getByText("Customer: Summit Peak Builders (created)")).toBeInTheDocument();
+      expect(screen.getByText("Material: 57 stone (created)")).toBeInTheDocument();
     });
 
     const routeCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/api/ai/workflow/route"));

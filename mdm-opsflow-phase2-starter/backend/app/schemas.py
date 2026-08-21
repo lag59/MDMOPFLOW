@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -1736,6 +1736,10 @@ class AIWorkflowRouteRequest(BaseModel):
 
 class AIWorkflowRouteResponse(BaseModel):
     routed: bool
+    processing_outcome: Literal["created", "recognized_existing", "updated", "needs_review", "no_useful_data"] = "no_useful_data"
+    created_count: int = 0
+    recognized_existing_count: int = 0
+    useful_details_count: int = 0
     customer_created: bool
     material_created: bool
     report_created: bool
@@ -2654,6 +2658,9 @@ class DocumentExtractionResponse(BaseModel):
     company_name_confidence: float
     ticket_number: str
     ticket_number_confidence: float
+    ticket_number_source: str | None = None
+    ticket_number_generated: bool = False
+    ticket_number_generation_version: str | None = None
     destination: str
     destination_confidence: float
     material: str

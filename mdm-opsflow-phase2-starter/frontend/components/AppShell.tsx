@@ -48,6 +48,10 @@ type AuthMeResponse = {
 
 type AiRouteResponse = {
   routed: boolean;
+  processing_outcome: "created" | "recognized_existing" | "updated" | "needs_review" | "no_useful_data";
+  created_count: number;
+  recognized_existing_count: number;
+  useful_details_count: number;
   customer_created: boolean;
   material_created: boolean;
   report_created: boolean;
@@ -281,8 +285,9 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
               <div className="ai-capture-result">
                 <strong>{aiResult.message}</strong>
                 <ul>
-                  <li>Customer: {aiResult.customer_created ? aiResult.customer_name || "created" : "no new record"}</li>
-                  <li>Material: {aiResult.material_created ? aiResult.material_name || "created" : "no new record"}</li>
+                  <li>Outcome: {aiResult.processing_outcome.replace(/_/g, " ")}</li>
+                  <li>Customer: {aiResult.customer_name ? `${aiResult.customer_name}${aiResult.customer_created ? " (created)" : " (recognized)"}` : "none detected"}</li>
+                  <li>Material: {aiResult.material_name ? `${aiResult.material_name}${aiResult.material_created ? " (created)" : " (recognized)"}` : "none detected"}</li>
                   <li>Report: {aiResult.report_created ? aiResult.report_number || "draft created" : "no draft created"}</li>
                 </ul>
               </div>
