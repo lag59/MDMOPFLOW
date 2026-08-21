@@ -173,9 +173,11 @@ export default function PlatformAdminPage() {
 
     if (res.ok) {
       const updated = await res.json();
-      setMessage({ text: `User ${updated.email} was deactivated and memberships were cleared.`, ok: true });
-      await loadUsers();
+      setUsers((current) => current.filter((user) => user.id !== selectedUser.id));
+      setMemberships([]);
       setSelectedUserId(null);
+      setMessage({ text: `User ${updated.email} was deleted from the active user list.`, ok: true });
+      await loadAdminData();
     } else {
       const d = await res.json().catch(() => null);
       setMessage({ text: d?.detail || "Failed to delete user.", ok: false });
@@ -371,9 +373,9 @@ export default function PlatformAdminPage() {
           </div>
 
           {/* User management: list + detail panel */}
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
+          <div className="admin-user-management-layout" style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
             {/* Left: user list */}
-            <div className="card" style={{ flex: "0 0 280px", minWidth: 220 }}>
+            <div className="card admin-user-list-panel" style={{ flex: "0 0 280px", minWidth: 220 }}>
               <h3 style={{ marginTop: 0 }}>All Users</h3>
               <div className="list" style={{ maxHeight: 480, overflowY: "auto" }}>
                 {users.map((user) => (

@@ -5,6 +5,7 @@
 .surface {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px;
   border-radius: 0;
   border: 1px solid #253357;
@@ -12,6 +13,7 @@
   box-shadow: inset 0 1px 0 rgba(146, 175, 255, 0.12), 0 24px 50px rgba(5, 8, 18, 0.45);
   color: #d8e3ff;
   overflow: hidden;
+  min-width: 0;
 }
 
 .surfaceGlow {
@@ -210,7 +212,7 @@
 
 .contentGrid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.8fr);
   gap: 14px;
 }
 
@@ -223,7 +225,7 @@
 
 .triplePanelGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) minmax(280px, 0.9fr);
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
   gap: 12px;
 }
 
@@ -239,6 +241,7 @@
   border: 1px solid rgba(76, 101, 168, 0.45);
   background: linear-gradient(180deg, rgba(23, 35, 72, 0.9) 0%, rgba(16, 25, 54, 0.92) 100%);
   padding: 12px;
+  min-width: 0;
 }
 
 .panelHeader {
@@ -295,6 +298,7 @@
   border: 1px solid rgba(65, 87, 142, 0.42);
   background: rgba(12, 21, 45, 0.55);
   padding: 9px 10px;
+  min-width: 0;
 }
 
 .activityFeed {
@@ -348,6 +352,7 @@
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 .listMeta {
@@ -565,23 +570,62 @@
 
 @media (max-width: 720px) {
   .surface {
-    padding: 14px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 0;
   }
 
   .commandDeck {
-    padding: 12px;
+    padding: 0;
+  }
+
+  .commandLeft {
+    min-width: 0;
   }
 
   .commandRight {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commandSearch {
     width: 100%;
   }
 
   .uploadButton {
     white-space: nowrap;
+    width: 100%;
   }
 
   .kpiGrid {
     grid-template-columns: 1fr;
+  }
+
+  .chartWrap {
+    height: 170px;
+  }
+
+  .panelHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .listRow,
+  .compactList li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .activityFeed li {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .activityFeed em {
+    grid-column: 2;
+  }
+
+  .healthDialWrap {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

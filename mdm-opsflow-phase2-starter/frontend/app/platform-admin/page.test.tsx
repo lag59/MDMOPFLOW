@@ -190,4 +190,63 @@ describe("Platform admin tenant creation", () => {
     expect(createAttempts).toBe(2);
     expect(window.localStorage.getItem("opsflow_access_token")).toBe("tenant-create-fresh-token");
   });
+
+  it("deletes a user and purges them from the active user list", async () => {
+    let activeUsers = [
+      { id: "user-1", email: "delete-me@example.com", display_name: "Delete Me", title: "Estimator", platform_role: "user", is_active: true },
+      { id: "user-2", email: "keep-me@example.com", display_name: "Keep Me", title: "Manager", platform_role: "user", is_active: true },
+    ];
+
+    vi.spyOn(global, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method || "GET";
+
+      if (url.endsWith("/api/auth/me")) {
+        return Promise.resolve(new Response(JSON.stringify({ platform_role: "platform_super_admin" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/overview")) {
+        return Promise.resolve(new Response(JSON.stringify({ tenants: 1, users: activeUsers.length, projects: 0 }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/service-insights")) {
+        return Promise.resolve(new Response(JSON.stringify({ tickets: 0, intake_items: 0, intake_needs_review: 0, extractions_pending_review: 0, extractions_review_submitted: 0, unresolved_extraction_issues: 0, integration_events_pending: 0, integration_events_failed: 0, opportunities: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/users") && method === "GET") {
+        return Promise.resolve(new Response(JSON.stringify(activeUsers), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/users/user-1/memberships")) {
+        return Promise.resolve(new Response(JSON.stringify([{ membership_id: "m-1", tenant_id: "tenant-1", tenant_name: "Tenant", role_name: "estimator", status: "active" }]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/users/user-1") && method === "DELETE") {
+        activeUsers = activeUsers.filter((user) => user.id !== "user-1");
+        return Promise.resolve(new Response(JSON.stringify({ id: "user-1", email: "delete-me@example.com", display_name: "Delete Me", title: "Estimator", platform_role: "user", is_active: false }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/tenant-service-summary")) {
+        return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      if (url.endsWith("/api/admin/roles/catalog")) {
+        return Promise.resolve(new Response(JSON.stringify(["owner", "estimator"]), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }));
+    });
+
+    const user = userEvent.setup();
+    render(<PlatformAdminPage />);
+
+    await user.click(await screen.findByText("Delete Me"));
+    await user.click(screen.getByRole("button", { name: "Delete User" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("User delete-me@example.com was deleted from the active user list.")).toBeInTheDocument();
+      expect(screen.queryByText("Delete Me")).not.toBeInTheDocument();
+      expect(screen.getByText("Keep Me")).toBeInTheDocument();
+    });
+  });
 });

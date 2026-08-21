@@ -322,6 +322,18 @@ def test_super_admin_can_delete_user_and_inactivate_memberships(client: TestClie
     assert memberships.status_code == 200
     assert all(item["status"] == "inactive" for item in memberships.json())
 
+    users_after_delete = client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert users_after_delete.status_code == 200
+    assert all(row["id"] != user_id for row in users_after_delete.json())
+
+    users_with_inactive = client.get(
+        "/api/admin/users?include_inactive=true",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert users_with_inactive.status_code == 200
+    inactive_row = next(row for row in users_with_inactive.json() if row["id"] == user_id)
+    assert inactive_row["is_active"] is False
+
     login_after_delete = client.post(
         "/api/auth/login",
         json={"email": "to-delete@example.com", "password": "Pass12345!"},

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -279,9 +279,16 @@ def permissions_preview(
     description="Returns platform users with access control fields for super-admin management.",
     responses={200: {"description": "Users returned successfully."}, 403: {"description": "Super-admin required."}},
 )
-def list_users(current_user: User = Depends(require_super_admin), db: Session = Depends(get_db)):
+def list_users(
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+    include_inactive: bool = Query(False, description="Include deactivated users in the super-admin list."),
+):
     _ = current_user
-    users = db.scalars(select(User).order_by(User.created_at.desc())).all()
+    stmt = select(User).order_by(User.created_at.desc())
+    if not include_inactive:
+        stmt = stmt.where(User.is_active == True)
+    users = db.scalars(stmt).all()
     return [
         {
             "id": user.id,
