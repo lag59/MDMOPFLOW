@@ -101,3 +101,51 @@ def test_ai_routing_endpoint_accepts_any_active_tenant_member(client: TestClient
     assert body["routed"] is True
     assert body["material_created"] is True
     assert body["material_name"] == "57 stone"
+
+
+def test_ai_routing_extracts_unstructured_field_note(client: TestClient):
+    registered = register_user(client, "field-note-ai@example.com", "Pass12345!", "Field Note AI")
+    token = registered["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Field Note Civil", "Field Note First Project")
+    tenant_id = onboarding["tenant_id"]
+
+    response = client.post(
+        "/api/ai/workflow/route",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        json={
+            "note": "Summit Peak Builders completed excavation and placed 57 stone at the east entrance today. Foreman Maria Reyes."
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["routed"] is True
+    assert body["customer_created"] is True
+    assert body["material_created"] is True
+    assert body["report_created"] is True
+    assert body["customer_name"] == "Summit Peak Builders"
+    assert body["material_name"].lower() == "57 stone"
+
+
+def test_ai_routing_extracts_bid_contract_style_labels(client: TestClient):
+    registered = register_user(client, "contract-note-ai@example.com", "Pass12345!", "Contract Note AI")
+    token = registered["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Contract Note Civil", "Contract Note First Project")
+    tenant_id = onboarding["tenant_id"]
+
+    response = client.post(
+        "/api/ai/workflow/route",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        json={
+            "note": "Vendor: Carolina Haul Services\nScope of Work: Haul export soil and deliver crushed stone\nMaterial Type: crushed stone\nPlan: Continue deliveries tomorrow"
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["routed"] is True
+    assert body["customer_created"] is True
+    assert body["material_created"] is True
+    assert body["report_created"] is True
+    assert body["customer_name"] == "Carolina Haul Services"
+    assert body["material_name"] == "crushed stone"

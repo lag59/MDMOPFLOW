@@ -15,29 +15,125 @@ def _normalize_key(value: str) -> str:
     return re.sub(r"[^a-z]+", " ", value.lower()).strip()
 
 
+COMPANY_KEYS = {
+    "company",
+    "company hauling for",
+    "contractor",
+    "customer",
+    "client",
+    "general contractor",
+    "hauler",
+    "owner",
+    "subcontractor",
+    "vendor",
+}
+MATERIAL_KEYS = {"aggregate", "item", "material", "material type", "product", "stone", "supply"}
+SUPERVISOR_KEYS = {"foreman", "reporting supervisor", "superintendent", "supervisor"}
+WORK_KEYS = {"activity", "description", "scope", "scope of work", "work", "work completed", "work performed"}
+PLAN_KEYS = {"next steps", "plan", "planned", "tomorrow", "work planned", "work planned for tomorrow"}
+
+COMMON_MATERIAL_PATTERNS = (
+    r"\b(?:#\s*)?57\s+stone\b",
+    r"\b(?:#\s*)?67\s+stone\b",
+    r"\b(?:#\s*)?78\s+stone\b",
+    r"\b(?:#\s*)?4\s+stone\b",
+    r"\bcrushed\s+stone\b",
+    r"\bbase\s+rock\b",
+    r"\brip\s*rap\b",
+    r"\baggregate\b",
+    r"\bgravel\b",
+    r"\bsand\b",
+    r"\btopsoil\b",
+    r"\bfill\s+dirt\b",
+    r"\bborrow\s+fill\b",
+    r"\bconcrete\b",
+    r"\basphalt\b",
+)
+
+
+def _clean_value(value: str) -> str:
+    return (value or "").strip().strip(" .;,|")
+
+
+def _set_if_missing(parsed: dict[str, str], key: str, value: str | None) -> None:
+    cleaned = _clean_value(value or "")
+    if cleaned and not parsed.get(key):
+        parsed[key] = cleaned
+
+
+def _extract_labeled_value(label_pattern: str, note: str) -> str:
+    match = re.search(
+        rf"(?im)^\s*(?:{label_pattern})\s*(?::|#|-)?\s+(.+?)\s*$",
+        note,
+    )
+    return _clean_value(match.group(1)) if match else ""
+
+
+def _extract_common_material(note: str) -> str:
+    for pattern in COMMON_MATERIAL_PATTERNS:
+        match = re.search(pattern, note, flags=re.IGNORECASE)
+        if match:
+            return _clean_value(match.group(0))
+    return ""
+
+
+def _extract_work_sentence(note: str) -> str:
+    normalized = re.sub(r"\s+", " ", note).strip()
+    if not normalized:
+        return ""
+    match = re.search(
+        r"\b(completed|placed|installed|imported|exported|excavated|hauled|graded|poured|backfilled)\b(.{0,180})",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return _clean_value(match.group(0))
+    return ""
+
+
+def _extract_probable_company(note: str) -> str:
+    labeled = _extract_labeled_value(
+        r"(?:company|company\s+hauling\s+for|contractor|customer|client|general\s+contractor|hauler|owner|subcontractor|vendor)",
+        note,
+    )
+    if labeled:
+        return labeled
+
+    match = re.search(
+        r"\b([A-Z][A-Za-z0-9&.,' -]{2,80}\b(?:Builders|Construction|Contracting|Contractors|Civil|Hauling|Services|Supply|Materials|Excavating|Paving|LLC|Inc\.?|Corp\.?))\b",
+        note,
+    )
+    return _clean_value(match.group(1)) if match else ""
+
+
 def _extract_fields(note: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for raw_line in (note or "").splitlines():
         line = raw_line.strip()
         if not line:
             continue
-        match = re.match(r"^([A-Za-z\s]+)[:\-]\s*(.+)$", line)
+        match = re.match(r"^([A-Za-z\s/]+?)\s*(?::|#|-)\s*(.+)$", line)
         if not match:
             continue
         key = _normalize_key(match.group(1))
-        value = match.group(2).strip()
+        value = _clean_value(match.group(2))
         if not value:
             continue
-        if key in {"company", "customer", "client"}:
-            parsed["company_name"] = value
-        elif key in {"supervisor", "foreman", "superintendent"}:
-            parsed["reporting_supervisor"] = value
-        elif key in {"work", "work performed"}:
-            parsed["work_performed"] = value
-        elif key in {"plan", "planned", "work planned"}:
-            parsed["work_planned_for_tomorrow"] = value
-        elif key in {"material", "product"}:
-            parsed["material_name"] = value
+        if key in COMPANY_KEYS:
+            _set_if_missing(parsed, "company_name", value)
+        elif key in SUPERVISOR_KEYS:
+            _set_if_missing(parsed, "reporting_supervisor", value)
+        elif key in WORK_KEYS:
+            _set_if_missing(parsed, "work_performed", value)
+        elif key in PLAN_KEYS:
+            _set_if_missing(parsed, "work_planned_for_tomorrow", value)
+        elif key in MATERIAL_KEYS:
+            _set_if_missing(parsed, "material_name", value)
+
+    _set_if_missing(parsed, "company_name", _extract_probable_company(note))
+    _set_if_missing(parsed, "material_name", _extract_common_material(note))
+    _set_if_missing(parsed, "work_performed", _extract_labeled_value(r"scope\s+of\s+work|work\s+performed|work\s+completed", note))
+    _set_if_missing(parsed, "work_performed", _extract_work_sentence(note))
     return parsed
 
 
