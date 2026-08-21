@@ -1999,6 +1999,42 @@ class IntakeDocumentIntelligenceResponse(BaseModel):
     conflicting_evidence: list[str] = Field(default_factory=list)
 
 
+class DocumentIntakeProjectResponse(BaseModel):
+    name: str | None = None
+    number: str | None = None
+    match_confidence: float = 0.0
+
+
+class DocumentIntakeVendorResponse(BaseModel):
+    name: str | None = None
+    document_number: str | None = None
+
+
+class DocumentIntakeRouteResponse(BaseModel):
+    document_type: str
+    classification_confidence: float
+    recommended_route: str
+    project: DocumentIntakeProjectResponse
+    vendor: DocumentIntakeVendorResponse
+    extracted_fields: dict[str, Any] = Field(default_factory=dict)
+    uncertain_fields: list[str] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    requires_human_review: bool = False
+    reason_for_review: str | None = None
+
+
+class DocumentIntakeConfigResponse(BaseModel):
+    auto_route_min_confidence: float
+    auto_post_financial_or_ticket_min_confidence: float
+    never_silent_overwrite: bool
+    preserve_source_value: bool
+    preserve_units: bool
+    flag_cross_document_conflicts: bool
+    require_tenant_scope: bool
+    create_audit_event: bool
+    routes: dict[str, str]
+
+
 class IntakeProjectMatchAlternativeResponse(BaseModel):
     project_id: str
     project_name: str

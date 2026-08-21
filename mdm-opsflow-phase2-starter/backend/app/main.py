@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from app.api.routes import admin, auth, ai_assignment, ai_assist, billing, core_platform, customer_portal, daily_field_reports, dashboard, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
+from app.api.routes import admin, auth, ai_assignment, ai_assist, billing, core_platform, customer_portal, daily_field_reports, dashboard, document_intake, estimator, extractions, health, intake, onboarding, payroll, projects, tenant_users, tickets, vendor
 from app.core.config import settings
 
 from app.db import SessionLocal
@@ -93,6 +93,10 @@ openapi_tags = [
         "description": "Document intake, batch processing, extraction utilities, and review workflow endpoints.",
     },
     {
+        "name": "Document Intake",
+        "description": "OCR document classification, routing policy, and strict review/import JSON endpoints.",
+    },
+    {
         "name": "Tickets",
         "description": "Ticket CRUD endpoints plus bridge creation from approved intake items.",
     },
@@ -148,6 +152,7 @@ app.include_router(onboarding.router)
 app.include_router(core_platform.router)
 app.include_router(projects.router)
 app.include_router(intake.router)
+app.include_router(document_intake.router)
 app.include_router(tenant_users.router)
 app.include_router(tickets.router)
 app.include_router(daily_field_reports.router)

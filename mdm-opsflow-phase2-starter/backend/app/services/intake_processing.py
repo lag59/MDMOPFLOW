@@ -151,6 +151,10 @@ def _extract_text(payload: bytes, mime_type: str) -> str:
     return ""
 
 
+def extract_document_text(payload: bytes, mime_type: str) -> str:
+    return _extract_text(payload, mime_type)
+
+
 def process_intake_upload(
     *,
     tenant_id: str,
