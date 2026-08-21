@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import React from "react";
 import { useEffect, useMemo, useState } from "react";
 
-import { clearSession, getAccessToken, getTenantId, setTenantId } from "@/lib/auth";
+import { clearSession, getAccessToken, getTenantId, refreshSession, setTenantId } from "@/lib/auth";
 import { Locale, getApiBaseUrl, getLocale, t } from "@/lib/i18n";
 
 const NAV_ITEMS = [
@@ -46,10 +46,26 @@ type AuthMeResponse = {
   memberships?: AuthMeMembership[];
 };
 
+type AiRouteResponse = {
+  routed: boolean;
+  customer_created: boolean;
+  material_created: boolean;
+  report_created: boolean;
+  customer_name?: string | null;
+  material_name?: string | null;
+  report_number?: string | null;
+  message: string;
+};
+
 export default function AppShell({ titleKey, children }: AppShellProps) {
   const [locale, setLocaleState] = useState<Locale>("en");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [navSearch, setNavSearch] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiNote, setAiNote] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiResult, setAiResult] = useState<AiRouteResponse | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const pathname = usePathname();
   const currentPath = pathname || "";
 
@@ -106,7 +122,62 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
 
   useEffect(() => {
     setMobileNavOpen(false);
+    setAiOpen(false);
   }, [currentPath]);
+
+  function authHeaders(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${getAccessToken()}`,
+      "Content-Type": "application/json",
+      "X-Tenant-ID": getTenantId(),
+    };
+  }
+
+  async function submitGlobalAiCapture(event: React.FormEvent) {
+    event.preventDefault();
+    const note = aiNote.trim();
+    if (!note || aiBusy) {
+      return;
+    }
+
+    setAiBusy(true);
+    setAiError(null);
+    setAiResult(null);
+
+    try {
+      let response = await fetch(`${getApiBaseUrl()}/api/ai/workflow/route`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ note }),
+      });
+
+      if (response.status === 401) {
+        const refreshed = await refreshSession(getApiBaseUrl());
+        if (refreshed) {
+          response = await fetch(`${getApiBaseUrl()}/api/ai/workflow/route`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ note }),
+          });
+        }
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "AI capture could not process that note.");
+      }
+
+      const payload = (await response.json()) as AiRouteResponse;
+      setAiResult(payload);
+      if (payload.routed) {
+        setAiNote("");
+      }
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI capture could not process that note.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   function isActive(href: string) {
     if (href === "/dashboard") return currentPath === href;
@@ -169,6 +240,9 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
             <span aria-hidden>⌕</span>
             <input aria-label="Search documents, tickets, vendors" placeholder="Search documents, tickets, vendors..." />
           </label>
+          <button type="button" className="ai-capture-toggle" onClick={() => setAiOpen((value) => !value)}>
+            AI Capture
+          </button>
           <Link href="/intake" className="top-upload-action">
             Upload
           </Link>
@@ -180,6 +254,43 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
           </button>
         </div>
       </header>
+
+      {aiOpen ? (
+        <section className="ai-capture-panel" aria-label="AI capture assistant">
+          <div className="ai-capture-card">
+            <div className="ai-capture-head">
+              <div>
+                <h2>AI Capture</h2>
+                <p>Paste once. OpsFlow creates the customer, material, or field report draft when it can.</p>
+              </div>
+              <button type="button" className="btn-ghost" onClick={() => setAiOpen(false)}>Close</button>
+            </div>
+            <form onSubmit={submitGlobalAiCapture} className="ai-capture-form">
+              <textarea
+                value={aiNote}
+                onChange={(event) => setAiNote(event.target.value)}
+                placeholder="Example: Company: Summit Peak Builders\nMaterial: 57 stone\nSupervisor: John\nWork performed: Imported subgrade and placed base rock"
+                rows={6}
+              />
+              <div className="ai-capture-actions">
+                <button type="submit" disabled={aiBusy || !aiNote.trim()}>{aiBusy ? "Routing..." : "Route with AI"}</button>
+                <Link href="/intake" className="link-button">Upload document instead</Link>
+              </div>
+            </form>
+            {aiResult ? (
+              <div className="ai-capture-result">
+                <strong>{aiResult.message}</strong>
+                <ul>
+                  <li>Customer: {aiResult.customer_created ? aiResult.customer_name || "created" : "no new record"}</li>
+                  <li>Material: {aiResult.material_created ? aiResult.material_name || "created" : "no new record"}</li>
+                  <li>Report: {aiResult.report_created ? aiResult.report_number || "draft created" : "no draft created"}</li>
+                </ul>
+              </div>
+            ) : null}
+            {aiError ? <div className="ai-capture-error">{aiError}</div> : null}
+          </div>
+        </section>
+      ) : null}
 
       {/* ── Page body ── */}
       <main id="main-content" className="main">{children}</main>

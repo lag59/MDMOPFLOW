@@ -302,6 +302,91 @@ button, input, select, textarea { font: inherit; }
 	box-shadow: 0 10px 20px rgba(58, 99, 214, 0.24);
 }
 
+.ai-capture-toggle {
+	background: rgba(31, 49, 93, 0.9);
+	border: 1px solid rgba(126, 166, 255, 0.5);
+	box-shadow: none;
+	color: #dbe7ff;
+	padding: 8px 12px;
+}
+
+.ai-capture-panel {
+	position: fixed;
+	inset: var(--topbar-h) 18px auto auto;
+	z-index: 25;
+	width: min(440px, calc(100vw - 24px));
+}
+
+.ai-capture-card {
+	border: 1px solid rgba(91, 116, 182, 0.72);
+	border-radius: 12px;
+	background: linear-gradient(180deg, rgba(23, 35, 72, 0.98) 0%, rgba(16, 25, 54, 0.98) 100%);
+	box-shadow: 0 22px 55px rgba(3, 7, 18, 0.46);
+	padding: 14px;
+}
+
+.ai-capture-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+}
+
+.ai-capture-head h2 {
+	margin: 0;
+	font-size: 16px;
+	color: #f4f8ff;
+}
+
+.ai-capture-head p {
+	margin: 3px 0 0;
+	font-size: 12px;
+	color: #91a4cf;
+}
+
+.ai-capture-form {
+	display: grid;
+	gap: 10px;
+	margin-top: 12px;
+}
+
+.ai-capture-form textarea {
+	resize: vertical;
+	min-height: 132px;
+}
+
+.ai-capture-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.ai-capture-result,
+.ai-capture-error {
+	margin-top: 10px;
+	border-radius: 10px;
+	padding: 10px;
+	font-size: 12px;
+}
+
+.ai-capture-result {
+	border: 1px solid rgba(84, 217, 145, 0.45);
+	background: rgba(34, 197, 94, 0.12);
+	color: #c8f8da;
+}
+
+.ai-capture-result ul {
+	margin: 6px 0 0;
+	padding-left: 18px;
+}
+
+.ai-capture-error {
+	border: 1px solid rgba(252, 165, 165, 0.45);
+	background: rgba(91, 28, 39, 0.32);
+	color: #fecdd3;
+}
+
 /* ── Main content ────────────────────────────────────────────── */
 .main {
 	grid-area: main;
@@ -346,6 +431,11 @@ button, input, select, textarea { font: inherit; }
 
 	.global-search {
 		display: none;
+	}
+
+	.ai-capture-panel {
+		inset: var(--topbar-h) 10px auto 10px;
+		width: auto;
 	}
 
 	.main {
@@ -814,9 +904,15 @@ input:focus, select:focus, textarea:focus {
 	}
 
 	.top-upload-action,
-	button.btn-ghost {
+	button.btn-ghost,
+	.ai-capture-toggle {
 		padding: 7px 9px;
 		font-size: 12px;
+	}
+
+	.ai-capture-actions {
+		align-items: stretch;
+		flex-direction: column;
 	}
 
 	.topbar-subtitle {

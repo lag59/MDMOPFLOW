@@ -72,3 +72,24 @@ Estimated Cost $1,245,000
     assert result.project["name"] == "Riverbend Utility Extension"
     assert result.requires_human_review is False
     assert should_use_ai_fallback(result) is False
+
+
+def test_document_intake_router_routes_contract_to_portfolio_review() -> None:
+    sample = """Construction Contract
+Project: Riverbend Utility Extension
+Contract Number: CON-2026-044
+Owner-Contractor Agreement
+Contract Sum: $4,200,000
+Notice to Proceed: 09/01/2026
+Substantial Completion: 180 days
+Retainage: 5%
+"""
+
+    result = route_ocr_document(sample)
+
+    assert result.document_type == "contract"
+    assert result.recommended_route == "Projects > Contracts > Review"
+    assert result.classification_confidence >= 0.72
+    assert result.project["name"] == "Riverbend Utility Extension"
+    assert result.vendor["document_number"] == "CON-2026-044"
+    assert result.requires_human_review is False

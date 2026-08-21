@@ -1,7 +1,9 @@
 from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
-from app.models import Customer, DailyFieldReport, Material
+from app.models import Customer, DailyFieldReport, Material, MembershipStatus, Role, TenantMembership
+from app.rbac import permissions_csv_for_role
+from tests.helpers import complete_onboarding, register_user
 
 
 def test_ai_routing_endpoint_creates_customer_material_and_report(client: TestClient):
@@ -56,3 +58,46 @@ def test_ai_routing_endpoint_creates_customer_material_and_report(client: TestCl
     assert customer is not None
     assert material is not None
     assert report is not None
+
+
+def test_ai_routing_endpoint_accepts_any_active_tenant_member(client: TestClient):
+    registered = register_user(client, "vendor-ai-route@example.com", "Pass12345!", "Vendor AI")
+    token = registered["tokens"]["access_token"]
+    onboarding = complete_onboarding(client, token, "Vendor AI Civil", "Vendor AI First Project")
+    tenant_id = onboarding["tenant_id"]
+    user_id = registered["user_id"]
+
+    with SessionLocal() as db:
+        role = Role(
+            tenant_id=tenant_id,
+            name="vendor",
+            permissions=permissions_csv_for_role("vendor"),
+            created_by=user_id,
+        )
+        db.add(role)
+        db.flush()
+        memberships = db.query(TenantMembership).filter(TenantMembership.user_id == user_id).all()
+        for membership in memberships:
+            membership.status = MembershipStatus.INACTIVE
+        db.add(
+            TenantMembership(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                role_id=role.id,
+                status=MembershipStatus.ACTIVE,
+                created_by=user_id,
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/ai/workflow/route",
+        headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id},
+        json={"note": "Material: 57 stone"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["routed"] is True
+    assert body["material_created"] is True
+    assert body["material_name"] == "57 stone"

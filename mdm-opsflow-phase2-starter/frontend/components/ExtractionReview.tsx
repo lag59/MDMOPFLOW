@@ -121,6 +121,8 @@ const ISSUE_KEYS_BY_DESTINATION: Record<string, string[]> = {
 const ESTIMATOR_DOCUMENT_TYPE_HINTS = [
   'addendum',
   'bid',
+  'change_order',
+  'contract',
   'estimate',
   'geotechnical',
   'hauling_disposal_quote',
@@ -128,6 +130,7 @@ const ESTIMATOR_DOCUMENT_TYPE_HINTS = [
   'invitation_to_bid',
   'material_quote',
   'proposal',
+  'purchase_order',
   'quantity_takeoff',
   'quote',
   'scope_of_work',

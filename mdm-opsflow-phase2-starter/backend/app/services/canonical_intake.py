@@ -23,6 +23,9 @@ ESTIMATOR_DOCUMENT_TYPES = {
     "quantity_takeoff",
     "internal_cost_worksheet",
     "estimate",
+    "contract",
+    "change_order",
+    "purchase_order",
 }
 
 ACCOUNTING_DOCUMENT_TYPES = {
@@ -57,6 +60,14 @@ ESTIMATOR_KEYWORDS = (
     "bid form",
     "bid proposal",
     "cost breakdown",
+    "construction contract",
+    "owner-contractor agreement",
+    "contract sum",
+    "contract documents",
+    "notice to proceed",
+    "substantial completion",
+    "change order",
+    "purchase order",
 )
 
 ACCOUNTING_KEYWORDS = (
@@ -88,6 +99,10 @@ REFERENCE_PATTERNS = (
     r"quote\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
     r"estimate\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
     r"proposal\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
+    r"contract\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
+    r"change\s*order\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
+    r"purchase\s*order\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
+    r"po\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
     r"ticket\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
 )
 
@@ -181,6 +196,12 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
         return "invitation_to_bid", "solicitation"
     if any(token in text_blob for token in ("cost estimate", "estimate summary", "estimate total", "estimated cost", "bid proposal", "bid form", "cost breakdown")):
         return "estimate", "general"
+    if any(token in text_blob for token in ("construction contract", "owner-contractor agreement", "contract sum", "contract documents", "notice to proceed", "substantial completion", "liquidated damages")):
+        return "contract", "agreement"
+    if any(token in text_blob for token in ("change order", "contract change", "net change", "revised contract sum")):
+        return "change_order", "contract_revision"
+    if any(token in text_blob for token in ("purchase order", "po number", "ship to", "bill to", "unit cost", "extended cost")):
+        return "purchase_order", "procurement"
     if "scope of work" in text_blob:
         return "scope_of_work", "scope"
     if any(token in text_blob for token in ("bid schedule", "bid item")):

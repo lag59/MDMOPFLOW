@@ -274,6 +274,31 @@ Estimated Cost $1,245,000
         assert ext["canonical_payload"] is not None
         assert len(ext["canonical_payload"].get("project_identity", [])) >= 1
 
+    def test_contract_doc_uses_portfolio_profile_on_review(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        contract_text = """\
+Construction Contract
+Project: Riverbend Utility Extension
+Project Number: RB-2026-010
+Contract Number: CON-2026-044
+Owner-Contractor Agreement
+Contract Sum: $4,200,000
+Notice to Proceed: 09/01/2026
+Substantial Completion: 180 days
+Retainage: 5%
+"""
+        item = _upload(client, token, tenant_id, contract_text)
+        result = _trigger(client, token, tenant_id, item["id"], force=True)
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        ext = detail["extraction"]
+        assert ext["document_type"] == "contract"
+        assert ext["canonical_profile"] == "bid_package"
+        assert ext["project_name"] == "Riverbend Utility Extension"
+        assert ext["job_number"] == "RB-2026-010"
+        assert ext["ticket_number"] == ""
+        assert ext["canonical_payload"] is not None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Issue generation

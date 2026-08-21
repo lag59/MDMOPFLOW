@@ -11,6 +11,9 @@ AUTO_POST_FINANCIAL_OR_TICKET_MIN_CONFIDENCE = 0.90
 DOCUMENT_RULES: dict[str, tuple[tuple[str, ...], str, int]] = {
     "invitation_to_bid": (("invitation to bid", "instructions to bidders", "bid due", "project no"), "Estimator > Bid Packages > Invitation to Bid", 80),
     "estimate": (("cost estimate", "estimate summary", "estimate total", "bid proposal", "bid form", "cost breakdown", "estimated cost"), "Estimator > Estimates > Review", 86),
+    "contract": (("construction contract", "owner-contractor agreement", "contract sum", "contract documents", "notice to proceed", "substantial completion", "retainage", "liquidated damages"), "Projects > Contracts > Review", 88),
+    "change_order": (("change order", "change order number", "contract change", "net change", "original contract sum", "revised contract sum"), "Projects > Change Orders > Review", 88),
+    "purchase_order": (("purchase order", "po number", "vendor", "ship to", "bill to", "unit cost", "extended cost"), "Portfolio > Procurement > Purchase Orders", 82),
     "scope_of_work": (("scope of work", "earthwork", "storm drainage", "water / sewer", "exclusions"), "Estimator > Project Documents > Scope", 78),
     "bid_schedule": (("bid schedule", "unit price", "extension", "base bid total"), "Estimator > Bid Schedule", 90),
     "material_quote": (("material quotation", "material quote", "quote no", "unit price", "valid through", "freight"), "Estimator > Vendors > Material Quotes", 82),
@@ -158,7 +161,7 @@ def classify_document(text: str) -> IntakeClassification:
 
 
 def extract_project_name(text: str) -> str | None:
-    value = first_match((r"^Project\s+(.+)$", r"^Project\s*[:#-]\s*(.+)$", r"^(North Ridge Commerce Park\s*-\s*Phase 2).*$"), text)
+    value = first_match((r"^Project\s+(?!Number\b|No\.?\b)(.+)$", r"^Project\s*[:#-]\s*(.+)$", r"^(North Ridge Commerce Park\s*-\s*Phase 2).*$"), text)
     if value:
         value = value.split("|")[0].strip()
     return normalize_project_name(value)
@@ -184,6 +187,10 @@ def extract_document_number(text: str) -> str | None:
             r"Quote\s*Number\s*[:#-]?\s*([A-Z0-9-]+)",
             r"Estimate\s*(?:No\.?|Number)\s*[:#-]?\s*([A-Z0-9-]+)",
             r"Proposal\s*No\.?\s*[:#-]?\s*([A-Z0-9-]+)",
+            r"Contract\s*(?:No\.?|Number)\s*[:#-]?\s*([A-Z0-9-]+)",
+            r"Change\s*Order\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Z0-9-]+)",
+            r"PO\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Z0-9-]+)",
+            r"Purchase\s*Order\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Z0-9-]+)",
         ),
         text,
     )
@@ -303,6 +310,9 @@ EXTRACTORS = {
     "equipment_rental_quote": extract_generic_quote,
     "subcontractor_proposal": extract_generic_quote,
     "estimate": extract_generic_quote,
+    "contract": extract_generic_quote,
+    "change_order": extract_generic_quote,
+    "purchase_order": extract_generic_quote,
 }
 
 

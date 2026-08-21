@@ -102,6 +102,34 @@ def test_process_intake_upload_routes_general_estimate_to_estimator(tmp_path: Pa
     assert entities["recommended_route"] == "Estimator > Estimates > Review"
 
 
+def test_process_intake_upload_routes_contract_to_portfolio_review(tmp_path: Path) -> None:
+    payload = (
+        b"Construction Contract\n"
+        b"Project: Riverbend Utility Extension\n"
+        b"Contract Number: CON-2026-044\n"
+        b"Owner-Contractor Agreement\n"
+        b"Contract Sum: $4,200,000\n"
+        b"Notice to Proceed: 09/01/2026\n"
+        b"Substantial Completion: 180 days\n"
+        b"Retainage: 5%\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-contract",
+        original_filename="contract.txt",
+        mime_type="text/plain",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert result.document_type == "contract"
+    assert result.classification_confidence >= 0.72
+    assert entities["document_type"] == "contract"
+    assert entities["reference_number"] == "CON-2026-044"
+    assert entities["recommended_route"] == "Projects > Contracts > Review"
+
+
 def test_process_intake_upload_keeps_legacy_ticket_type_for_haul_ticket(tmp_path: Path) -> None:
     payload = (
         b"HAUL TICKET\n"
