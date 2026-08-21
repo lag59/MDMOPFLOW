@@ -119,6 +119,7 @@ describe("Dashboard role-aware experience", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Estimator Command Center")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Role Modules" })).toBeInTheDocument();
       expect(screen.getByText("Bid Pipeline")).toBeInTheDocument();
       expect(screen.getByText("Open estimator workspace")).toBeInTheDocument();
       expect(screen.getByText("Draft Estimates")).toBeInTheDocument();
@@ -135,7 +136,7 @@ describe("Dashboard role-aware experience", () => {
       expect(screen.getByText("Dispatcher Operations")).toBeInTheDocument();
       expect(screen.getByText("Dispatch Board")).toBeInTheDocument();
       expect(screen.getByText("Assign tickets")).toBeInTheDocument();
-      expect(screen.getByText("Open Tickets")).toBeInTheDocument();
+      expect(screen.getAllByText("Open Tickets").length).toBeGreaterThan(0);
     });
   });
 
@@ -169,7 +170,7 @@ describe("Dashboard role-aware experience", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Project Execution Dashboard")).toBeInTheDocument();
-      expect(screen.getByText("Projects")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Project Pipeline" })).toBeInTheDocument();
     });
   });
 });

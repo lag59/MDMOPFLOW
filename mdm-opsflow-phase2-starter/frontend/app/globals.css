@@ -286,6 +286,62 @@ button, input, select, textarea { font: inherit; }
 	display: none;
 }
 
+/* Dashboard presentation shell */
+body.dashboard-shell .shell {
+	--sidebar-w: 270px;
+	--topbar-h: 0px;
+	background: #090f1f;
+}
+
+body.dashboard-shell .topbar {
+	display: none;
+}
+
+body.dashboard-shell .main {
+	padding: 0;
+	background: #090f1f;
+}
+
+body.dashboard-shell .side {
+	background: linear-gradient(180deg, #0b1224 0%, #0d1427 100%);
+	border-right: 1px solid #22304f;
+}
+
+body.dashboard-shell .brand-wrap {
+	padding: 26px 22px 20px;
+	border-bottom: 0;
+}
+
+body.dashboard-shell .brand {
+	color: #f4f8ff;
+	font-size: 20px;
+	line-height: 1.05;
+}
+
+body.dashboard-shell .brand-subtitle {
+	color: #5f759f;
+}
+
+body.dashboard-shell .nav {
+	padding: 8px 14px 24px;
+}
+
+body.dashboard-shell .nav a {
+	padding: 11px 12px;
+	border-radius: 8px;
+	color: #a9b7d2;
+}
+
+body.dashboard-shell .nav a.is-active {
+	background: linear-gradient(135deg, #3155db 0%, #243c98 100%);
+	color: #ffffff;
+}
+
+body.dashboard-shell .nav-section-label,
+body.dashboard-shell .nav-search-wrap {
+	display: none;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────── */
 button {
 	border: 0;

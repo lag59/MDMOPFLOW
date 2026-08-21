@@ -278,6 +278,29 @@ const STATUS_DOT: Record<string, string> = {
 const fmt = (n: string | number | null | undefined) =>
   !n || n === "0" ? "-" : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
+const SHORT_KPI_META: Record<keyof Summary, { icon: string; suffix: string }> = {
+  projects: { icon: "📁", suffix: "total projects" },
+  active_projects: { icon: "🟢", suffix: "currently active" },
+  tickets: { icon: "🎫", suffix: "total tickets" },
+  open_tickets: { icon: "⚠️", suffix: "pending action" },
+  estimates: { icon: "🧮", suffix: "this month" },
+  draft_estimates: { icon: "📝", suffix: "in progress" },
+  awarded_estimates: { icon: "🏆", suffix: "won bids" },
+  intake_items: { icon: "📥", suffix: "documents tracked" },
+  intake_pending_review: { icon: "🔎", suffix: "needs review" },
+};
+
+function toShortDate(value: string): string {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value.slice(0, 10);
+  }
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -292,6 +315,13 @@ export default function DashboardPage() {
   const api = getApiBaseUrl();
   const token = getAccessToken();
   const tenant = getTenantId();
+
+  useEffect(() => {
+    document.body.classList.add("dashboard-shell");
+    return () => {
+      document.body.classList.remove("dashboard-shell");
+    };
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -378,188 +408,325 @@ export default function DashboardPage() {
   const recentTickets = tickets.slice(0, 6);
   const activeEstimates = estimates.filter((e) => !["Archived", "Not Awarded", "Converted to Project"].includes(e.status)).slice(0, 5);
 
+  const topKpis = effectiveKpiOrder.slice(0, 4);
+  const chartSeries = topKpis.map((key, idx) => {
+    const value = Number(summary?.[key] ?? 0);
+    return {
+      key,
+      x: idx,
+      y: value,
+      label: KPI_META[key].label,
+    };
+  });
+  const maxY = Math.max(1, ...chartSeries.map((point) => point.y));
+  const trendPath = chartSeries
+    .map((point, index) => {
+      const x = chartSeries.length > 1 ? (point.x / (chartSeries.length - 1)) * 100 : 0;
+      const y = 100 - (point.y / maxY) * 82;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+  const chartHint = chartSeries.length > 0
+    ? `${chartSeries[0].label} to ${chartSeries[chartSeries.length - 1].label}`
+    : "No trend data";
+  const weatherTemp = 82;
+  const intakePressure = summary?.intake_pending_review ?? 0;
+  const openTicketPressure = summary?.open_tickets ?? 0;
+  const healthScore = Math.max(58, Math.min(96, 92 - intakePressure * 2 - Math.floor(openTicketPressure * 0.8)));
+
   return (
     <AppShell titleKey="dashboard.title">
-      <section className={styles.commandDeck}>
-        <div className={styles.commandHeaderRow}>
-          <div>
+      <div className={styles.surface}>
+        <div className={styles.surfaceGlow} aria-hidden />
+
+        <section className={styles.commandDeck}>
+          <div className={styles.commandLeft}>
             <div className={styles.rolePill}>{serverRoleExperience?.role_label || roleLabel}</div>
-            <h2 className={styles.commandTitle}>{roleExperience.title}</h2>
-            <p className={styles.commandSubtitle}>{roleExperience.subtitle}</p>
+            <h2 className={styles.commandTitle}>Welcome back, John 👋</h2>
+            <p className={styles.commandSubtitle}>Here&apos;s what&apos;s happening with your projects today.</p>
+            <p className={styles.workspaceTitle}>{roleExperience.title}</p>
           </div>
-          <div className={styles.quickActions}>
-            {effectiveQuickActions.map((action) => (
-              <Link key={action.label} href={action.href} className={styles.quickActionLink}>
-                {action.label}
-              </Link>
-            ))}
+
+          <div className={styles.commandRight}>
+            <label className={styles.commandSearch}>
+              <span className={styles.commandSearchIcon} aria-hidden>⌕</span>
+              <input placeholder="Search documents, tickets, vendors..." aria-label="Global search" />
+            </label>
+            <button type="button" className={styles.uploadButton}>Upload</button>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {loading ? (
-        <p className={styles.stateText}>Loading dashboard...</p>
-      ) : error ? (
-        <div className={styles.errorPanel}>
-          <p className={styles.errorText}>{error}</p>
-        </div>
-      ) : (
-        <>
-          <section className={styles.moduleGrid}>
-            {effectiveModules.map((moduleLink) => (
-              <Link key={moduleLink.label} href={moduleLink.href} className={styles.moduleCardLink}>
-                <div className={styles.moduleCard}>
-                  <div className={styles.cardEyebrow}>Role Module</div>
-                  <div className={styles.moduleName}>{moduleLink.label}</div>
-                  <div className={styles.cardHint}>Open module</div>
-                </div>
-              </Link>
-            ))}
-          </section>
-
-          <section className={styles.kpiGrid}>
-            {effectiveKpiOrder.map((kpiKey) => {
-              const meta = KPI_META[kpiKey];
-              return (
-                <Link key={kpiKey} href={meta.href} className={styles.kpiCardLink}>
-                  <div className={styles.kpiCard}>
-                    <div className={styles.cardEyebrow}>{meta.label}</div>
-                    <div className={styles.kpiValue} style={{ color: meta.color }}>
-                      {summary?.[kpiKey] ?? 0}
+        {loading ? (
+          <p className={styles.stateText}>Loading dashboard...</p>
+        ) : error ? (
+          <div className={styles.errorPanel}>
+            <p className={styles.errorText}>{error}</p>
+          </div>
+        ) : (
+          <>
+            <section className={styles.kpiGrid}>
+              {topKpis.map((kpiKey) => {
+                const meta = KPI_META[kpiKey];
+                const miniMeta = SHORT_KPI_META[kpiKey];
+                return (
+                  <Link key={kpiKey} href={meta.href} className={styles.kpiCard}>
+                    <div className={styles.kpiCardTop}>
+                      <span className={styles.kpiIcon} aria-hidden>{miniMeta.icon}</span>
+                      <span className={styles.kpiLabel}>{meta.label}</span>
                     </div>
-                    <div className={styles.cardHint}>{summary ? meta.sub(summary) : ""}</div>
-                  </div>
-                </Link>
-              );
-            })}
-          </section>
+                    <div className={styles.kpiValue}>{summary?.[kpiKey] ?? 0}</div>
+                    <div className={styles.kpiSubline}>{miniMeta.suffix}</div>
+                  </Link>
+                );
+              })}
+            </section>
 
-          {roleAlerts.length > 0 ? (
-            <section className={styles.alertPanel}>
-              <h3 className={styles.sectionTitle}>Role Alerts</h3>
-              <div className={styles.alertStack}>
-                {roleAlerts.map((alertText) => (
-                  <div key={alertText} className={styles.alertItem}>
-                    {alertText}
+            <section className={styles.contentGrid}>
+              <div className={styles.mainColumn}>
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Document Activity</h3>
+                    <span>{chartHint}</span>
                   </div>
-                ))}
+                  <div className={styles.chartWrap}>
+                    <svg className={styles.chartSvg} viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Dashboard trend chart">
+                      <defs>
+                        <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="#3f8cff" />
+                          <stop offset="100%" stopColor="#46d7a4" />
+                        </linearGradient>
+                      </defs>
+                      <polyline
+                        points="0,90 100,90"
+                        fill="none"
+                        stroke="rgba(126, 147, 194, 0.35)"
+                        strokeWidth="0.8"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      {trendPath ? (
+                        <path
+                          d={trendPath}
+                          fill="none"
+                          stroke="url(#trendStroke)"
+                          strokeWidth="2"
+                          vectorEffect="non-scaling-stroke"
+                          strokeLinecap="round"
+                        />
+                      ) : null}
+                    </svg>
+                  </div>
+                </article>
+
+                <div className={styles.triplePanelGrid}>
+                  <article className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <h3>Role Modules</h3>
+                      <Link href="/modules">View all</Link>
+                    </div>
+                    <ul className={styles.listStack}>
+                      {effectiveModules.slice(0, 5).map((moduleLink) => (
+                        <li key={moduleLink.label} className={styles.listRow}>
+                          <Link href={moduleLink.href} className={styles.listPrimary}>{moduleLink.label}</Link>
+                          <span className={styles.listMeta}>Open module</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+
+                  <article className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <h3>Recent Documents</h3>
+                      <Link href="/extraction-queue">View all</Link>
+                    </div>
+                    {recentTickets.length === 0 ? (
+                      <p className={styles.emptyText}>No tickets yet.</p>
+                    ) : (
+                      <ul className={styles.listStack}>
+                        {recentTickets.map((ticket) => (
+                          <li key={ticket.id} className={styles.listRow}>
+                            <div>
+                              <div className={styles.listPrimary}>{ticket.ticket_number || "Unnumbered ticket"}</div>
+                              <div className={styles.listMeta}>{ticket.material || "Material pending"}</div>
+                            </div>
+                            <span className={styles.badge}>{toShortDate(ticket.created_at)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+
+                  <article className={styles.panel}>
+                    <div className={styles.panelHeader}>
+                      <h3>Activity Feed</h3>
+                      <Link href="/tickets">View all</Link>
+                    </div>
+                    <ul className={styles.activityFeed}>
+                      {recentTickets.slice(0, 3).map((ticket) => (
+                        <li key={ticket.id}>
+                          <span className={styles.activityIcon}>✓</span>
+                          <div>
+                            <strong>Ticket activity</strong>
+                            <p>{ticket.ticket_number || "New ticket"} · {ticket.material || "Material pending"}</p>
+                          </div>
+                          <em>{toShortDate(ticket.created_at)}</em>
+                        </li>
+                      ))}
+                      {activeEstimates.slice(0, 2).map((estimate) => (
+                        <li key={estimate.id}>
+                          <span className={styles.activityIcon}>↗</span>
+                          <div>
+                            <strong>Estimate updated</strong>
+                            <p>{estimate.estimate_name}</p>
+                          </div>
+                          <em>{estimate.bid_due_date ? toShortDate(estimate.bid_due_date) : "Open"}</em>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                </div>
+              </div>
+
+              <div className={styles.sideColumn}>
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Estimate Snapshot</h3>
+                    <Link href="/estimator">Open</Link>
+                  </div>
+                  <div className={styles.snapshotValue}>{fmt(recentProjects[0]?.contract_amount || null)}</div>
+                  <p className={styles.snapshotCaption}>Top project value</p>
+                  <ul className={styles.compactList}>
+                    {activeEstimates.slice(0, 4).map((estimate) => (
+                      <li key={estimate.id}>
+                        <span>{estimate.estimate_name}</span>
+                        <span>{estimate.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Project Health</h3>
+                    <span>Live</span>
+                  </div>
+                  <div className={styles.healthDialWrap}>
+                    <div className={styles.healthDial}>
+                      <span>{healthScore}</span>
+                    </div>
+                    <p>Portfolio health score based on open tickets and intake review pressure.</p>
+                    </div>
+                </article>
+
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Quick Actions</h3>
+                    <span>Launch</span>
+                  </div>
+                  <div className={styles.quickActions}>
+                    {effectiveQuickActions.map((action) => (
+                      <Link key={action.label} href={action.href} className={styles.quickActionLink}>
+                        {action.label}
+                      </Link>
+                    ))}
+                  </div>
+                </article>
+
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Recent Alerts</h3>
+                    <span>{roleAlerts.length}</span>
+                  </div>
+                  {roleAlerts.length > 0 ? (
+                    <ul className={styles.alertStack}>
+                      {roleAlerts.map((alertText) => (
+                        <li key={alertText}>{alertText}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={styles.emptyText}>No active alerts.</p>
+                  )}
+                </article>
+
+                <article className={styles.panel}>
+                  <div className={styles.panelHeader}>
+                    <h3>Weather</h3>
+                    <span>Durham, NC</span>
+                  </div>
+                  <div className={styles.weatherNow}>{weatherTemp}°F</div>
+                  <p className={styles.snapshotCaption}>Mostly sunny. Good conditions for field throughput.</p>
+                  <div className={styles.weatherDays}>
+                    {["Fri", "Sat", "Sun", "Mon", "Tue"].map((day, idx) => (
+                      <div key={day}>
+                        <span>{day}</span>
+                        <strong>{80 + ((idx + 1) % 4)}°</strong>
+                      </div>
+                    ))}
+                  </div>
+                </article>
               </div>
             </section>
-          ) : null}
 
-          <section className={styles.contentGrid}>
-            <div className={styles.panel}>
-              <div className={styles.panelHead}>
-                <h3 className={styles.sectionTitle}>Recent Projects</h3>
-                <Link href="/project-manager" className={styles.panelLink}>
-                  View all
-                </Link>
-              </div>
-              {recentProjects.length === 0 ? (
-                <p className={styles.emptyText}>No projects yet.</p>
-              ) : (
-                <div className={styles.rowStack}>
-                  {recentProjects.map((p) => (
-                    <div key={p.id} className={styles.entityRow}>
-                      <div>
-                        <div className={styles.entityTitle}>{p.project_name}</div>
-                        <div className={styles.entityMeta}>{fmt(p.contract_amount)}</div>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          textTransform: "capitalize",
-                          background: (STATUS_DOT[p.status] ?? "#64748b") + "22",
-                          color: STATUS_DOT[p.status] ?? "#64748b",
-                        }}
-                      >
-                        {p.status.replace("_", " ")}
-                      </span>
-                    </div>
-                  ))}
+            <section className={styles.bottomPanels}>
+              <article className={styles.panel}>
+                <div className={styles.panelHeader}>
+                  <h3>Project Pipeline</h3>
+                  <Link href="/projects">View all</Link>
                 </div>
-              )}
-            </div>
+                {recentProjects.length === 0 ? (
+                  <p className={styles.emptyText}>No projects yet.</p>
+                ) : (
+                  <ul className={styles.listStack}>
+                    {recentProjects.map((project) => (
+                      <li key={project.id} className={styles.listRow}>
+                        <div>
+                          <div className={styles.listPrimary}>{project.project_name}</div>
+                          <div className={styles.listMeta}>{fmt(project.contract_amount)}</div>
+                        </div>
+                        <span className={styles.statusDot} style={{ color: STATUS_DOT[project.status] ?? "#64748b" }}>
+                          {project.status.replace("_", " ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
 
-            <div className={styles.panel}>
-              <div className={styles.panelHead}>
-                <h3 className={styles.sectionTitle}>Active Estimates</h3>
-                <Link href="/estimator" className={styles.panelLink}>
-                  View all
-                </Link>
-              </div>
-              {activeEstimates.length === 0 ? (
-                <p className={styles.emptyText}>No estimates yet.</p>
-              ) : (
-                <div className={styles.rowStack}>
-                  {activeEstimates.map((e) => (
-                    <div key={e.id} className={styles.entityRow}>
-                      <div>
-                        <div className={styles.entityTitle}>{e.estimate_name}</div>
-                        {e.bid_due_date && <div className={styles.entityMeta}>Due {e.bid_due_date}</div>}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          background: "#eff6ff",
-                          color: "#1d4ed8",
-                          border: "1px solid #bfdbfe",
-                        }}
-                      >
-                        {e.status}
-                      </span>
-                    </div>
-                  ))}
+              <article className={styles.panel}>
+                <div className={styles.panelHeader}>
+                  <h3>Open Tickets</h3>
+                  <Link href="/tickets">View all</Link>
                 </div>
-              )}
-            </div>
-
-            <div className={`${styles.panel} ${styles.widePanel}`}>
-              <div className={styles.panelHead}>
-                <h3 className={styles.sectionTitle}>Recent Tickets</h3>
-                <Link href="/tickets" className={styles.panelLink}>
-                  View all
-                </Link>
-              </div>
-              {recentTickets.length === 0 ? (
-                <p className={styles.emptyText}>No tickets yet.</p>
-              ) : (
-                <div className={styles.tableWrap}>
-                  <table className={styles.ticketsTable}>
-                    <thead>
-                      <tr>
-                        {["Ticket #", "Material", "Status", "Date"].map((h) => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentTickets.map((t) => (
-                        <tr key={t.id}>
-                          <td className={styles.ticketNumber}>{t.ticket_number}</td>
-                          <td>{t.material}</td>
-                          <td>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#f1f5f9", color: "#475569" }}>
-                              {t.status}
-                            </span>
-                          </td>
-                          <td className={styles.ticketDate}>{t.created_at?.slice(0, 10)}</td>
+                {recentTickets.length === 0 ? (
+                  <p className={styles.emptyText}>No tickets yet.</p>
+                ) : (
+                  <div className={styles.tableWrap}>
+                    <table className={styles.ticketsTable}>
+                      <thead>
+                        <tr>
+                          <th>Ticket #</th>
+                          <th>Material</th>
+                          <th>Status</th>
+                          <th>Date</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </section>
-        </>
-      )}
+                      </thead>
+                      <tbody>
+                        {recentTickets.map((ticket) => (
+                          <tr key={ticket.id}>
+                            <td>{ticket.ticket_number || "-"}</td>
+                            <td>{ticket.material || "-"}</td>
+                            <td>{ticket.status}</td>
+                            <td>{toShortDate(ticket.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </article>
+            </section>
+          </>
+        )}
+      </div>
     </AppShell>
   );
 }
