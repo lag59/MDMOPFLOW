@@ -12,8 +12,10 @@ ESTIMATOR_DOCUMENT_TYPES = {
     "invitation_to_bid",
     "scope_of_work",
     "bid_schedule",
+    "material_quote",
     "vendor_material_quote",
     "hauling_disposal_quote",
+    "geotechnical_summary",
     "geotechnical_report",
     "addendum",
     "equipment_rental_quote",
@@ -30,6 +32,7 @@ ACCOUNTING_DOCUMENT_TYPES = {
 }
 
 TICKET_DOCUMENT_TYPES = {
+    "haul_ticket",
     "haul_material_delivery_ticket",
 }
 
@@ -172,10 +175,10 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
         return "scope_of_work", "scope"
     if any(token in text_blob for token in ("bid schedule", "bid item")):
         return "bid_schedule", "line_items"
-    if any(token in text_blob for token in ("vendor quote", "material quote")):
-        return "vendor_material_quote", "pricing"
     if any(token in text_blob for token in ("hauling quote", "disposal quote", "assumed one-way distance")):
         return "hauling_disposal_quote", "haul_pricing"
+    if any(token in text_blob for token in ("vendor quote", "material quote")):
+        return "vendor_material_quote", "pricing"
     if any(token in text_blob for token in ("geotechnical", "soil", "groundwater", "swell factor", "shrink factor")):
         return "geotechnical_report", "site_conditions"
     if any(token in text_blob for token in ("equipment rental", "weekly rate", "monthly rate")):
@@ -192,6 +195,13 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
         return "invoice", "ap_invoice"
     if any(token in text_blob for token in ("haul ticket", "delivery ticket", "material ticket")):
         return "haul_material_delivery_ticket", "transactional"
+
+    if normalized == "material_quote":
+        return "material_quote", "pricing"
+    if normalized == "geotechnical_summary":
+        return "geotechnical_summary", "site_conditions"
+    if normalized == "haul_ticket":
+        return "haul_ticket", "transactional"
 
     if normalized == "ticket":
         return "haul_material_delivery_ticket", "transactional"

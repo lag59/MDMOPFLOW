@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover - optional dependency fallback for local e
     pytesseract = None
 
 from app.models import IntakeStatus
+from app.services.document_intake_router import route_ocr_document
 from app.services.ticket_extractor import extract_ticket_preview
 
 
@@ -172,11 +173,31 @@ def process_intake_upload(
     content_hash = hashlib.sha256(payload).hexdigest()
     extracted_text = _extract_text(payload, mime_type)
 
+    routing = route_ocr_document(extracted_text) if extracted_text else None
     entities, summary, confidence = extract_ticket_preview(extracted_text, original_filename=original_filename)
-    document_type = "ticket" if entities else "general"
+    legacy_ticket_detected = bool(entities)
+    routing_detected_type = routing.document_type if routing else ""
+    document_type = routing_detected_type if routing_detected_type and routing_detected_type != "unknown" else ("ticket" if legacy_ticket_detected else "general")
+    if document_type == "haul_ticket":
+        document_type = "ticket"
+    if routing:
+        routed_entities = routing.flattened_entities()
+        routed_entities.update({key: str(value) for key, value in entities.items() if value})
+        entities = routed_entities
+        confidence = max(confidence, routing.classification_confidence)
+        if not summary:
+            summary_parts = [routing.document_type, routing.recommended_route]
+            if routing.project.get("name"):
+                summary_parts.append(str(routing.project["name"]))
+            if routing.vendor.get("name"):
+                summary_parts.append(str(routing.vendor["name"]))
+            summary = "; ".join(summary_parts)
 
-    needs_review = bool(extracted_text) and confidence < 0.75
-    review_reason = "Low extraction confidence; reviewer confirmation required." if needs_review else ""
+    routing_requires_review = bool(routing and routing.requires_human_review and not legacy_ticket_detected)
+    needs_review = bool(extracted_text) and (confidence < 0.75 or routing_requires_review)
+    review_reason = ""
+    if needs_review:
+        review_reason = routing.reason_for_review if routing and routing.reason_for_review else "Low extraction confidence; reviewer confirmation required."
 
     try:
         file_path = str(absolute_file_path.relative_to(_repo_root())).replace("\\", "/")
