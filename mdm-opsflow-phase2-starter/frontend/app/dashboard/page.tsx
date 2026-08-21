@@ -26,6 +26,16 @@ type Summary = {
 type Project = { id: string; project_name: string; status: string; contract_amount: string | null };
 type Ticket = { id: string; ticket_number: string; material: string; status: string; created_at: string };
 type Estimate = { id: string; estimate_name: string; status: string; bid_due_date: string | null };
+type IntakeItem = {
+  id: string;
+  original_filename: string;
+  document_type: string;
+  status: string;
+  extracted_summary: string;
+  needs_review: boolean;
+  created_at: string;
+};
+type CurrentUser = { display_name?: string; email?: string };
 
 type RoleExperience = {
   title: string;
@@ -306,6 +316,8 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [intakeItems, setIntakeItems] = useState<IntakeItem[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleKey, setRoleKey] = useState<RoleKey>("project_manager");
@@ -332,22 +344,26 @@ export default function DashboardPage() {
 
     Promise.all([
       getCurrentRoleAccess(),
+      fetch(`${api}/api/auth/me`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
       fetch(`${api}/api/projects`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${api}/api/tickets`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${api}/api/estimates`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${api}/api/intake/items`, { headers: h }).then((r) => (r.ok ? r.json() : [])),
       fetch(`${api}/api/dashboard/role-experience`, { headers: h }).then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([roleAccess, p, t, e, i, roleExperiencePayload]) => {
+      .then(([roleAccess, me, p, t, e, i, roleExperiencePayload]) => {
         const resolvedRole = roleAccess?.roleKey || "project_manager";
         const workspace = ROLE_WORKSPACES.find((entry) => entry.key === resolvedRole);
         setRoleKey(resolvedRole);
         setRoleLabel(workspace?.label || "Project Manager");
         setServerRoleExperience(roleExperiencePayload as RoleExperienceApiResponse | null);
+        setCurrentUser(me as CurrentUser | null);
 
         setProjects(p);
         setTickets(t);
         setEstimates(e);
+        const normalizedIntakeItems = Array.isArray(i) ? i : (i?.items ?? []);
+        setIntakeItems(normalizedIntakeItems);
         setSummary({
           projects: p.length,
           active_projects: p.filter((x: Project) => x.status === "active").length,
@@ -356,8 +372,8 @@ export default function DashboardPage() {
           estimates: e.length,
           draft_estimates: e.filter((x: Estimate) => x.status === "Draft Estimate").length,
           awarded_estimates: e.filter((x: Estimate) => x.status === "Awarded" || x.status === "Converted to Project").length,
-          intake_items: Array.isArray(i) ? i.length : (i?.items?.length ?? 0),
-          intake_pending_review: Array.isArray(i) ? i.filter((x: { status?: string }) => x.status === "pending_review").length : 0,
+          intake_items: normalizedIntakeItems.length,
+          intake_pending_review: normalizedIntakeItems.filter((x: { status?: string; needs_review?: boolean }) => x.status === "pending_review" || x.needs_review).length,
         });
         setLoading(false);
       })
@@ -407,6 +423,10 @@ export default function DashboardPage() {
   const recentProjects = projects.slice(0, 5);
   const recentTickets = tickets.slice(0, 6);
   const activeEstimates = estimates.filter((e) => !["Archived", "Not Awarded", "Converted to Project"].includes(e.status)).slice(0, 5);
+  const recentDocuments = [...intakeItems]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 6);
+  const greetingName = (currentUser?.display_name || currentUser?.email || "there").split("@")[0];
 
   const topKpis = effectiveKpiOrder.slice(0, 4);
   const chartSeries = topKpis.map((key, idx) => {
@@ -429,7 +449,6 @@ export default function DashboardPage() {
   const chartHint = chartSeries.length > 0
     ? `${chartSeries[0].label} to ${chartSeries[chartSeries.length - 1].label}`
     : "No trend data";
-  const weatherTemp = 82;
   const intakePressure = summary?.intake_pending_review ?? 0;
   const openTicketPressure = summary?.open_tickets ?? 0;
   const healthScore = Math.max(58, Math.min(96, 92 - intakePressure * 2 - Math.floor(openTicketPressure * 0.8)));
@@ -442,7 +461,7 @@ export default function DashboardPage() {
         <section className={styles.commandDeck}>
           <div className={styles.commandLeft}>
             <div className={styles.rolePill}>{serverRoleExperience?.role_label || roleLabel}</div>
-            <h2 className={styles.commandTitle}>Welcome back, John 👋</h2>
+            <h2 className={styles.commandTitle}>Welcome back, {greetingName} 👋</h2>
             <p className={styles.commandSubtitle}>Here&apos;s what&apos;s happening with your projects today.</p>
             <p className={styles.workspaceTitle}>{roleExperience.title}</p>
           </div>
@@ -536,19 +555,19 @@ export default function DashboardPage() {
                   <article className={styles.panel}>
                     <div className={styles.panelHeader}>
                       <h3>Recent Documents</h3>
-                      <Link href="/extraction-queue">View all</Link>
+                      <Link href="/intake">View all</Link>
                     </div>
-                    {recentTickets.length === 0 ? (
-                      <p className={styles.emptyText}>No tickets yet.</p>
+                    {recentDocuments.length === 0 ? (
+                      <p className={styles.emptyText}>No intake documents yet.</p>
                     ) : (
                       <ul className={styles.listStack}>
-                        {recentTickets.map((ticket) => (
-                          <li key={ticket.id} className={styles.listRow}>
+                        {recentDocuments.map((item) => (
+                          <li key={item.id} className={styles.listRow}>
                             <div>
-                              <div className={styles.listPrimary}>{ticket.ticket_number || "Unnumbered ticket"}</div>
-                              <div className={styles.listMeta}>{ticket.material || "Material pending"}</div>
+                              <div className={styles.listPrimary}>{item.original_filename || "Untitled document"}</div>
+                              <div className={styles.listMeta}>{item.document_type || item.status}</div>
                             </div>
-                            <span className={styles.badge}>{toShortDate(ticket.created_at)}</span>
+                            <span className={styles.badge}>{toShortDate(item.created_at)}</span>
                           </li>
                         ))}
                       </ul>
@@ -561,14 +580,14 @@ export default function DashboardPage() {
                       <Link href="/tickets">View all</Link>
                     </div>
                     <ul className={styles.activityFeed}>
-                      {recentTickets.slice(0, 3).map((ticket) => (
-                        <li key={ticket.id}>
-                          <span className={styles.activityIcon}>✓</span>
+                      {recentDocuments.slice(0, 3).map((item) => (
+                        <li key={item.id}>
+                          <span className={styles.activityIcon}>{item.needs_review ? "!" : "✓"}</span>
                           <div>
-                            <strong>Ticket activity</strong>
-                            <p>{ticket.ticket_number || "New ticket"} · {ticket.material || "Material pending"}</p>
+                            <strong>{item.needs_review ? "Document needs review" : "Document uploaded"}</strong>
+                            <p>{item.original_filename || item.extracted_summary || item.document_type}</p>
                           </div>
-                          <em>{toShortDate(ticket.created_at)}</em>
+                          <em>{toShortDate(item.created_at)}</em>
                         </li>
                       ))}
                       {activeEstimates.slice(0, 2).map((estimate) => (
@@ -649,19 +668,12 @@ export default function DashboardPage() {
 
                 <article className={styles.panel}>
                   <div className={styles.panelHeader}>
-                    <h3>Weather</h3>
-                    <span>Durham, NC</span>
+                    <h3>Field Conditions</h3>
+                    <Link href="/daily-production">Open</Link>
                   </div>
-                  <div className={styles.weatherNow}>{weatherTemp}°F</div>
-                  <p className={styles.snapshotCaption}>Mostly sunny. Good conditions for field throughput.</p>
-                  <div className={styles.weatherDays}>
-                    {["Fri", "Sat", "Sun", "Mon", "Tue"].map((day, idx) => (
-                      <div key={day}>
-                        <span>{day}</span>
-                        <strong>{80 + ((idx + 1) % 4)}°</strong>
-                      </div>
-                    ))}
-                  </div>
+                  <div className={styles.weatherNow}>{summary?.active_projects ?? 0}</div>
+                  <p className={styles.snapshotCaption}>Active projects available for daily production and weather-assisted field reports.</p>
+                  <Link href="/daily-production" className={styles.quickActionLink}>Create field report</Link>
                 </article>
               </div>
             </section>

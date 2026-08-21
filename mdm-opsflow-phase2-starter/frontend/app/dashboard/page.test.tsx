@@ -38,6 +38,10 @@ describe("Dashboard role-aware experience", () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
 
+        if (url.endsWith("/api/auth/me")) {
+          return new Response(JSON.stringify({ display_name: "Jordan Estimator", email: "jordan@example.com" }), { status: 200 });
+        }
+
         if (url.endsWith("/api/projects")) {
           return new Response(
             JSON.stringify([
@@ -69,9 +73,29 @@ describe("Dashboard role-aware experience", () => {
         }
 
         if (url.endsWith("/api/intake/items")) {
-          return new Response(JSON.stringify([{ id: "i-1", status: "pending_review" }, { id: "i-2", status: "uploaded" }]), {
-            status: 200,
-          });
+          return new Response(
+            JSON.stringify([
+              {
+                id: "i-1",
+                original_filename: "Addendum No. 2.pdf",
+                document_type: "addendum",
+                status: "pending_review",
+                extracted_summary: "Bid addendum imported for review",
+                needs_review: true,
+                created_at: "2026-08-03T00:00:00Z",
+              },
+              {
+                id: "i-2",
+                original_filename: "Hauling Quote.pdf",
+                document_type: "quote",
+                status: "uploaded",
+                extracted_summary: "Quote imported",
+                needs_review: false,
+                created_at: "2026-08-02T00:00:00Z",
+              },
+            ]),
+            { status: 200 }
+          );
         }
 
         if (url.endsWith("/api/dashboard/role-experience")) {
@@ -119,10 +143,12 @@ describe("Dashboard role-aware experience", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Estimator Command Center")).toBeInTheDocument();
+      expect(screen.getByText("Welcome back, Jordan Estimator 👋")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Role Modules" })).toBeInTheDocument();
       expect(screen.getByText("Bid Pipeline")).toBeInTheDocument();
       expect(screen.getByText("Open estimator workspace")).toBeInTheDocument();
       expect(screen.getByText("Draft Estimates")).toBeInTheDocument();
+      expect(screen.getAllByText("Addendum No. 2.pdf").length).toBeGreaterThan(0);
     });
   });
 
@@ -145,6 +171,9 @@ describe("Dashboard role-aware experience", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.endsWith("/api/auth/me")) {
+          return new Response(JSON.stringify({ display_name: "Project Lead" }), { status: 200 });
+        }
         if (url.endsWith("/api/estimates")) {
           return new Response(JSON.stringify({ detail: "Insufficient permissions" }), { status: 403 });
         }
