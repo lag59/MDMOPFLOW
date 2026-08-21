@@ -329,13 +329,6 @@ export default function DashboardPage() {
   const tenant = getTenantId();
 
   useEffect(() => {
-    document.body.classList.add("dashboard-shell");
-    return () => {
-      document.body.classList.remove("dashboard-shell");
-    };
-  }, []);
-
-  useEffect(() => {
     if (!token) {
       window.location.href = "/login";
       return;

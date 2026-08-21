@@ -165,6 +165,13 @@ export default function AppShell({ titleKey, children }: AppShellProps) {
           </div>
         </div>
         <div className="top-actions">
+          <label className="global-search">
+            <span aria-hidden>⌕</span>
+            <input aria-label="Search documents, tickets, vendors" placeholder="Search documents, tickets, vendors..." />
+          </label>
+          <Link href="/intake" className="top-upload-action">
+            Upload
+          </Link>
           <button
             className="btn-ghost"
             onClick={() => { clearSession(); window.location.href = "/login"; }}
