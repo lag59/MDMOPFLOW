@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getAccessToken, getTenantId } from '@/lib/auth';
+import { getAccessToken, getTenantId, refreshSession } from '@/lib/auth';
 import { getApiBaseUrl } from '@/lib/i18n';
 
 interface ExtractionField {
@@ -462,6 +462,29 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const [conflictSuggestions, setConflictSuggestions] = useState<ConflictSuggestion[]>([]);
   const [intentLoading, setIntentLoading] = useState(false);
 
+  function buildAuthHeaders(extraHeaders?: HeadersInit): Headers {
+    const headers = new Headers(extraHeaders);
+    headers.set('Authorization', `Bearer ${getAccessToken()}`);
+    headers.set('X-Tenant-ID', getTenantId());
+    return headers;
+  }
+
+  async function fetchWithAuthRetry(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    let response = await fetch(input, {
+      ...init,
+      headers: buildAuthHeaders(init.headers),
+    });
+
+    if (response.status === 401 && await refreshSession(getApiBaseUrl())) {
+      response = await fetch(input, {
+        ...init,
+        headers: buildAuthHeaders(init.headers),
+      });
+    }
+
+    return response;
+  }
+
   function resolveFileUrl(sourceFileUrl: string): string {
     if (/^https?:\/\//i.test(sourceFileUrl)) {
       return sourceFileUrl;
@@ -480,14 +503,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
     try {
       setFileLoading(true);
       setFileError(null);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
-      const response = await fetch(resolveFileUrl(sourceFileUrl), {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Tenant-ID': tenantId,
-        },
-      });
+      const response = await fetchWithAuthRetry(resolveFileUrl(sourceFileUrl));
 
       if (!response.ok) {
         throw new Error(`Preview failed (${response.status})`);
@@ -510,23 +526,17 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const loadIntentContext = async (intakeItemId: string) => {
     try {
       setIntentLoading(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
       const baseUrl = getApiBaseUrl();
 
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'X-Tenant-ID': tenantId,
-        'Content-Type': 'application/json',
-      };
+      const headers = { 'Content-Type': 'application/json' };
 
       const [placementResponse, conflictsResponse] = await Promise.all([
-        fetch(`${baseUrl}/api/intake/placement/suggest`, {
+        fetchWithAuthRetry(`${baseUrl}/api/intake/placement/suggest`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ item_ids: [intakeItemId] }),
         }),
-        fetch(`${baseUrl}/api/intake/conflicts/suggest`, {
+        fetchWithAuthRetry(`${baseUrl}/api/intake/conflicts/suggest`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ item_ids: [intakeItemId] }),
@@ -553,19 +563,9 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   useEffect(() => {
     const fetchExtraction = async () => {
       try {
-        const token = getAccessToken();
-        const tenantId = getTenantId();
         const baseUrl = getApiBaseUrl();
 
-        const response = await fetch(
-          `${baseUrl}/api/extractions/${extractionId}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'X-Tenant-ID': tenantId,
-            },
-          }
-        );
+        const response = await fetchWithAuthRetry(`${baseUrl}/api/extractions/${extractionId}`);
 
         if (!response.ok) {
           throw new Error('Failed to fetch extraction');
@@ -600,17 +600,13 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const handleSubmitReview = async () => {
     try {
       setSubmitting(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
       const baseUrl = getApiBaseUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuthRetry(
         `${baseUrl}/api/extractions/${extractionId}/review`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Tenant-ID': tenantId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -643,17 +639,13 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const handleValidateReview = async () => {
     try {
       setValidationLoading(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
       const baseUrl = getApiBaseUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuthRetry(
         `${baseUrl}/api/extractions/${extractionId}/validate`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Tenant-ID': tenantId,
             'Content-Type': 'application/json',
           },
         }
@@ -679,17 +671,13 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   const handleApprove = async () => {
     try {
       setApproving(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
       const baseUrl = getApiBaseUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuthRetry(
         `${baseUrl}/api/extractions/${extractionId}/approve`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Tenant-ID': tenantId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -715,25 +703,20 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
   };
 
   const handleReject = async () => {
-    if (!rejectionReason.trim()) return;
     try {
       setApproving(true);
-      const token = getAccessToken();
-      const tenantId = getTenantId();
       const baseUrl = getApiBaseUrl();
 
-      const response = await fetch(
+      const response = await fetchWithAuthRetry(
         `${baseUrl}/api/extractions/${extractionId}/approve`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
-            'X-Tenant-ID': tenantId,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             approve: false,
-            rejection_reason: rejectionReason,
+            rejection_reason: rejectionReason.trim() || undefined,
           }),
         }
       );
@@ -932,9 +915,9 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
         ) : null}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
       {/* Left: Document Preview */}
-      <div className="col-span-1 bg-white rounded-lg shadow p-4">
+      <div className="bg-white rounded-lg shadow p-4 xl:sticky xl:top-4">
         <h3 className="font-semibold text-lg mb-4">📄 Document</h3>
         <DocumentPreview
           fileUrl={fileUrl}
@@ -947,7 +930,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
       </div>
 
       {/* Middle: Extracted Fields */}
-      <div className="col-span-1 bg-white rounded-lg shadow p-4">
+      <div className="bg-white rounded-lg shadow p-4">
         <h3 className="font-semibold text-lg mb-4">✏️ Extracted Fields</h3>
         <p className="text-xs text-gray-500 mb-3">Showing fields based on detected document intent.</p>
         <div className="space-y-2">
@@ -979,31 +962,12 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
       </div>
 
       {/* Right: Issues + Actions */}
-      <div className="col-span-1 bg-white rounded-lg shadow p-4 flex flex-col">
+      <div className="bg-white rounded-lg shadow p-4 flex flex-col xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
         <h3 className="font-semibold text-lg mb-4">⚠️ Issues ({schemaAwareIssues.length})</h3>
 
         <div className="mb-4 rounded border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Required fields for this schema</p>
           <p className="text-sm text-slate-800 mt-1">{requiredFields.join(' • ')}</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto mb-4">
-          {schemaAwareIssues.length === 0 ? (
-            <p className="text-green-600 text-sm">✓ All issues resolved</p>
-          ) : (
-            schemaAwareIssues.map((issue) => (
-              <IssueItem
-                key={issue.id}
-                issue={issue}
-                onSuggest={(value) =>
-                  setCorrections({
-                    ...corrections,
-                    [issue.field_name]: value,
-                  })
-                }
-              />
-            ))
-          )}
         </div>
 
         {/* Action result banner */}
@@ -1026,7 +990,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
 
         {/* Approval panel — shown when review has been submitted */}
         {extraction.status === 'review_submitted' ? (
-          <div className="border-t pt-4">
+          <div className="mb-4 rounded border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-3 bg-purple-50 border border-purple-200 rounded p-3">
               <p className="text-sm font-semibold text-purple-800">Ready for Approval</p>
               <p className="text-xs text-purple-600 mt-1">Review is complete. Approve to distribute or reject to return for rework.</p>
@@ -1073,19 +1037,19 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
                   <h2 className="text-xl font-semibold mb-4">Reject Extraction</h2>
-                  <p className="text-sm text-gray-600 mb-4">Provide a reason — this will be logged and visible to the reviewer.</p>
+                  <p className="text-sm text-gray-600 mb-4">Add a note only if it helps the next reviewer. You can reject immediately without one.</p>
                   <textarea
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
                     className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
                     rows={4}
-                    placeholder="Why is this extraction being rejected?"
+                    placeholder="Optional rejection note..."
                     autoFocus
                   />
                   <div className="flex gap-3 mt-4">
                     <button
                       onClick={handleReject}
-                      disabled={!rejectionReason.trim() || approving}
+                      disabled={approving}
                       className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 font-semibold"
                     >
                       {approving ? 'Rejecting...' : 'Confirm Reject'}
@@ -1103,7 +1067,7 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
           </div>
         ) : (
           /* Review panel — shown for review_pending or other statuses */
-          <div className="border-t pt-4">
+          <div className="mb-4 rounded border border-slate-200 bg-white p-3 shadow-sm">
             <label className="block text-sm font-semibold text-gray-700 mb-2">Review Notes</label>
             <textarea
               value={reviewNotes}
@@ -1131,6 +1095,25 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
             </div>
           </div>
         )}
+
+        <div className="flex-1 overflow-y-auto mb-4 pr-1">
+          {schemaAwareIssues.length === 0 ? (
+            <p className="text-green-600 text-sm">✓ All issues resolved</p>
+          ) : (
+            schemaAwareIssues.map((issue) => (
+              <IssueItem
+                key={issue.id}
+                issue={issue}
+                onSuggest={(value) =>
+                  setCorrections({
+                    ...corrections,
+                    [issue.field_name]: value,
+                  })
+                }
+              />
+            ))
+          )}
+        </div>
 
         {/* Validation Results Modal */}
         {showValidationResults && validationResults && (
