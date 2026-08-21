@@ -10,6 +10,7 @@ AUTO_POST_FINANCIAL_OR_TICKET_MIN_CONFIDENCE = 0.90
 
 DOCUMENT_RULES: dict[str, tuple[tuple[str, ...], str, int]] = {
     "invitation_to_bid": (("invitation to bid", "instructions to bidders", "bid due", "project no"), "Estimator > Bid Packages > Invitation to Bid", 80),
+    "estimate": (("cost estimate", "estimate summary", "estimate total", "bid proposal", "bid form", "cost breakdown", "estimated cost"), "Estimator > Estimates > Review", 86),
     "scope_of_work": (("scope of work", "earthwork", "storm drainage", "water / sewer", "exclusions"), "Estimator > Project Documents > Scope", 78),
     "bid_schedule": (("bid schedule", "unit price", "extension", "base bid total"), "Estimator > Bid Schedule", 90),
     "material_quote": (("material quotation", "material quote", "quote no", "unit price", "valid through", "freight"), "Estimator > Vendors > Material Quotes", 82),
@@ -181,6 +182,7 @@ def extract_document_number(text: str) -> str | None:
             r"Ticket\s*No\.?\s*[:#-]?\s*([A-Z0-9-]+)",
             r"Quote\s*No\.?\s*[:#-]?\s*([A-Z0-9-]+)",
             r"Quote\s*Number\s*[:#-]?\s*([A-Z0-9-]+)",
+            r"Estimate\s*(?:No\.?|Number)\s*[:#-]?\s*([A-Z0-9-]+)",
             r"Proposal\s*No\.?\s*[:#-]?\s*([A-Z0-9-]+)",
         ),
         text,
@@ -300,6 +302,7 @@ EXTRACTORS = {
     "material_quote": extract_generic_quote,
     "equipment_rental_quote": extract_generic_quote,
     "subcontractor_proposal": extract_generic_quote,
+    "estimate": extract_generic_quote,
 }
 
 

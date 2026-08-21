@@ -50,6 +50,13 @@ ESTIMATOR_KEYWORDS = (
     "geotechnical",
     "internal cost",
     "worksheet",
+    "cost estimate",
+    "estimate summary",
+    "estimate total",
+    "estimated cost",
+    "bid form",
+    "bid proposal",
+    "cost breakdown",
 )
 
 ACCOUNTING_KEYWORDS = (
@@ -79,6 +86,7 @@ PROJECT_NUMBER_PATTERNS = (
 REFERENCE_PATTERNS = (
     r"addendum\s*(?:#|no\.?)[\s:]*([a-z0-9\-_/]+)",
     r"quote\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
+    r"estimate\s*(?:#|number|no\.?)?[\s:]*([a-z0-9\-_/]+)",
     r"proposal\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
     r"ticket\s*(?:#|number|no\.?)[\s:]*([a-z0-9\-_/]+)",
 )
@@ -171,6 +179,8 @@ def _guess_document_type(base_type: str, text_blob: str) -> tuple[str, str]:
 
     if any(token in text_blob for token in ("invitation to bid", "itb")):
         return "invitation_to_bid", "solicitation"
+    if any(token in text_blob for token in ("cost estimate", "estimate summary", "estimate total", "estimated cost", "bid proposal", "bid form", "cost breakdown")):
+        return "estimate", "general"
     if "scope of work" in text_blob:
         return "scope_of_work", "scope"
     if any(token in text_blob for token in ("bid schedule", "bid item")):

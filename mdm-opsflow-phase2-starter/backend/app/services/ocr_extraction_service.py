@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.models import DocumentExtraction, ExtractionCanonicalFact, ExtractionDiscrepancy, ExtractionIssue, IntakeItem
 from app.services.bid_package_extraction import build_bid_package_payload
 from app.services.canonical_intake import ESTIMATOR_DOCUMENT_TYPES, build_canonical_document, score_canonical_document
+from app.services.canonical_intake import TICKET_DOCUMENT_TYPES
 from app.services.ticket_extractor import extract_ticket_candidates
 
 
@@ -274,7 +275,7 @@ def _map_canonical_to_extraction(
 ) -> DocumentExtraction:
     reference_number = canonical_doc.document_reference_number
     invoice_number = reference_number if canonical_doc.document_type == "invoice" else ""
-    ticket_number = reference_number if canonical_doc.document_type != "invoice" else ""
+    ticket_number = reference_number if canonical_doc.document_type in TICKET_DOCUMENT_TYPES else ""
     doc_confidence = max(
         canonical_doc.confidence,
         routing_scores.estimator_document_score,

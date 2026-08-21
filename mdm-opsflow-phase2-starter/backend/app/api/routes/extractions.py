@@ -167,6 +167,8 @@ def _build_extraction_response(
         status=extraction.status,
         project_name=extraction.project_name,
         project_name_confidence=extraction.project_name_confidence,
+        job_number=extraction.job_number,
+        job_number_confidence=extraction.job_number_confidence,
         company_name=extraction.company_name,
         company_name_confidence=extraction.company_name_confidence,
         ticket_number=extraction.ticket_number,

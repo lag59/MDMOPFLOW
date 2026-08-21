@@ -52,3 +52,23 @@ Disposal Fee $8.50 per CY"""
     assert result.extracted_fields["hourly_rate"] == 125.0
     assert result.requires_human_review is False
     assert result.uncertain_fields == []
+
+
+def test_document_intake_router_routes_general_estimate_to_estimator_review() -> None:
+    sample = """Cost Estimate
+Project: Riverbend Utility Extension
+Estimate Number: EST-2026-014
+Bid Form
+Scope of Work: Earthwork, storm drainage, and water main installation
+Cost Breakdown
+Estimated Cost $1,245,000
+"""
+
+    result = route_ocr_document(sample)
+
+    assert result.document_type == "estimate"
+    assert result.recommended_route == "Estimator > Estimates > Review"
+    assert result.classification_confidence >= 0.72
+    assert result.project["name"] == "Riverbend Utility Extension"
+    assert result.requires_human_review is False
+    assert should_use_ai_fallback(result) is False

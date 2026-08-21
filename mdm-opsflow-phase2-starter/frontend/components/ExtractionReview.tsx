@@ -32,6 +32,8 @@ interface Extraction {
   extracted_text_preview?: string | null;
   project_name: string;
   project_name_confidence: number;
+  job_number: string;
+  job_number_confidence: number;
   company_name: string;
   ticket_number: string;
   destination: string;
@@ -100,6 +102,7 @@ const FIELD_LABEL_OVERRIDES: Record<string, string> = {
   tons: 'Tons',
   invoice_total: 'Invoice Total',
   project_name: 'Project Name',
+  job_number: 'Project Number',
 };
 
 const SCHEMA_REQUIRED_FIELDS: Record<string, string[]> = {
@@ -114,6 +117,23 @@ const ISSUE_KEYS_BY_DESTINATION: Record<string, string[]> = {
   estimator: ['document_count', 'project_name', 'job_number', 'company_name', 'destination', 'material', 'tons', 'line_items', 'quote_number'],
   accounting: ['document_count', 'company_name', 'destination', 'invoice_total'],
 };
+
+const ESTIMATOR_DOCUMENT_TYPE_HINTS = [
+  'addendum',
+  'bid',
+  'estimate',
+  'geotechnical',
+  'hauling_disposal_quote',
+  'internal_cost_worksheet',
+  'invitation_to_bid',
+  'material_quote',
+  'proposal',
+  'quantity_takeoff',
+  'quote',
+  'scope_of_work',
+  'subcontractor',
+  'takeoff',
+];
 
 function toFriendlyFieldLabel(fieldName: string): string {
   return FIELD_LABEL_OVERRIDES[fieldName] || fieldName.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -164,6 +184,12 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
     confidence: DEFAULT_FIELD_CONFIDENCE,
     value: (item) => item.project_name || null,
   },
+  job_number: {
+    key: 'job_number',
+    label: 'Project Number',
+    confidence: DEFAULT_FIELD_CONFIDENCE,
+    value: (item) => item.job_number || null,
+  },
 };
 
 function resolveIntentSchema(documentType: string, destinationKey: string | null): { label: string; fieldKeys: string[] } {
@@ -184,10 +210,10 @@ function resolveIntentSchema(documentType: string, destinationKey: string | null
     };
   }
 
-  if (normalizedDestination === 'estimator' || ['bid', 'proposal', 'quote', 'estimate', 'takeoff', 'addendum'].some((token) => normalizedType.includes(token))) {
+  if (normalizedDestination === 'estimator' || ESTIMATOR_DOCUMENT_TYPE_HINTS.some((token) => normalizedType.includes(token))) {
     return {
       label: 'Estimator extraction schema',
-      fieldKeys: ['project_name', 'company_name', 'material', 'tons', 'destination'],
+      fieldKeys: ['project_name', 'job_number', 'company_name', 'material', 'destination'],
     };
   }
 
@@ -988,6 +1014,8 @@ export default function ExtractionReview({ extractionId, onReviewSubmitted }: Ex
                 ? extraction.material_confidence
                 : fieldKey === 'project_name'
                 ? extraction.project_name_confidence
+                : fieldKey === 'job_number'
+                ? extraction.job_number_confidence
                 : config.confidence;
 
             return (

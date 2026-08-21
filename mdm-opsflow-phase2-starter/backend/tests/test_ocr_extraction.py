@@ -252,6 +252,28 @@ Addendum 2: Undercut Allowance: 150 CY
         assert "haul_cost_conflict" in discrepancy_kinds
         assert "allowance_conflict" in discrepancy_kinds
 
+    def test_general_estimate_doc_uses_estimator_profile_on_review(self, client: TestClient):
+        token, tenant_id = _auth(client)
+        estimate_text = """\
+Cost Estimate
+Project: Riverbend Utility Extension
+Estimate Number: EST-2026-014
+Bid Form
+Scope of Work: Earthwork and storm drainage
+Cost Breakdown
+Estimated Cost $1,245,000
+"""
+        item = _upload(client, token, tenant_id, estimate_text)
+        result = _trigger(client, token, tenant_id, item["id"], force=True)
+
+        detail = self._get_detail(client, token, tenant_id, result["extraction_id"])
+        ext = detail["extraction"]
+        assert ext["document_type"] == "estimate"
+        assert ext["canonical_profile"] == "bid_package"
+        assert ext["project_name"] == "Riverbend Utility Extension"
+        assert ext["canonical_payload"] is not None
+        assert len(ext["canonical_payload"].get("project_identity", [])) >= 1
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Issue generation

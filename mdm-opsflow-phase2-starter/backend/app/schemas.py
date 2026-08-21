@@ -2648,6 +2648,8 @@ class DocumentExtractionResponse(BaseModel):
     status: str
     project_name: str = ""
     project_name_confidence: float = 0.0
+    job_number: str = ""
+    job_number_confidence: float = 0.0
     company_name: str
     company_name_confidence: float
     ticket_number: str

@@ -76,6 +76,32 @@ def test_process_intake_upload_uses_document_router_for_estimator_quote(tmp_path
     assert entities["recommended_route"] == "Estimator > Hauling > Vendor Quotes"
 
 
+def test_process_intake_upload_routes_general_estimate_to_estimator(tmp_path: Path) -> None:
+    payload = (
+        b"Cost Estimate\n"
+        b"Project: Riverbend Utility Extension\n"
+        b"Estimate Number: EST-2026-014\n"
+        b"Bid Form\n"
+        b"Scope of Work: Earthwork and storm drainage\n"
+        b"Cost Breakdown\n"
+        b"Estimated Cost $1,245,000\n"
+    )
+
+    result = process_intake_upload(
+        tenant_id="tenant-estimate",
+        original_filename="estimate-review.txt",
+        mime_type="text/plain",
+        payload=payload,
+        storage_root=tmp_path,
+    )
+
+    entities = json.loads(result.extracted_entities)
+    assert result.document_type == "estimate"
+    assert result.classification_confidence >= 0.72
+    assert entities["document_type"] == "estimate"
+    assert entities["recommended_route"] == "Estimator > Estimates > Review"
+
+
 def test_process_intake_upload_keeps_legacy_ticket_type_for_haul_ticket(tmp_path: Path) -> None:
     payload = (
         b"HAUL TICKET\n"
